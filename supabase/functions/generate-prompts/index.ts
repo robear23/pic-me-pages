@@ -102,10 +102,21 @@ Return a JSON array of exactly 12 prompts, each with:
 
     let prompts;
     try {
-      const parsed = JSON.parse(content);
+      // Strip markdown code blocks if present
+      let cleanContent = content.trim();
+      if (cleanContent.startsWith('```json')) {
+        cleanContent = cleanContent.replace(/^```json\s*\n?/, '').replace(/\n?```\s*$/, '');
+      } else if (cleanContent.startsWith('```')) {
+        cleanContent = cleanContent.replace(/^```\s*\n?/, '').replace(/\n?```\s*$/, '');
+      }
+      
+      const parsed = JSON.parse(cleanContent);
       prompts = parsed.prompts || parsed;
+      
+      console.log('Parsed prompts:', prompts);
     } catch (e) {
       console.error('Failed to parse AI response as JSON:', e);
+      console.error('Raw content:', content);
       return new Response(
         JSON.stringify({ error: 'Invalid AI response format' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
