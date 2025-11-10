@@ -1,0 +1,10 @@
+project_id = "yzcqvuidasgljeifvmxk"
+
+[functions.generate-prompts]
+verify_jwt = false
+
+[functions.generate-images]
+verify_jwt = false
+
+[functions.upload-character-photos]
+verify_jwt = false

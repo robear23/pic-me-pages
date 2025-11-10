@@ -16,6 +16,10 @@ interface BookState {
   generatedPages: GeneratedPage[];
   generationProgress: number;
   generationStatus: string;
+  apiError: string | null;
+  isGeneratingPrompts: boolean;
+  isGeneratingImages: boolean;
+  currentApiCall: 'prompts' | 'images' | 'photos' | null;
   
   setStep: (step: BookStep) => void;
   setCharacterName: (name: string) => void;
@@ -24,6 +28,10 @@ interface BookState {
   setGeneratedPages: (pages: GeneratedPage[]) => void;
   setGenerationProgress: (progress: number) => void;
   setGenerationStatus: (status: string) => void;
+  setApiError: (error: string | null) => void;
+  setIsGeneratingPrompts: (loading: boolean) => void;
+  setIsGeneratingImages: (loading: boolean) => void;
+  setCurrentApiCall: (call: 'prompts' | 'images' | 'photos' | null) => void;
   reset: () => void;
 }
 
@@ -35,6 +43,10 @@ const initialState = {
   generatedPages: [] as GeneratedPage[],
   generationProgress: 0,
   generationStatus: '',
+  apiError: null as string | null,
+  isGeneratingPrompts: false,
+  isGeneratingImages: false,
+  currentApiCall: null as 'prompts' | 'images' | 'photos' | null,
 };
 
 export const useBookStore = create<BookState>((set) => ({
@@ -71,6 +83,14 @@ export const useBookStore = create<BookState>((set) => ({
   setGenerationProgress: (progress) => set({ generationProgress: progress }),
   
   setGenerationStatus: (status) => set({ generationStatus: status }),
+  
+  setApiError: (error) => set({ apiError: error }),
+  
+  setIsGeneratingPrompts: (loading) => set({ isGeneratingPrompts: loading }),
+  
+  setIsGeneratingImages: (loading) => set({ isGeneratingImages: loading }),
+  
+  setCurrentApiCall: (call) => set({ currentApiCall: call }),
   
   reset: () => set(initialState),
 }));
