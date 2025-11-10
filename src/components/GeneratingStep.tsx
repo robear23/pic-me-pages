@@ -1,8 +1,11 @@
 import { motion } from 'framer-motion';
 import { useBookStore } from '@/store/bookStore';
 import { Sparkles, Check, Loader2 } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Progress } from '@/components/ui/progress';
+import { generatePrompts, generateImages } from '@/lib/api';
+import { useToast } from '@/hooks/use-toast';
+import type { GeneratedPrompt } from '@/lib/api';
 
 const GENERATION_STEPS = [
   'Analyzing your photos',
@@ -13,34 +16,120 @@ const GENERATION_STEPS = [
 ];
 
 export const GeneratingStep = () => {
-  const { generationProgress, generationStatus, setGenerationProgress, setGenerationStatus, setStep } = useBookStore();
+  const { 
+    characterName, 
+    selectedInterests, 
+    characterPhotos,
+    generationProgress, 
+    generationStatus, 
+    setGenerationProgress, 
+    setGenerationStatus, 
+    setStep,
+    setGeneratedPages,
+    setApiError 
+  } = useBookStore();
+  
+  const { toast } = useToast();
+  const [prompts, setPrompts] = useState<GeneratedPrompt[]>([]);
 
   useEffect(() => {
-    // Simulate generation process
-    let currentProgress = 0;
-    const progressInterval = setInterval(() => {
-      currentProgress += 2;
-      if (currentProgress >= 100) {
-        clearInterval(progressInterval);
+    const runGeneration = async () => {
+      try {
+        // Step 1: Analyzing photos (0-20%)
+        setGenerationStatus(GENERATION_STEPS[0]);
+        setGenerationProgress(10);
+        
+        // Convert File objects to base64
+        const photoPromises = characterPhotos
+          .filter((photo): photo is File => photo !== null)
+          .map((photo) => {
+            return new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onloadend = () => resolve(reader.result as string);
+              reader.onerror = reject;
+              reader.readAsDataURL(photo);
+            });
+          });
+
+        const base64Photos = await Promise.all(photoPromises);
+        setGenerationProgress(20);
+
+        // Step 2: Understanding interests (20-40%)
+        setGenerationStatus(GENERATION_STEPS[1]);
+        console.log('Generating prompts for:', characterName, selectedInterests);
+        
+        const { prompts: generatedPrompts } = await generatePrompts(characterName, selectedInterests);
+        setPrompts(generatedPrompts);
+        setGenerationProgress(40);
+        
+        console.log('Generated prompts:', generatedPrompts);
+
+        // Step 3: Creating story prompts (40-50%)
+        setGenerationStatus(GENERATION_STEPS[2]);
+        setGenerationProgress(50);
+
+        // Step 4: Generating coloring pages (50-90%)
+        setGenerationStatus(GENERATION_STEPS[3]);
+        console.log('Generating images with prompts and photos...');
+        
+        const { pages, successCount } = await generateImages(generatedPrompts, base64Photos);
+        setGenerationProgress(90);
+        
+        console.log(`Generated ${successCount}/12 images`);
+        setGeneratedPages(pages);
+
+        // Step 5: Finalizing (90-100%)
+        setGenerationStatus(GENERATION_STEPS[4]);
+        setGenerationProgress(95);
+        
+        await new Promise(resolve => setTimeout(resolve, 500));
         setGenerationProgress(100);
+
+        if (successCount < 12) {
+          toast({
+            title: 'Partial Success',
+            description: `Generated ${successCount} out of 12 pages. Some pages may need regeneration.`,
+            variant: 'default',
+          });
+        } else {
+          toast({
+            title: 'Book Created!',
+            description: 'Your personalized coloring book is ready to download.',
+          });
+        }
+
         setTimeout(() => setStep('complete'), 500);
-      } else {
-        setGenerationProgress(currentProgress);
-      }
-    }, 100);
 
-    const statusInterval = setInterval(() => {
-      const stepIndex = Math.floor((currentProgress / 100) * GENERATION_STEPS.length);
-      if (stepIndex < GENERATION_STEPS.length) {
-        setGenerationStatus(GENERATION_STEPS[stepIndex]);
-      }
-    }, 200);
+      } catch (error) {
+        console.error('Generation error:', error);
+        const errorMessage = error instanceof Error ? error.message : 'Failed to generate book';
+        
+        setApiError(errorMessage);
+        toast({
+          title: 'Generation Failed',
+          description: errorMessage,
+          variant: 'destructive',
+        });
 
-    return () => {
-      clearInterval(progressInterval);
-      clearInterval(statusInterval);
+        // Reset after showing error
+        setTimeout(() => {
+          setStep('interests');
+        }, 3000);
+      }
     };
-  }, [setGenerationProgress, setGenerationStatus, setStep]);
+
+    runGeneration();
+  }, [
+    characterName, 
+    selectedInterests, 
+    characterPhotos,
+    setGenerationProgress, 
+    setGenerationStatus, 
+    setStep,
+    setGeneratedPages,
+    setApiError,
+    toast
+  ]);
 
   const currentStepIndex = GENERATION_STEPS.findIndex((step) => step === generationStatus);
 
