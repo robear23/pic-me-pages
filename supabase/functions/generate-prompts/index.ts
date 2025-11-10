@@ -102,26 +102,47 @@ Return a JSON array of exactly 12 prompts, each with:
 
     let prompts;
     try {
-      // Robust markdown stripping - remove all backticks and extract JSON
+      // Robust JSON extraction from possibly fenced/verbose output
       let cleanContent = content.trim();
-      
-      // Remove all backticks and 'json' markers
+
+      // Remove code fences and language hints
       cleanContent = cleanContent.replace(/```json/g, '').replace(/```/g, '').trim();
-      
-      // Extract JSON between first [ or { and last ] or }
-      const jsonStart = Math.max(cleanContent.indexOf('['), cleanContent.indexOf('{'));
-      const jsonEnd = Math.max(cleanContent.lastIndexOf(']'), cleanContent.lastIndexOf('}'));
-      
-      if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
-        cleanContent = cleanContent.substring(jsonStart, jsonEnd + 1);
-      }
-      
-      console.log('Cleaned content for parsing:', cleanContent.substring(0, 200));
-      
-      const parsed = JSON.parse(cleanContent);
+
+      // Extract the first complete top-level JSON block (array preferred)
+      const extractTopLevelJSON = (s: string): string | null => {
+        const scan = (open: string, close: string): string | null => {
+          let start = s.indexOf(open);
+          if (start === -1) return null;
+          let depth = 0;
+          let inString = false;
+          let escape = false;
+          for (let i = start; i < s.length; i++) {
+            const ch = s[i];
+            if (escape) { escape = false; continue; }
+            if (ch === '\\') { escape = true; continue; }
+            if (ch === '"') { inString = !inString; continue; }
+            if (inString) continue;
+            if (ch === open) depth++;
+            else if (ch === close) {
+              depth--;
+              if (depth === 0) return s.substring(start, i + 1);
+            }
+          }
+          return null;
+        };
+        return scan('[', ']') ?? scan('{', '}');
+      };
+
+      const candidate = extractTopLevelJSON(cleanContent) ?? cleanContent;
+      console.log('Cleaned content for parsing (first 200):', candidate.substring(0, 200));
+
+      const parsed = JSON.parse(candidate);
       prompts = parsed.prompts || parsed;
-      
-      console.log('Successfully parsed prompts:', prompts.length, 'prompts');
+
+      if (!Array.isArray(prompts)) {
+        throw new Error('Parsed JSON is not an array or object with prompts');
+      }
+      console.log('Successfully parsed prompts:', Array.isArray(prompts) ? prompts.length : 'object');
     } catch (e) {
       console.error('Failed to parse AI response as JSON:', e);
       console.error('Raw content:', content.substring(0, 500));
