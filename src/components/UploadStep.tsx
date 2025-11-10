@@ -31,7 +31,8 @@ export const UploadStep = () => {
     }
   };
 
-  const isComplete = characterName.trim() !== '' && characterPhotos.every((photo) => photo !== null);
+  const uploadedPhotosCount = characterPhotos.filter(p => p !== null).length;
+  const isComplete = characterName.trim() !== '' && uploadedPhotosCount >= 1;
 
   return (
     <motion.div
@@ -51,9 +52,31 @@ export const UploadStep = () => {
           <h2 className="font-black text-4xl md:text-5xl mb-4 text-center">
             Who's the Star of This Book?
           </h2>
-          <p className="text-lg text-muted-foreground text-center mb-8">
-            Tell us their name and share 3 photos
+          <p className="text-lg text-muted-foreground text-center mb-4">
+            Tell us their name and share 1-3 photos of them
           </p>
+          
+          {uploadedPhotosCount >= 1 && uploadedPhotosCount < 2 && (
+            <div className="flex items-center justify-center gap-2 mb-8 px-4 py-2 rounded-lg bg-primary/10 border border-primary/30 backdrop-blur-sm">
+              <span className="text-2xl">💡</span>
+              <p className="text-sm text-foreground">
+                Tip: Upload 2-3 photos for best results!
+              </p>
+            </div>
+          )}
+          
+          {uploadedPhotosCount >= 2 && (
+            <div className="flex items-center justify-center gap-2 mb-8 px-4 py-2 rounded-lg bg-secondary/10 border border-secondary/30 backdrop-blur-sm">
+              <span className="text-2xl">✨</span>
+              <p className="text-sm text-secondary-foreground font-medium">
+                Great! {uploadedPhotosCount} photos will give excellent results
+              </p>
+            </div>
+          )}
+          
+          {uploadedPhotosCount === 0 && (
+            <div className="h-12 mb-8" />
+          )}
 
           {/* Name Input */}
           <div className="mb-8">

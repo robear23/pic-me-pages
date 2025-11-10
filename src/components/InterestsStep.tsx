@@ -1,27 +1,27 @@
 import { motion } from 'framer-motion';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { useBookStore } from '@/store/bookStore';
-import { Check, Sparkles } from 'lucide-react';
-
-const INTERESTS = [
-  { id: 'dinosaurs', label: 'Dinosaurs', emoji: '🦕' },
-  { id: 'space', label: 'Space', emoji: '🚀' },
-  { id: 'ocean', label: 'Ocean', emoji: '🐠' },
-  { id: 'sports', label: 'Sports', emoji: '⚽' },
-  { id: 'art', label: 'Art', emoji: '🎨' },
-  { id: 'music', label: 'Music', emoji: '🎵' },
-  { id: 'vehicles', label: 'Vehicles', emoji: '🚗' },
-  { id: 'animals', label: 'Animals', emoji: '🐶' },
-  { id: 'superheroes', label: 'Superheroes', emoji: '🦸' },
-  { id: 'fairies', label: 'Fairies', emoji: '✨' },
-  { id: 'construction', label: 'Construction', emoji: '🏗️' },
-  { id: 'nature', label: 'Nature', emoji: '🌻' },
-];
+import { Sparkles } from 'lucide-react';
 
 export const InterestsStep = () => {
-  const { characterName, selectedInterests, toggleInterest, setStep } = useBookStore();
+  const { characterName, selectedInterests, setStep } = useBookStore();
+  const [interestsText, setInterestsText] = useState(selectedInterests.join(', '));
 
-  const isComplete = selectedInterests.length >= 3 && selectedInterests.length <= 5;
+  // Parse comma-separated interests
+  const parsedInterests = interestsText
+    .split(',')
+    .map(i => i.trim())
+    .filter(i => i.length > 0);
+  
+  const isComplete = parsedInterests.length >= 3 && parsedInterests.length <= 5;
+  
+  const handleNext = () => {
+    // Update store with parsed interests array
+    useBookStore.setState({ selectedInterests: parsedInterests });
+    setStep('generating');
+  };
 
   return (
     <motion.div
@@ -42,62 +42,42 @@ export const InterestsStep = () => {
             What Does {characterName} Love?
           </h2>
           <p className="text-lg text-muted-foreground text-center mb-8">
-            Select 3-5 interests to personalize the coloring book
+            Enter 3-5 interests to personalize the coloring book
           </p>
 
-          {/* Counter */}
-          <div className="flex justify-center mb-8">
-            <div
-              className={`px-6 py-2 rounded-full backdrop-blur-sm border transition-all duration-300 ${
-                isComplete
-                  ? 'bg-secondary/20 border-secondary text-secondary-foreground'
-                  : 'bg-primary/10 border-primary/30 text-foreground'
-              }`}
-            >
-              <span className="font-bold">
-                Selected: {selectedInterests.length}/5
-              </span>
+          {/* Interests Input */}
+          <div className="space-y-4 mb-8">
+            <Textarea
+              value={interestsText}
+              onChange={(e) => setInterestsText(e.target.value)}
+              placeholder="e.g., dinosaurs, space exploration, ocean animals, painting, soccer"
+              className="min-h-[120px] text-base backdrop-blur-sm bg-input/50 border-glass-border resize-none"
+            />
+            
+            {/* Counter */}
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Separate interests with commas
+              </p>
+              <div
+                className={`px-4 py-1.5 rounded-full backdrop-blur-sm border text-sm transition-all duration-300 ${
+                  isComplete
+                    ? 'bg-secondary/20 border-secondary text-secondary-foreground'
+                    : parsedInterests.length > 5
+                    ? 'bg-destructive/20 border-destructive text-destructive'
+                    : 'bg-primary/10 border-primary/30 text-foreground'
+                }`}
+              >
+                <span className="font-bold">
+                  {parsedInterests.length}/5 interests
+                </span>
+              </div>
             </div>
-          </div>
-
-          {/* Interest Cards Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-8">
-            {INTERESTS.map((interest, index) => {
-              const isSelected = selectedInterests.includes(interest.id);
-              return (
-                <motion.button
-                  key={interest.id}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3, delay: index * 0.05 }}
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={() => toggleInterest(interest.id)}
-                  className={`relative p-6 rounded-xl border-2 transition-all duration-300 ${
-                    isSelected
-                      ? 'bg-gradient-to-br from-primary/30 to-[hsl(330_80%_60%/0.3)] border-primary shadow-lg shadow-primary/20'
-                      : 'bg-input/30 border-glass-border hover:bg-input/50 hover:border-primary/50'
-                  }`}
-                >
-                  <div className="text-4xl mb-2">{interest.emoji}</div>
-                  <div className="font-bold text-sm">{interest.label}</div>
-                  {isSelected && (
-                    <motion.div
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      className="absolute top-2 right-2 w-6 h-6 bg-secondary rounded-full flex items-center justify-center"
-                    >
-                      <Check className="w-4 h-4 text-background" />
-                    </motion.div>
-                  )}
-                </motion.button>
-              );
-            })}
           </div>
 
           {/* Generate Button */}
           <Button
-            onClick={() => setStep('generating')}
+            onClick={handleNext}
             disabled={!isComplete}
             size="lg"
             className="w-full bg-gradient-to-r from-primary to-[hsl(330_80%_60%)] hover:scale-105 transition-transform duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
@@ -106,9 +86,15 @@ export const InterestsStep = () => {
             Generate My Book
           </Button>
 
-          {!isComplete && selectedInterests.length < 3 && (
+          {!isComplete && parsedInterests.length < 3 && (
             <p className="text-sm text-muted-foreground text-center mt-4">
-              Please select at least 3 interests
+              Please enter at least 3 interests
+            </p>
+          )}
+          
+          {parsedInterests.length > 5 && (
+            <p className="text-sm text-destructive text-center mt-4">
+              Please enter no more than 5 interests
             </p>
           )}
         </motion.div>

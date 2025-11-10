@@ -102,21 +102,29 @@ Return a JSON array of exactly 12 prompts, each with:
 
     let prompts;
     try {
-      // Strip markdown code blocks if present
+      // Robust markdown stripping - remove all backticks and extract JSON
       let cleanContent = content.trim();
-      if (cleanContent.startsWith('```json')) {
-        cleanContent = cleanContent.replace(/^```json\s*\n?/, '').replace(/\n?```\s*$/, '');
-      } else if (cleanContent.startsWith('```')) {
-        cleanContent = cleanContent.replace(/^```\s*\n?/, '').replace(/\n?```\s*$/, '');
+      
+      // Remove all backticks and 'json' markers
+      cleanContent = cleanContent.replace(/```json/g, '').replace(/```/g, '').trim();
+      
+      // Extract JSON between first [ or { and last ] or }
+      const jsonStart = Math.max(cleanContent.indexOf('['), cleanContent.indexOf('{'));
+      const jsonEnd = Math.max(cleanContent.lastIndexOf(']'), cleanContent.lastIndexOf('}'));
+      
+      if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+        cleanContent = cleanContent.substring(jsonStart, jsonEnd + 1);
       }
+      
+      console.log('Cleaned content for parsing:', cleanContent.substring(0, 200));
       
       const parsed = JSON.parse(cleanContent);
       prompts = parsed.prompts || parsed;
       
-      console.log('Parsed prompts:', prompts);
+      console.log('Successfully parsed prompts:', prompts.length, 'prompts');
     } catch (e) {
       console.error('Failed to parse AI response as JSON:', e);
-      console.error('Raw content:', content);
+      console.error('Raw content:', content.substring(0, 500));
       return new Response(
         JSON.stringify({ error: 'Invalid AI response format' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
