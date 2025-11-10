@@ -1,12 +1,34 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { AnimatePresence } from 'framer-motion';
+import { useBookStore } from '@/store/bookStore';
+import { HeroSection } from '@/components/HeroSection';
+import { ProgressBar } from '@/components/ProgressBar';
+import { UploadStep } from '@/components/UploadStep';
+import { InterestsStep } from '@/components/InterestsStep';
+import { GeneratingStep } from '@/components/GeneratingStep';
+import { CompleteStep } from '@/components/CompleteStep';
 
 const Index = () => {
+  const currentStep = useBookStore((state) => state.currentStep);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
-      <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
-      </div>
+    <div className="min-h-screen bg-background relative overflow-hidden">
+      {/* Background Gradient */}
+      <div
+        className="fixed inset-0 -z-10"
+        style={{
+          background: 'linear-gradient(to bottom right, hsl(222 47% 11%), hsl(280 80% 20% / 0.2), hsl(222 47% 11%))',
+        }}
+      />
+
+      <ProgressBar currentStep={currentStep} />
+
+      <AnimatePresence mode="wait">
+        {currentStep === 'hero' && <HeroSection key="hero" />}
+        {currentStep === 'upload' && <UploadStep key="upload" />}
+        {currentStep === 'interests' && <InterestsStep key="interests" />}
+        {currentStep === 'generating' && <GeneratingStep key="generating" />}
+        {currentStep === 'complete' && <CompleteStep key="complete" />}
+      </AnimatePresence>
     </div>
   );
 };
