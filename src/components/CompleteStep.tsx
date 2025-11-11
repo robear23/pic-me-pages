@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useBookStore } from '@/store/bookStore';
-import { Download, ArrowLeft, ZoomIn, AlertCircle } from 'lucide-react';
+import { Download, ArrowLeft, ZoomIn, AlertCircle, Check } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from '@/components/ui/dialog';
