@@ -3,9 +3,6 @@ import { Button } from '@/components/ui/button';
 import { useBookStore } from '@/store/bookStore';
 import { Check, RefreshCw } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
-import simpleImg from '@/assets/../public/examples/complexity-simple.png';
-import mediumImg from '@/assets/../public/examples/complexity-medium.png';
-import detailedImg from '@/assets/../public/examples/complexity-detailed.png';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export const ReworkSettingsStep = () => {
@@ -27,21 +24,21 @@ export const ReworkSettingsStep = () => {
       label: 'Simple', 
       description: 'Perfect for ages 3-5',
       details: 'Thick outlines, large shapes',
-      image: simpleImg
+      image: '/examples/complexity-simple.png'
     },
     { 
       value: 'medium' as const, 
       label: 'Medium', 
       description: 'Great for ages 5-8',
       details: 'Balanced detail',
-      image: mediumImg
+      image: '/examples/complexity-medium.png'
     },
     { 
       value: 'detailed' as const, 
       label: 'Detailed', 
       description: 'Best for ages 8+',
       details: 'Intricate patterns',
-      image: detailedImg
+      image: '/examples/complexity-detailed.png'
     },
   ];
 
