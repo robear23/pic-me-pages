@@ -1,21 +1,29 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useBookStore } from '@/store/bookStore';
-import { Download, ArrowLeft, ZoomIn } from 'lucide-react';
+import { Download, ArrowLeft, ZoomIn, AlertCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
-import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export const CompleteStep = () => {
-  const { characterName, reset } = useBookStore();
+  const { characterName, generatedPages, reset } = useBookStore();
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
 
-  // Mock generated pages
+  // Use real generated pages, filter for those with images
+  const pagesToShow = (generatedPages || []).filter(p => !!p.imageUrl);
+  const hasRealPages = pagesToShow.length > 0;
+  
+  // Mock pages as fallback
   const mockPages = Array.from({ length: 12 }, (_, i) => ({
     pageNumber: i + 1,
     imageUrl: `https://via.placeholder.com/400x500/1a1a2e/ffffff?text=Page+${i + 1}`,
     prompt: `Coloring page ${i + 1}`,
   }));
+  
+  const pages = hasRealPages ? pagesToShow : mockPages;
+  const failedCount = (generatedPages || []).length - pagesToShow.length;
 
   useEffect(() => {
     // Trigger confetti
@@ -24,6 +32,14 @@ export const CompleteStep = () => {
       spread: 70,
       origin: { y: 0.6 },
       colors: ['#a855f7', '#86efac'],
+    });
+    
+    // Development diagnostics
+    console.log('CompleteStep mounted:', {
+      totalPages: generatedPages?.length || 0,
+      pagesWithImages: pagesToShow.length,
+      hasRealPages,
+      sampleImagePrefix: pagesToShow[0]?.imageUrl?.substring(0, 50)
     });
   }, []);
 
@@ -52,9 +68,26 @@ export const CompleteStep = () => {
             Your Book is Ready! 🎉
           </h2>
           <p className="text-xl text-muted-foreground">
-            {characterName}'s personalized coloring book with 12 unique pages
+            {characterName}'s personalized coloring book with {pages.length} unique page{pages.length !== 1 ? 's' : ''}
           </p>
         </motion.div>
+
+        {/* Partial failure warning */}
+        {failedCount > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.15 }}
+            className="mb-8"
+          >
+            <Alert variant="default" className="border-yellow-500/50 bg-yellow-500/10">
+              <AlertCircle className="h-4 w-4 text-yellow-500" />
+              <AlertDescription className="text-yellow-200">
+                {failedCount} page{failedCount !== 1 ? 's' : ''} failed to generate. Showing {pages.length} successful page{pages.length !== 1 ? 's' : ''}.
+              </AlertDescription>
+            </Alert>
+          </motion.div>
+        )}
 
         {/* Gallery Grid */}
         <motion.div
@@ -63,7 +96,7 @@ export const CompleteStep = () => {
           transition={{ duration: 0.5, delay: 0.2 }}
           className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 mb-12"
         >
-          {mockPages.map((page, index) => (
+          {pages.map((page, index) => (
             <Dialog key={page.pageNumber}>
               <DialogTrigger asChild>
                 <motion.div
@@ -75,7 +108,8 @@ export const CompleteStep = () => {
                 >
                   <img
                     src={page.imageUrl}
-                    alt={`Page ${page.pageNumber}`}
+                    alt={`${characterName} - Page ${page.pageNumber}`}
+                    loading="lazy"
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
@@ -87,9 +121,13 @@ export const CompleteStep = () => {
                 </motion.div>
               </DialogTrigger>
               <DialogContent className="max-w-3xl">
+                <DialogTitle className="sr-only">Page {page.pageNumber} Preview</DialogTitle>
+                <DialogDescription className="sr-only">
+                  Enlarged preview of {characterName}'s coloring page {page.pageNumber}
+                </DialogDescription>
                 <img
                   src={page.imageUrl}
-                  alt={`Page ${page.pageNumber}`}
+                  alt={`${characterName} - Page ${page.pageNumber}`}
                   className="w-full h-auto"
                 />
               </DialogContent>
