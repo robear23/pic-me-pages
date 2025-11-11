@@ -3,9 +3,6 @@ import { Button } from '@/components/ui/button';
 import { useBookStore } from '@/store/bookStore';
 import { Check } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
-import simpleImg from '@/assets/../public/examples/complexity-simple.png';
-import mediumImg from '@/assets/../public/examples/complexity-medium.png';
-import detailedImg from '@/assets/../public/examples/complexity-detailed.png';
 
 export const SettingsStep = () => {
   const { 
@@ -25,21 +22,21 @@ export const SettingsStep = () => {
       label: 'Simple', 
       description: 'Perfect for ages 3-5',
       details: 'Thick outlines, large shapes, minimal detail',
-      image: simpleImg
+      image: '/examples/complexity-simple.png'
     },
     { 
       value: 'medium' as const, 
       label: 'Medium', 
       description: 'Great for ages 5-8',
       details: 'Balanced detail, moderate shapes',
-      image: mediumImg
+      image: '/examples/complexity-medium.png'
     },
     { 
       value: 'detailed' as const, 
       label: 'Detailed', 
       description: 'Best for ages 8+',
       details: 'Intricate lines, rich patterns',
-      image: detailedImg
+      image: '/examples/complexity-detailed.png'
     },
   ];
 
