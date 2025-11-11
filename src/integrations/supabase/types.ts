@@ -14,7 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      waitlist: {
+        Row: {
+          child_age: number | null
+          email: string
+          id: string
+          name: string
+          signed_up_at: string | null
+        }
+        Insert: {
+          child_age?: number | null
+          email: string
+          id?: string
+          name: string
+          signed_up_at?: string | null
+        }
+        Update: {
+          child_age?: number | null
+          email?: string
+          id?: string
+          name?: string
+          signed_up_at?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
