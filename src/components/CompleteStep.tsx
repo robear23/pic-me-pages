@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useBookStore } from '@/store/bookStore';
-import { Download, ArrowLeft, ZoomIn, AlertCircle, Check } from 'lucide-react';
+import { Download, ArrowLeft, ZoomIn, AlertCircle, Check, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import confetti from 'canvas-confetti';
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -11,6 +11,7 @@ export const CompleteStep = () => {
   const { characters, generatedPages, selectedPagesForRework, maxReworksReached, togglePageForRework, enterReworkMode, setStep, reset } = useBookStore();
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   
   const characterNames = characters.map(c => c.name).filter(Boolean).join(' and ');
 
@@ -52,9 +53,76 @@ export const CompleteStep = () => {
     });
   }, []);
 
-  const handleDownload = () => {
-    // TODO: Implement PDF generation with jsPDF
-    console.log('Downloading PDF...');
+  const handleDownload = async () => {
+    setIsDownloading(true);
+    try {
+      console.log('Downloading PDF...');
+      const { jsPDF } = await import('jspdf');
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'in',
+        format: 'letter'
+      });
+
+      const pageWidth = 8.5;
+      const pageHeight = 11;
+      const margin = 0.5;
+      const imageWidth = pageWidth - (margin * 2);
+      const imageHeight = pageHeight - (margin * 2);
+
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
+        
+        if (!page.imageUrl) continue;
+        
+        if (i > 0) {
+          pdf.addPage();
+        }
+
+        try {
+          pdf.addImage(
+            page.imageUrl,
+            'PNG',
+            margin,
+            margin,
+            imageWidth,
+            imageHeight,
+            undefined,
+            'FAST'
+          );
+
+          pdf.setFontSize(10);
+          pdf.setTextColor(100);
+          pdf.text(
+            `Page ${page.pageNumber}`,
+            pageWidth / 2,
+            pageHeight - 0.25,
+            { align: 'center' }
+          );
+        } catch (imgError) {
+          console.error(`Failed to add page ${page.pageNumber}:`, imgError);
+        }
+      }
+
+      const filename = `${characterNames || 'Coloring-Book'}-${Date.now()}.pdf`;
+      pdf.save(filename);
+
+      const { toast } = await import('@/hooks/use-toast');
+      toast({
+        title: 'PDF Downloaded!',
+        description: `${pages.length} pages saved as ${filename}`,
+      });
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      const { toast } = await import('@/hooks/use-toast');
+      toast({
+        title: 'Download Failed',
+        description: 'Unable to generate PDF. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -121,9 +189,18 @@ export const CompleteStep = () => {
               </>
             )}
             
-            <Button onClick={handleDownload} size="lg">
-              <Download className="w-5 h-5 mr-2" />
-              Download PDF
+            <Button onClick={handleDownload} size="lg" disabled={isDownloading}>
+              {isDownloading ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  Generating PDF...
+                </>
+              ) : (
+                <>
+                  <Download className="w-5 h-5 mr-2" />
+                  Download PDF
+                </>
+              )}
             </Button>
           </motion.div>
           
@@ -247,10 +324,20 @@ export const CompleteStep = () => {
           <Button
             onClick={handleDownload}
             size="lg"
+            disabled={isDownloading}
             className="bg-gradient-to-r from-secondary to-[hsl(170_70%_50%)] hover:scale-105 transition-transform duration-300 text-lg px-8"
           >
-            <Download className="w-5 h-5 mr-2" />
-            Download PDF
+            {isDownloading ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Generating PDF...
+              </>
+            ) : (
+              <>
+                <Download className="w-5 h-5 mr-2" />
+                Download PDF
+              </>
+            )}
           </Button>
           <Button
             onClick={reset}
