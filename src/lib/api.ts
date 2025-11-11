@@ -2,6 +2,7 @@ export interface GeneratedPrompt {
   pageNumber: number;
   interest: string;
   prompt: string;
+  characterName?: string;
 }
 
 export interface GeneratedPage {

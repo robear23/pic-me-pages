@@ -44,8 +44,11 @@ serve(async (req) => {
       console.log(`Generating image ${i + 1}/12: ${prompt.prompt?.substring(0, 50)}...`);
       
       try {
-        // Enhanced prompt for coloring book style
-        const enhancedPrompt = `${prompt.prompt}. Style: Black and white line art, coloring book style, simple clean outlines, no shading, no gradients, suitable for children ages 3-8 to color in.`;
+        // Enhanced prompt for coloring book style with character description
+        const characterName = prompt.characterName || 'the character';
+        const enhancedPrompt = `Create a black and white coloring book page featuring a child named ${characterName}. Scene: ${prompt.prompt}. Style: Simple clean outlines, no shading, no gradients, thick black lines, white background, suitable for children ages 3-8 to color in. The illustration should be friendly, age-appropriate, and easy to color.`;
+        
+        console.log(`Generating image ${i + 1} with enhanced prompt for ${characterName}`);
         
         const imageResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
@@ -58,13 +61,7 @@ serve(async (req) => {
             messages: [
               {
                 role: 'user',
-                content: [
-                  { type: 'text', text: enhancedPrompt },
-                  ...characterPhotos.slice(0, 3).map((photo: string) => ({
-                    type: 'image_url',
-                    image_url: { url: photo }
-                  }))
-                ]
+                content: enhancedPrompt
               }
             ],
             modalities: ['image', 'text']
@@ -97,10 +94,17 @@ serve(async (req) => {
         }
 
         const imageData = await imageResponse.json();
+        console.log(`API response for page ${i + 1} structure:`, JSON.stringify(imageData).substring(0, 500));
+        
         const generatedImage = imageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
         
         if (!generatedImage) {
           console.error(`No image in response for page ${i + 1}`);
+          console.error('Full API response:', JSON.stringify(imageData));
+          console.error('Response keys:', Object.keys(imageData));
+          if (imageData.choices?.[0]?.message) {
+            console.error('Message structure:', JSON.stringify(imageData.choices[0].message));
+          }
           generatedPages.push({
             pageNumber: prompt.pageNumber || i + 1,
             imageUrl: '',

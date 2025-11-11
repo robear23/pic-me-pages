@@ -143,6 +143,15 @@ Return a JSON array of exactly 12 prompts, each with:
         throw new Error('Parsed JSON is not an array or object with prompts');
       }
       console.log('Successfully parsed prompts:', Array.isArray(prompts) ? prompts.length : 'object');
+      
+      // Add characterName to each prompt
+      prompts = prompts.map((p: any) => ({
+        pageNumber: p.pageNumber,
+        interest: p.interest,
+        prompt: p.prompt,
+        characterName: characterName
+      }));
+      
     } catch (e) {
       console.error('Failed to parse AI response as JSON:', e);
       console.error('Raw content:', content.substring(0, 500));

@@ -70,9 +70,15 @@ export const GeneratingStep = () => {
 
         // Step 4: Generating coloring pages (50-90%)
         setGenerationStatus(GENERATION_STEPS[3]);
-        console.log('Generating images with prompts and photos...');
+        console.log('Generating images with character name in prompts...');
         
-        const { pages, successCount } = await generateImages(generatedPrompts, base64Photos);
+        // Ensure character name is in each prompt
+        const promptsWithCharacter = generatedPrompts.map(p => ({
+          ...p,
+          characterName: characterName
+        }));
+        
+        const { pages, successCount } = await generateImages(promptsWithCharacter, base64Photos);
         setGenerationProgress(90);
         
         console.log(`Generated ${successCount}/12 images`);
