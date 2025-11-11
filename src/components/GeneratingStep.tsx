@@ -17,16 +17,22 @@ const GENERATION_STEPS = [
 
 export const GeneratingStep = () => {
   const { 
-    characterName, 
-    selectedInterests, 
-    characterPhotos,
+    characters,
+    selectedInterests,
+    complexity,
+    artStyle,
+    consistentCharacters,
     generationProgress, 
-    generationStatus, 
+    generationStatus,
+    isReworkMode,
+    selectedPagesForRework,
+    generatedPages,
     setGenerationProgress, 
     setGenerationStatus, 
     setStep,
     setGeneratedPages,
-    setApiError 
+    setApiError,
+    completeRework
   } = useBookStore();
   
   const { toast } = useToast();
@@ -39,26 +45,40 @@ export const GeneratingStep = () => {
         setGenerationStatus(GENERATION_STEPS[0]);
         setGenerationProgress(10);
         
-        // Convert File objects to base64
-        const photoPromises = characterPhotos
-          .filter((photo): photo is File => photo !== null)
-          .map((photo) => {
-            return new Promise<string>((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onloadend = () => resolve(reader.result as string);
-              reader.onerror = reject;
-              reader.readAsDataURL(photo);
-            });
-          });
-
-        const base64Photos = await Promise.all(photoPromises);
+        // Convert all character photos to base64
+        const charactersWithPhotos = await Promise.all(
+          characters.map(async (char) => {
+            const photoPromises = char.photos
+              .filter((photo): photo is File => photo !== null)
+              .map((photo) => {
+                return new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.onerror = reject;
+                  reader.readAsDataURL(photo);
+                });
+              });
+            const base64Photos = await Promise.all(photoPromises);
+            return {
+              name: char.name,
+              photos: base64Photos
+            };
+          })
+        );
+        
         setGenerationProgress(20);
 
         // Step 2: Understanding interests (20-40%)
         setGenerationStatus(GENERATION_STEPS[1]);
-        console.log('Generating prompts for:', characterName, selectedInterests);
+        console.log('Generating prompts for:', charactersWithPhotos.map(c => c.name).join(', '), selectedInterests);
         
-        const { prompts: generatedPrompts } = await generatePrompts(characterName, selectedInterests);
+        const { prompts: generatedPrompts } = await generatePrompts(
+          charactersWithPhotos, 
+          selectedInterests,
+          complexity,
+          artStyle,
+          consistentCharacters
+        );
         setPrompts(generatedPrompts);
         setGenerationProgress(40);
         
@@ -70,19 +90,46 @@ export const GeneratingStep = () => {
 
         // Step 4: Generating coloring pages (50-90%)
         setGenerationStatus(GENERATION_STEPS[3]);
-        console.log('Generating images with character name in prompts...');
+        console.log('Generating images...');
         
-        // Ensure character name is in each prompt
-        const promptsWithCharacter = generatedPrompts.map(p => ({
-          ...p,
-          characterName: characterName
-        }));
+        // If in rework mode, only regenerate selected pages
+        let finalPages;
+        if (isReworkMode && selectedPagesForRework.length > 0) {
+          const promptsToRework = generatedPrompts.filter(p => 
+            selectedPagesForRework.includes(p.pageNumber)
+          );
+          
+          const { pages: reworkedPages } = await generateImages(
+            promptsToRework,
+            charactersWithPhotos,
+            complexity,
+            artStyle,
+            consistentCharacters
+          );
+          
+          // Merge with existing pages
+          finalPages = generatedPages.map(page => {
+            const reworked = reworkedPages.find(p => p.pageNumber === page.pageNumber);
+            return reworked || page;
+          });
+          
+          completeRework();
+        } else {
+          const { pages } = await generateImages(
+            generatedPrompts,
+            charactersWithPhotos,
+            complexity,
+            artStyle,
+            consistentCharacters
+          );
+          finalPages = pages;
+        }
         
-        const { pages, successCount } = await generateImages(promptsWithCharacter, base64Photos);
         setGenerationProgress(90);
         
-        console.log(`Generated ${successCount}/12 images`);
-        setGeneratedPages(pages);
+        const successCount = finalPages.filter(p => p.imageUrl).length;
+        console.log(`Generated ${successCount}/${finalPages.length} images`);
+        setGeneratedPages(finalPages);
 
         // Step 5: Finalizing (90-100%)
         setGenerationStatus(GENERATION_STEPS[4]);
@@ -91,10 +138,15 @@ export const GeneratingStep = () => {
         await new Promise(resolve => setTimeout(resolve, 500));
         setGenerationProgress(100);
 
-        if (successCount < 12) {
+        if (isReworkMode) {
+          toast({
+            title: 'Rework Complete!',
+            description: `Successfully regenerated ${successCount} page${successCount !== 1 ? 's' : ''}.`,
+          });
+        } else if (successCount < finalPages.length) {
           toast({
             title: 'Partial Success',
-            description: `Generated ${successCount} out of 12 pages. Some pages may need regeneration.`,
+            description: `Generated ${successCount} out of ${finalPages.length} pages.`,
             variant: 'default',
           });
         } else {
@@ -126,14 +178,20 @@ export const GeneratingStep = () => {
 
     runGeneration();
   }, [
-    characterName, 
-    selectedInterests, 
-    characterPhotos,
-    setGenerationProgress, 
-    setGenerationStatus, 
+    characters,
+    selectedInterests,
+    complexity,
+    artStyle,
+    consistentCharacters,
+    isReworkMode,
+    selectedPagesForRework,
+    generatedPages,
+    setGenerationProgress,
+    setGenerationStatus,
     setStep,
     setGeneratedPages,
     setApiError,
+    completeRework,
     toast
   ]);
 

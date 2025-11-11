@@ -1,17 +1,34 @@
 import { create } from 'zustand';
 
-export type BookStep = 'hero' | 'upload' | 'interests' | 'generating' | 'complete';
+export type BookStep = 'hero' | 'upload' | 'settings' | 'interests' | 'generating' | 'complete' | 'rework-settings';
+
+export interface Character {
+  id: string;
+  name: string;
+  photos: (File | null)[];
+}
 
 export interface GeneratedPage {
   pageNumber: number;
   imageUrl: string;
   prompt: string;
+  error?: string;
+}
+
+export interface GenerationParams {
+  characters: Character[];
+  complexity: 'simple' | 'medium' | 'detailed';
+  artStyle: 'cartoon' | 'realistic' | 'minimalist' | 'whimsical';
+  consistentCharacters: boolean;
+  interests: string[];
 }
 
 interface BookState {
   currentStep: BookStep;
-  characterName: string;
-  characterPhotos: (File | null)[];
+  characters: Character[];
+  complexity: 'simple' | 'medium' | 'detailed';
+  artStyle: 'cartoon' | 'realistic' | 'minimalist' | 'whimsical';
+  consistentCharacters: boolean;
   selectedInterests: string[];
   generatedPages: GeneratedPage[];
   generationProgress: number;
@@ -20,11 +37,22 @@ interface BookState {
   isGeneratingPrompts: boolean;
   isGeneratingImages: boolean;
   currentApiCall: 'prompts' | 'images' | 'photos' | null;
+  selectedPagesForRework: number[];
+  originalGenerationParams: GenerationParams | null;
+  isReworkMode: boolean;
+  maxReworksReached: boolean;
   
   setStep: (step: BookStep) => void;
-  setCharacterName: (name: string) => void;
-  setCharacterPhoto: (index: number, file: File | null) => void;
+  addCharacter: () => void;
+  removeCharacter: (id: string) => void;
+  updateCharacter: (id: string, updates: Partial<Character>) => void;
+  setCharacterPhoto: (characterId: string, photoIndex: number, file: File | null) => void;
+  setComplexity: (complexity: 'simple' | 'medium' | 'detailed') => void;
+  setArtStyle: (style: 'cartoon' | 'realistic' | 'minimalist' | 'whimsical') => void;
+  toggleConsistentCharacters: () => void;
   toggleInterest: (interest: string) => void;
+  setInterests: (interests: string[]) => void;
+  togglePageForRework: (pageNumber: number) => void;
   setGeneratedPages: (pages: GeneratedPage[]) => void;
   setGenerationProgress: (progress: number) => void;
   setGenerationStatus: (status: string) => void;
@@ -32,13 +60,23 @@ interface BookState {
   setIsGeneratingPrompts: (loading: boolean) => void;
   setIsGeneratingImages: (loading: boolean) => void;
   setCurrentApiCall: (call: 'prompts' | 'images' | 'photos' | null) => void;
+  enterReworkMode: () => void;
+  completeRework: () => void;
   reset: () => void;
 }
 
+const createDefaultCharacter = (): Character => ({
+  id: Math.random().toString(36).substring(7),
+  name: '',
+  photos: [null, null, null],
+});
+
 const initialState = {
   currentStep: 'hero' as BookStep,
-  characterName: '',
-  characterPhotos: [null, null, null] as (File | null)[],
+  characters: [createDefaultCharacter()],
+  complexity: 'medium' as const,
+  artStyle: 'cartoon' as const,
+  consistentCharacters: true,
   selectedInterests: [] as string[],
   generatedPages: [] as GeneratedPage[],
   generationProgress: 0,
@@ -47,21 +85,56 @@ const initialState = {
   isGeneratingPrompts: false,
   isGeneratingImages: false,
   currentApiCall: null as 'prompts' | 'images' | 'photos' | null,
+  selectedPagesForRework: [] as number[],
+  originalGenerationParams: null as GenerationParams | null,
+  isReworkMode: false,
+  maxReworksReached: false,
 };
 
-export const useBookStore = create<BookState>((set) => ({
+export const useBookStore = create<BookState>((set, get) => ({
   ...initialState,
   
   setStep: (step) => set({ currentStep: step }),
   
-  setCharacterName: (name) => set({ characterName: name }),
-  
-  setCharacterPhoto: (index, file) =>
+  addCharacter: () =>
     set((state) => {
-      const newPhotos = [...state.characterPhotos];
-      newPhotos[index] = file;
-      return { characterPhotos: newPhotos };
+      if (state.characters.length >= 5) return state;
+      return {
+        characters: [...state.characters, createDefaultCharacter()],
+      };
     }),
+  
+  removeCharacter: (id) =>
+    set((state) => {
+      if (state.characters.length <= 1) return state;
+      return {
+        characters: state.characters.filter((c) => c.id !== id),
+      };
+    }),
+  
+  updateCharacter: (id, updates) =>
+    set((state) => ({
+      characters: state.characters.map((c) =>
+        c.id === id ? { ...c, ...updates } : c
+      ),
+    })),
+  
+  setCharacterPhoto: (characterId, photoIndex, file) =>
+    set((state) => ({
+      characters: state.characters.map((c) => {
+        if (c.id !== characterId) return c;
+        const newPhotos = [...c.photos];
+        newPhotos[photoIndex] = file;
+        return { ...c, photos: newPhotos };
+      }),
+    })),
+  
+  setComplexity: (complexity) => set({ complexity }),
+  
+  setArtStyle: (artStyle) => set({ artStyle }),
+  
+  toggleConsistentCharacters: () =>
+    set((state) => ({ consistentCharacters: !state.consistentCharacters })),
   
   toggleInterest: (interest) =>
     set((state) => {
@@ -71,9 +144,27 @@ export const useBookStore = create<BookState>((set) => ({
           selectedInterests: state.selectedInterests.filter((i) => i !== interest),
         };
       } else {
-        if (state.selectedInterests.length >= 5) return state;
         return {
           selectedInterests: [...state.selectedInterests, interest],
+        };
+      }
+    }),
+  
+  setInterests: (interests) => set({ selectedInterests: interests }),
+  
+  togglePageForRework: (pageNumber) =>
+    set((state) => {
+      const isSelected = state.selectedPagesForRework.includes(pageNumber);
+      const maxSelectable = Math.floor(state.generatedPages.length * 0.5);
+      
+      if (isSelected) {
+        return {
+          selectedPagesForRework: state.selectedPagesForRework.filter((p) => p !== pageNumber),
+        };
+      } else {
+        if (state.selectedPagesForRework.length >= maxSelectable) return state;
+        return {
+          selectedPagesForRework: [...state.selectedPagesForRework, pageNumber],
         };
       }
     }),
@@ -91,6 +182,22 @@ export const useBookStore = create<BookState>((set) => ({
   setIsGeneratingImages: (loading) => set({ isGeneratingImages: loading }),
   
   setCurrentApiCall: (call) => set({ currentApiCall: call }),
+  
+  enterReworkMode: () => {
+    const state = get();
+    set({
+      isReworkMode: true,
+      originalGenerationParams: {
+        characters: state.characters,
+        complexity: state.complexity,
+        artStyle: state.artStyle,
+        consistentCharacters: state.consistentCharacters,
+        interests: state.selectedInterests,
+      },
+    });
+  },
+  
+  completeRework: () => set({ maxReworksReached: true, isReworkMode: false }),
   
   reset: () => set(initialState),
 }));

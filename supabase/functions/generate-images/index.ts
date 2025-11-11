@@ -12,18 +12,18 @@ serve(async (req) => {
   }
 
   try {
-    const { prompts, characterPhotos } = await req.json();
+    const { prompts, characters, complexity, artStyle, consistentCharacters } = await req.json();
     
-    if (!prompts || !Array.isArray(prompts) || prompts.length !== 12) {
+    if (!prompts || !Array.isArray(prompts) || prompts.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Invalid input: 12 prompts required' }),
+        JSON.stringify({ error: 'Invalid input: prompts array required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    if (!characterPhotos || !Array.isArray(characterPhotos) || characterPhotos.length < 1) {
+    if (!characters || !Array.isArray(characters) || characters.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Invalid input: at least 1 character photo required' }),
+        JSON.stringify({ error: 'Invalid input: at least 1 character required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -37,18 +37,38 @@ serve(async (req) => {
       );
     }
 
+    const characterNames = characters.map((c: any) => c.name).join(' and ');
+    
+    const complexityStyles = {
+      simple: 'Ultra simple thick lines (4-6px). Only 5-8 large basic shapes. Minimal detail. Very easy for young children to color.',
+      medium: 'Moderate line weight (2-3px). 10-15 medium shapes. Balanced detail with some texture. Good for elementary age.',
+      detailed: 'Fine intricate lines (1-2px). 20+ shapes with patterns and textures. Rich decorative detail. Challenging for older kids.'
+    };
+
     const generatedPages = [];
     
     for (let i = 0; i < prompts.length; i++) {
       const prompt = prompts[i];
-      console.log(`Generating image ${i + 1}/12: ${prompt.prompt?.substring(0, 50)}...`);
+      console.log(`Generating image ${i + 1}/${prompts.length}: ${prompt.prompt?.substring(0, 50)}...`);
       
       try {
-        // Enhanced prompt for coloring book style with character description
-        const characterName = prompt.characterName || 'the character';
-        const enhancedPrompt = `Create a black and white coloring book page featuring a child named ${characterName}. Scene: ${prompt.prompt}. Style: Simple clean outlines, no shading, no gradients, thick black lines, white background, suitable for children ages 3-8 to color in. The illustration should be friendly, age-appropriate, and easy to color.`;
-        
-        console.log(`Generating image ${i + 1} with enhanced prompt for ${characterName}`);
+        const enhancedPrompt = `Create a black and white coloring book page.
+
+CHARACTERS: ${characterNames}
+SCENE: ${prompt.prompt}
+
+STYLE REQUIREMENTS:
+- Complexity: ${complexity} - ${complexityStyles[complexity as keyof typeof complexityStyles] || complexityStyles.medium}
+- Art Style: ${artStyle}
+${consistentCharacters ? '- CRITICAL: Keep character appearance EXACTLY consistent with previous pages (same face, hair, clothing, proportions)' : ''}
+- Black and white line art ONLY
+- NO shading, NO gradients, NO gray tones
+- Pure white background
+- Clear outlines suitable for children to color
+- Age-appropriate and friendly
+- ${complexity === 'simple' ? 'Very thick lines, very simple shapes' : ''}
+${complexity === 'medium' ? 'Medium lines, moderate detail' : ''}
+${complexity === 'detailed' ? 'Fine lines, intricate patterns' : ''}`;
         
         const imageResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
           method: 'POST',
@@ -73,7 +93,6 @@ serve(async (req) => {
           console.error(`Image generation error for page ${i + 1}:`, imageResponse.status, errorText);
           
           if (imageResponse.status === 429) {
-            // Wait a bit and continue
             await new Promise(resolve => setTimeout(resolve, 2000));
             generatedPages.push({
               pageNumber: prompt.pageNumber || i + 1,
@@ -94,17 +113,10 @@ serve(async (req) => {
         }
 
         const imageData = await imageResponse.json();
-        console.log(`API response for page ${i + 1} structure:`, JSON.stringify(imageData).substring(0, 500));
-        
         const generatedImage = imageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
         
         if (!generatedImage) {
           console.error(`No image in response for page ${i + 1}`);
-          console.error('Full API response:', JSON.stringify(imageData));
-          console.error('Response keys:', Object.keys(imageData));
-          if (imageData.choices?.[0]?.message) {
-            console.error('Message structure:', JSON.stringify(imageData.choices[0].message));
-          }
           generatedPages.push({
             pageNumber: prompt.pageNumber || i + 1,
             imageUrl: '',
@@ -120,9 +132,9 @@ serve(async (req) => {
           prompt: prompt.prompt
         });
         
-        console.log(`Successfully generated image ${i + 1}/12`);
+        console.log(`Successfully generated image ${i + 1}/${prompts.length}`);
         
-        // Small delay between requests to avoid rate limiting
+        // Delay between requests
         if (i < prompts.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
@@ -139,13 +151,13 @@ serve(async (req) => {
     }
 
     const successCount = generatedPages.filter(p => p.imageUrl).length;
-    console.log(`Generated ${successCount}/12 images successfully`);
+    console.log(`Generated ${successCount}/${prompts.length} images successfully`);
     
     return new Response(
       JSON.stringify({ 
         pages: generatedPages,
         successCount,
-        totalCount: 12
+        totalCount: prompts.length
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

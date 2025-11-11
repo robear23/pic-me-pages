@@ -12,6 +12,11 @@ export interface GeneratedPage {
   error?: string;
 }
 
+export interface Character {
+  name: string;
+  photos?: string[];
+}
+
 const callEdgeFunction = async (functionName: string, body: any) => {
   const response = await fetch(
     `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`,
@@ -41,17 +46,35 @@ const callEdgeFunction = async (functionName: string, body: any) => {
 };
 
 export const generatePrompts = async (
-  characterName: string, 
-  interests: string[]
+  characters: Character[],
+  interests: string[],
+  complexity: 'simple' | 'medium' | 'detailed',
+  artStyle: string,
+  consistentCharacters: boolean
 ): Promise<{ prompts: GeneratedPrompt[] }> => {
-  return callEdgeFunction('generate-prompts', { characterName, interests });
+  return callEdgeFunction('generate-prompts', { 
+    characters, 
+    interests,
+    complexity,
+    artStyle,
+    consistentCharacters
+  });
 };
 
 export const generateImages = async (
   prompts: GeneratedPrompt[], 
-  characterPhotos: string[]
+  characters: Character[],
+  complexity: 'simple' | 'medium' | 'detailed',
+  artStyle: string,
+  consistentCharacters: boolean
 ): Promise<{ pages: GeneratedPage[]; successCount: number; totalCount: number }> => {
-  return callEdgeFunction('generate-images', { prompts, characterPhotos });
+  return callEdgeFunction('generate-images', { 
+    prompts, 
+    characters,
+    complexity,
+    artStyle,
+    consistentCharacters
+  });
 };
 
 export const uploadPhotos = async (

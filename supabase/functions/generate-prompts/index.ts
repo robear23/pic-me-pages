@@ -12,11 +12,18 @@ serve(async (req) => {
   }
 
   try {
-    const { characterName, interests } = await req.json();
+    const { characters, interests, complexity, artStyle, consistentCharacters } = await req.json();
     
-    if (!characterName || !interests || !Array.isArray(interests)) {
+    if (!characters || !Array.isArray(characters) || characters.length === 0) {
       return new Response(
-        JSON.stringify({ error: 'Invalid input: characterName and interests array required' }),
+        JSON.stringify({ error: 'Invalid input: characters array required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    if (!interests || !Array.isArray(interests) || interests.length < 3) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid input: at least 3 interests required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -30,21 +37,31 @@ serve(async (req) => {
       );
     }
 
-    const systemPrompt = `You are an expert at creating child-friendly coloring page descriptions. Generate 12 unique, detailed prompts for black & white coloring pages featuring ${characterName} in scenarios related to their interests: ${interests.join(', ')}.
+    const characterNames = characters.map((c: any) => c.name).join(' and ');
+    const complexityGuide = {
+      simple: 'Use thick, clear lines (4-6px). Minimal background. Large simple shapes. Ages 3-5.',
+      medium: 'Balanced detail with moderate line weight (2-3px). Some background elements. Mix of shapes. Ages 5-8.',
+      detailed: 'Intricate patterns with fine lines (1-2px). Rich backgrounds. Small details and textures. Ages 8+.'
+    };
 
-Each prompt should describe a single scene suitable for a coloring book:
+    const systemPrompt = `You are an expert at creating child-friendly coloring page descriptions. Generate 12 unique, detailed prompts for black & white coloring pages featuring ${characterNames} in scenarios related to their interests: ${interests.join(', ')}.
+
+STYLE REQUIREMENTS:
+- Complexity: ${complexity} - ${complexityGuide[complexity as keyof typeof complexityGuide] || complexityGuide.medium}
+- Art Style: ${artStyle}
+- Character Consistency: ${consistentCharacters ? 'CRITICAL - Keep character appearances consistent across ALL pages. Use same clothing, hair, facial features throughout.' : 'Varied appearances are OK'}
 - Simple outlines, no shading or gradients
 - Black and white line art only
-- Child-appropriate content (ages 3-8)
-- Focus on action, setting, and the character's presence in each scene
-- Distribute scenes across the selected interests evenly
-- Make each scene distinct and engaging
+- Child-appropriate content
+- Focus on action, setting, and clear character presence
+
+Distribute scenes evenly across the selected interests.
 
 Return a JSON array of exactly 12 prompts, each with:
 {
   "pageNumber": 1-12,
-  "interest": "the interest category this relates to",
-  "prompt": "detailed scene description"
+  "interest": "the interest category",
+  "prompt": "detailed scene description including character names and style notes"
 }`;
 
     console.log('Calling Lovable AI for prompt generation...');
@@ -59,7 +76,7 @@ Return a JSON array of exactly 12 prompts, each with:
         model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Generate 12 coloring page prompts for ${characterName} based on these interests: ${interests.join(', ')}` }
+          { role: 'user', content: `Generate 12 coloring page prompts for ${characterNames} (${complexity} complexity, ${artStyle} style) based on: ${interests.join(', ')}` }
         ],
         response_format: { type: "json_object" }
       }),
@@ -102,13 +119,9 @@ Return a JSON array of exactly 12 prompts, each with:
 
     let prompts;
     try {
-      // Robust JSON extraction from possibly fenced/verbose output
       let cleanContent = content.trim();
-
-      // Remove code fences and language hints
       cleanContent = cleanContent.replace(/```json/g, '').replace(/```/g, '').trim();
 
-      // Extract the first complete top-level JSON block (array preferred)
       const extractTopLevelJSON = (s: string): string | null => {
         const scan = (open: string, close: string): string | null => {
           let start = s.indexOf(open);
@@ -134,27 +147,23 @@ Return a JSON array of exactly 12 prompts, each with:
       };
 
       const candidate = extractTopLevelJSON(cleanContent) ?? cleanContent;
-      console.log('Cleaned content for parsing (first 200):', candidate.substring(0, 200));
-
       const parsed = JSON.parse(candidate);
       prompts = parsed.prompts || parsed;
 
       if (!Array.isArray(prompts)) {
-        throw new Error('Parsed JSON is not an array or object with prompts');
+        throw new Error('Parsed JSON is not an array');
       }
-      console.log('Successfully parsed prompts:', Array.isArray(prompts) ? prompts.length : 'object');
       
-      // Add characterName to each prompt
+      // Add character names to each prompt
       prompts = prompts.map((p: any) => ({
         pageNumber: p.pageNumber,
         interest: p.interest,
         prompt: p.prompt,
-        characterName: characterName
+        characterName: characterNames
       }));
       
     } catch (e) {
-      console.error('Failed to parse AI response as JSON:', e);
-      console.error('Raw content:', content.substring(0, 500));
+      console.error('Failed to parse AI response:', e);
       return new Response(
         JSON.stringify({ error: 'Invalid AI response format' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -162,7 +171,7 @@ Return a JSON array of exactly 12 prompts, each with:
     }
 
     if (!Array.isArray(prompts) || prompts.length !== 12) {
-      console.error('Invalid prompts array:', prompts);
+      console.error('Invalid prompts count:', prompts?.length);
       return new Response(
         JSON.stringify({ error: 'Invalid number of prompts generated' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -6,7 +6,7 @@ import { useBookStore } from '@/store/bookStore';
 import { Sparkles } from 'lucide-react';
 
 export const InterestsStep = () => {
-  const { characterName, selectedInterests, setStep } = useBookStore();
+  const { characters, selectedInterests, setInterests, setStep } = useBookStore();
   const [interestsText, setInterestsText] = useState(selectedInterests.join(', '));
 
   // Parse comma-separated interests
@@ -15,11 +15,11 @@ export const InterestsStep = () => {
     .map(i => i.trim())
     .filter(i => i.length > 0);
   
-  const isComplete = parsedInterests.length >= 3 && parsedInterests.length <= 5;
+  const isComplete = parsedInterests.length >= 3;
+  const characterNames = characters.map(c => c.name).filter(Boolean).join(', ');
   
   const handleNext = () => {
-    // Update store with parsed interests array
-    useBookStore.setState({ selectedInterests: parsedInterests });
+    setInterests(parsedInterests);
     setStep('generating');
   };
 
@@ -39,10 +39,13 @@ export const InterestsStep = () => {
           className="backdrop-blur-lg bg-glass-bg border border-glass-border rounded-2xl p-8 md:p-12"
         >
           <h2 className="font-black text-4xl md:text-5xl mb-4 text-center">
-            What Does {characterName} Love?
+            What Do They Love?
           </h2>
-          <p className="text-lg text-muted-foreground text-center mb-8">
-            Enter 3-5 interests to personalize the coloring book
+          <p className="text-lg text-muted-foreground text-center mb-2">
+            Enter 3 or more interests to personalize the coloring book
+          </p>
+          <p className="text-sm text-muted-foreground text-center mb-8">
+            ✨ No limit! Add as many interests as you'd like
           </p>
 
           {/* Interests Input */}
@@ -50,8 +53,8 @@ export const InterestsStep = () => {
             <Textarea
               value={interestsText}
               onChange={(e) => setInterestsText(e.target.value)}
-              placeholder="e.g., dinosaurs, space exploration, ocean animals, painting, soccer"
-              className="min-h-[120px] text-base backdrop-blur-sm bg-input/50 border-glass-border resize-none"
+              placeholder="e.g., dinosaurs, space exploration, ocean animals, painting, soccer, music, unicorns, robots, baking..."
+              className="min-h-[150px] text-base backdrop-blur-sm bg-input/50 border-glass-border resize-none"
             />
             
             {/* Counter */}
@@ -63,13 +66,11 @@ export const InterestsStep = () => {
                 className={`px-4 py-1.5 rounded-full backdrop-blur-sm border text-sm transition-all duration-300 ${
                   isComplete
                     ? 'bg-secondary/20 border-secondary text-secondary-foreground'
-                    : parsedInterests.length > 5
-                    ? 'bg-destructive/20 border-destructive text-destructive'
                     : 'bg-primary/10 border-primary/30 text-foreground'
                 }`}
               >
                 <span className="font-bold">
-                  {parsedInterests.length}/5 interests
+                  {parsedInterests.length} interest{parsedInterests.length !== 1 ? 's' : ''}
                 </span>
               </div>
             </div>
@@ -83,18 +84,12 @@ export const InterestsStep = () => {
             className="w-full bg-gradient-to-r from-primary to-[hsl(330_80%_60%)] hover:scale-105 transition-transform duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
             <Sparkles className="w-5 h-5 mr-2" />
-            Generate My Book
+            Generate {characterNames ? `${characterNames}'s` : 'My'} Book
           </Button>
 
           {!isComplete && parsedInterests.length < 3 && (
             <p className="text-sm text-muted-foreground text-center mt-4">
               Please enter at least 3 interests
-            </p>
-          )}
-          
-          {parsedInterests.length > 5 && (
-            <p className="text-sm text-destructive text-center mt-4">
-              Please enter no more than 5 interests
             </p>
           )}
         </motion.div>

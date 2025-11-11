@@ -8,8 +8,11 @@ import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
 export const CompleteStep = () => {
-  const { characterName, generatedPages, reset } = useBookStore();
+  const { characters, generatedPages, selectedPagesForRework, maxReworksReached, togglePageForRework, enterReworkMode, setStep, reset } = useBookStore();
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  
+  const characterNames = characters.map(c => c.name).filter(Boolean).join(' and ');
 
   // Use real generated pages, filter for those with images
   const pagesToShow = (generatedPages || []).filter(p => !!p.imageUrl);
@@ -24,6 +27,12 @@ export const CompleteStep = () => {
   
   const pages = hasRealPages ? pagesToShow : mockPages;
   const failedCount = (generatedPages || []).length - pagesToShow.length;
+  const maxSelectable = Math.floor(pages.length * 0.5);
+
+  const handleStartRework = () => {
+    enterReworkMode();
+    setStep('rework-settings');
+  };
 
   useEffect(() => {
     // Trigger confetti
@@ -68,11 +77,76 @@ export const CompleteStep = () => {
             Your Book is Ready! 🎉
           </h2>
           <p className="text-xl text-muted-foreground">
-            {characterName}'s personalized coloring book with {pages.length} unique page{pages.length !== 1 ? 's' : ''}
+            {characterNames ? `${characterNames}'s` : 'Your'} personalized coloring book with {pages.length} unique page{pages.length !== 1 ? 's' : ''}
           </p>
         </motion.div>
 
-        {/* Partial failure warning */}
+          {/* Action Buttons */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.25 }}
+            className="flex flex-wrap gap-4 mb-8 justify-center"
+          >
+            {!maxReworksReached && !selectionMode && (
+              <Button
+                onClick={() => setSelectionMode(true)}
+                variant="outline"
+                size="lg"
+              >
+                Select Pages to Rework
+              </Button>
+            )}
+            
+            {selectionMode && (
+              <>
+                <Button
+                  onClick={() => {
+                    setSelectionMode(false);
+                    useBookStore.setState({ selectedPagesForRework: [] });
+                  }}
+                  variant="outline"
+                  size="lg"
+                >
+                  Cancel Selection
+                </Button>
+                <Button
+                  onClick={handleStartRework}
+                  disabled={selectedPagesForRework.length === 0}
+                  size="lg"
+                  className="bg-gradient-to-r from-primary to-[hsl(330_80%_60%)]"
+                >
+                  Rework {selectedPagesForRework.length} Page{selectedPagesForRework.length !== 1 ? 's' : ''}
+                </Button>
+              </>
+            )}
+            
+            <Button onClick={handleDownload} size="lg">
+              <Download className="w-5 h-5 mr-2" />
+              Download PDF
+            </Button>
+          </motion.div>
+          
+          {selectionMode && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center mb-6"
+            >
+              <p className="text-sm text-muted-foreground">
+                {selectedPagesForRework.length} of {maxSelectable} pages selected (max {maxSelectable})
+              </p>
+            </motion.div>
+          )}
+          
+          {maxReworksReached && (
+            <Alert className="mb-8 border-secondary/30 bg-secondary/5">
+              <AlertCircle className="h-4 w-4 text-secondary" />
+              <AlertDescription>
+                Rework completed! No further changes allowed. Download your final book.
+              </AlertDescription>
+            </Alert>
+          )}
         {failedCount > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -98,36 +172,64 @@ export const CompleteStep = () => {
         >
           {pages.map((page, index) => (
             <Dialog key={page.pageNumber}>
-              <DialogTrigger asChild>
-                <motion.div
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3, delay: 0.3 + index * 0.05 }}
-                  whileHover={{ scale: 1.05 }}
-                  className="relative aspect-[8.5/11] rounded-xl overflow-hidden cursor-pointer group backdrop-blur-lg bg-glass-bg border border-glass-border"
-                >
-                  <img
-                    src={page.imageUrl}
-                    alt={`${characterName} - Page ${page.pageNumber}`}
-                    loading="lazy"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
-                    <ZoomIn className="w-8 h-8 text-white" />
+              <div className="relative">
+                {selectionMode && (
+                  <div
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      togglePageForRework(page.pageNumber);
+                    }}
+                    className="absolute top-2 left-2 z-10 cursor-pointer"
+                  >
+                    <div
+                      className={`w-6 h-6 rounded border-2 flex items-center justify-center transition-all ${
+                        selectedPagesForRework.includes(page.pageNumber)
+                          ? 'bg-primary border-primary'
+                          : 'bg-background border-border hover:border-primary'
+                      } ${
+                        !selectedPagesForRework.includes(page.pageNumber) &&
+                        selectedPagesForRework.length >= maxSelectable
+                          ? 'opacity-50 cursor-not-allowed'
+                          : ''
+                      }`}
+                    >
+                      {selectedPagesForRework.includes(page.pageNumber) && (
+                        <Check className="w-4 h-4 text-primary-foreground" />
+                      )}
+                    </div>
                   </div>
-                  <div className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm px-2 py-1 rounded text-xs font-bold">
-                    Page {page.pageNumber}
-                  </div>
-                </motion.div>
-              </DialogTrigger>
+                )}
+                <DialogTrigger asChild disabled={selectionMode}>
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.3, delay: 0.3 + index * 0.05 }}
+                    whileHover={{ scale: 1.05 }}
+                    className="relative aspect-[8.5/11] rounded-xl overflow-hidden cursor-pointer group backdrop-blur-lg bg-glass-bg border border-glass-border"
+                  >
+                    <img
+                      src={page.imageUrl}
+                      alt={`${characterNames || 'Coloring book'} - Page ${page.pageNumber}`}
+                      loading="lazy"
+                      className="w-full h-full object-cover"
+                    />
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+                      <ZoomIn className="w-8 h-8 text-white" />
+                    </div>
+                    <div className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm px-2 py-1 rounded text-xs font-bold">
+                      Page {page.pageNumber}
+                    </div>
+                  </motion.div>
+                </DialogTrigger>
+              </div>
               <DialogContent className="max-w-3xl">
                 <DialogTitle className="sr-only">Page {page.pageNumber} Preview</DialogTitle>
                 <DialogDescription className="sr-only">
-                  Enlarged preview of {characterName}'s coloring page {page.pageNumber}
+                  Enlarged preview of {characterNames || 'coloring book'} page {page.pageNumber}
                 </DialogDescription>
                 <img
                   src={page.imageUrl}
-                  alt={`${characterName} - Page ${page.pageNumber}`}
+                  alt={`${characterNames || 'Coloring book'} - Page ${page.pageNumber}`}
                   className="w-full h-auto"
                 />
               </DialogContent>

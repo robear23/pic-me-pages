@@ -3,9 +3,11 @@ import { useBookStore } from '@/store/bookStore';
 import { HeroSection } from '@/components/HeroSection';
 import { ProgressBar } from '@/components/ProgressBar';
 import { UploadStep } from '@/components/UploadStep';
+import { SettingsStep } from '@/components/SettingsStep';
 import { InterestsStep } from '@/components/InterestsStep';
 import { GeneratingStep } from '@/components/GeneratingStep';
 import { CompleteStep } from '@/components/CompleteStep';
+import { ReworkSettingsStep } from '@/components/ReworkSettingsStep';
 
 const Index = () => {
   const currentStep = useBookStore((state) => state.currentStep);
@@ -25,9 +27,11 @@ const Index = () => {
       <AnimatePresence mode="wait">
         {currentStep === 'hero' && <HeroSection key="hero" />}
         {currentStep === 'upload' && <UploadStep key="upload" />}
+        {currentStep === 'settings' && <SettingsStep key="settings" />}
         {currentStep === 'interests' && <InterestsStep key="interests" />}
         {currentStep === 'generating' && <GeneratingStep key="generating" />}
         {currentStep === 'complete' && <CompleteStep key="complete" />}
+        {currentStep === 'rework-settings' && <ReworkSettingsStep key="rework-settings" />}
       </AnimatePresence>
     </div>
   );
