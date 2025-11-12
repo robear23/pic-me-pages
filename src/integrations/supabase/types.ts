@@ -14,6 +14,104 @@ export type Database = {
   }
   public: {
     Tables: {
+      books: {
+        Row: {
+          art_style: string | null
+          character_name: string
+          complexity: string | null
+          consistent_characters: boolean | null
+          created_at: string | null
+          id: string
+          interests: string[]
+          pages: Json | null
+          pdf_url: string | null
+          photo_urls: string[]
+          status: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          art_style?: string | null
+          character_name: string
+          complexity?: string | null
+          consistent_characters?: boolean | null
+          created_at?: string | null
+          id?: string
+          interests: string[]
+          pages?: Json | null
+          pdf_url?: string | null
+          photo_urls: string[]
+          status?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          art_style?: string | null
+          character_name?: string
+          complexity?: string | null
+          consistent_characters?: boolean | null
+          created_at?: string | null
+          id?: string
+          interests?: string[]
+          pages?: Json | null
+          pdf_url?: string | null
+          photo_urls?: string[]
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      orders: {
+        Row: {
+          book_id: string | null
+          created_at: string | null
+          id: string
+          lulu_order_id: string | null
+          order_type: string
+          price_paid: number
+          shipping_address: Json | null
+          status: string | null
+          stripe_payment_id: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          book_id?: string | null
+          created_at?: string | null
+          id?: string
+          lulu_order_id?: string | null
+          order_type: string
+          price_paid: number
+          shipping_address?: Json | null
+          status?: string | null
+          stripe_payment_id?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          book_id?: string | null
+          created_at?: string | null
+          id?: string
+          lulu_order_id?: string | null
+          order_type?: string
+          price_paid?: number
+          shipping_address?: Json | null
+          status?: string | null
+          stripe_payment_id?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       waitlist: {
         Row: {
           child_age: number | null

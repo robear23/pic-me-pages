@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Sparkles, Upload, Palette, Download } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { WaitlistForm } from '@/components/WaitlistForm';
 import { ExampleGallery } from '@/components/ExampleGallery';
 import { FAQ } from '@/components/FAQ';
@@ -52,6 +53,25 @@ const WaitingList = () => {
 
           {/* Waitlist Form */}
           <WaitlistForm />
+
+          {/* Sign In Link */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="text-center mt-6"
+          >
+            <p className="text-muted-foreground">
+              Already have an account?{' '}
+              <Button
+                variant="link"
+                className="p-0 h-auto font-semibold text-primary"
+                onClick={() => window.location.href = '/auth'}
+              >
+                Sign in here
+              </Button>
+            </p>
+          </motion.div>
 
           {/* Benefits Grid */}
           <motion.div

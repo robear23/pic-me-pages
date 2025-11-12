@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import { Progress } from '@/components/ui/progress';
 import { generatePrompts, generateImages } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/contexts/AuthContext';
+import { saveBookToDatabase } from '@/lib/bookStorage';
 import type { GeneratedPrompt } from '@/lib/api';
 
 const GENERATION_STEPS = [
@@ -35,6 +37,7 @@ export const GeneratingStep = () => {
     completeRework
   } = useBookStore();
   
+  const { user } = useAuth();
   const { toast } = useToast();
   const [prompts, setPrompts] = useState<GeneratedPrompt[]>([]);
 
@@ -135,6 +138,33 @@ export const GeneratingStep = () => {
         setGenerationStatus(GENERATION_STEPS[4]);
         setGenerationProgress(95);
         
+        // Save book to database if user is authenticated and not in rework mode
+        if (user && !isReworkMode) {
+          try {
+            const characterPhotos = characters.flatMap(c => 
+              c.photos.filter((p): p is File => p !== null)
+            );
+            
+            const bookId = await saveBookToDatabase({
+              userId: user.id,
+              characterName: characters.map(c => c.name).filter(Boolean).join(' and '),
+              interests: selectedInterests,
+              complexity,
+              artStyle,
+              consistentCharacters,
+              characterPhotos,
+              generatedPages: finalPages,
+            });
+
+            if (bookId) {
+              console.log('Book saved to database:', bookId);
+            }
+          } catch (saveError) {
+            console.error('Failed to save book:', saveError);
+            // Don't block the user flow if saving fails
+          }
+        }
+        
         await new Promise(resolve => setTimeout(resolve, 500));
         setGenerationProgress(100);
 
@@ -186,6 +216,7 @@ export const GeneratingStep = () => {
     isReworkMode,
     selectedPagesForRework,
     generatedPages,
+    user,
     setGenerationProgress,
     setGenerationStatus,
     setStep,

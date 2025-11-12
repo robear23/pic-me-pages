@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useBookStore } from '@/store/bookStore';
-import { Download, ArrowLeft, ZoomIn, AlertCircle, Check, Loader2 } from 'lucide-react';
+import { Download, ArrowLeft, ZoomIn, AlertCircle, Check, Loader2, LayoutDashboard } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -12,6 +13,7 @@ export const CompleteStep = () => {
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const navigate = useNavigate();
   
   const characterNames = characters.map(c => c.name).filter(Boolean).join(' and ');
 
@@ -338,6 +340,15 @@ export const CompleteStep = () => {
                 Download PDF
               </>
             )}
+          </Button>
+          <Button
+            onClick={() => navigate('/dashboard')}
+            size="lg"
+            variant="outline"
+            className="border-glass-border hover:bg-glass-bg hover:scale-105 transition-transform duration-300 text-lg px-8"
+          >
+            <LayoutDashboard className="w-5 h-5 mr-2" />
+            View My Books
           </Button>
           <Button
             onClick={reset}
