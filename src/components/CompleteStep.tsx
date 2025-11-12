@@ -72,14 +72,37 @@ export const CompleteStep = () => {
       const imageWidth = pageWidth - (margin * 2);
       const imageHeight = pageHeight - (margin * 2);
 
+      // Add cover page
+      pdf.setFillColor(255, 255, 255);
+      pdf.rect(0, 0, pageWidth, pageHeight, 'F');
+      
+      pdf.setFontSize(32);
+      pdf.setFont('helvetica', 'bold');
+      const title = `${characterNames || 'My'}'s Coloring Book`;
+      const titleWidth = pdf.getTextWidth(title);
+      pdf.text(title, (pageWidth - titleWidth) / 2, 3);
+      
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'normal');
+      const subtitle = `${pages.length} Pages of Creative Fun!`;
+      const subtitleWidth = pdf.getTextWidth(subtitle);
+      pdf.text(subtitle, (pageWidth - subtitleWidth) / 2, 3.6);
+      
+      const { selectedInterests } = useBookStore.getState();
+      if (selectedInterests && selectedInterests.length > 0) {
+        pdf.setFontSize(12);
+        const interestsText = `Featuring: ${selectedInterests.slice(0, 3).join(', ')}`;
+        const interestsWidth = pdf.getTextWidth(interestsText);
+        pdf.text(interestsText, (pageWidth - interestsWidth) / 2, 4.3);
+      }
+
+      // Add coloring pages
       for (let i = 0; i < pages.length; i++) {
         const page = pages[i];
         
         if (!page.imageUrl) continue;
         
-        if (i > 0) {
-          pdf.addPage();
-        }
+        pdf.addPage();
 
         try {
           pdf.addImage(
@@ -96,7 +119,7 @@ export const CompleteStep = () => {
           pdf.setFontSize(10);
           pdf.setTextColor(100);
           pdf.text(
-            `Page ${page.pageNumber}`,
+            `Page ${i + 1} of ${pages.length}`,
             pageWidth / 2,
             pageHeight - 0.25,
             { align: 'center' }

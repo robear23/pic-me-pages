@@ -97,13 +97,35 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       const imageWidth = pageWidth - margin * 2;
       const imageHeight = pageHeight - margin * 2;
 
+      // Add cover page
+      pdf.setFillColor(255, 255, 255);
+      pdf.rect(0, 0, pageWidth, pageHeight, 'F');
+      
+      pdf.setFontSize(32);
+      pdf.setFont('helvetica', 'bold');
+      const title = `${characterName}'s Coloring Book`;
+      const titleWidth = pdf.getTextWidth(title);
+      pdf.text(title, (pageWidth - titleWidth) / 2, 3);
+      
+      pdf.setFontSize(16);
+      pdf.setFont('helvetica', 'normal');
+      const subtitle = `${generatedPages.length} Pages of Creative Fun!`;
+      const subtitleWidth = pdf.getTextWidth(subtitle);
+      pdf.text(subtitle, (pageWidth - subtitleWidth) / 2, 3.6);
+      
+      if (interests && interests.length > 0) {
+        pdf.setFontSize(12);
+        const interestsText = `Featuring: ${interests.slice(0, 3).join(', ')}`;
+        const interestsWidth = pdf.getTextWidth(interestsText);
+        pdf.text(interestsText, (pageWidth - interestsWidth) / 2, 4.3);
+      }
+
+      // Add coloring pages
       for (let i = 0; i < generatedPages.length; i++) {
         const page = generatedPages[i];
         if (!page.imageUrl) continue;
 
-        if (i > 0) {
-          pdf.addPage();
-        }
+        pdf.addPage();
 
         pdf.addImage(
           page.imageUrl,
@@ -118,7 +140,7 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
 
         pdf.setFontSize(10);
         pdf.setTextColor(100);
-        pdf.text(`Page ${page.pageNumber}`, pageWidth / 2, pageHeight - 0.25, {
+        pdf.text(`Page ${i + 1} of ${generatedPages.length}`, pageWidth / 2, pageHeight - 0.25, {
           align: 'center',
         });
       }
