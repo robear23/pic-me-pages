@@ -7,13 +7,16 @@ import { useNavigate } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { OrderPhysicalBookDialog } from './OrderPhysicalBookDialog';
+import { useAuth } from '@/contexts/AuthContext';
 
 export const CompleteStep = () => {
-  const { characters, generatedPages, selectedPagesForRework, maxReworksReached, togglePageForRework, enterReworkMode, setStep, reset } = useBookStore();
+  const { characters, generatedPages, selectedPagesForRework, maxReworksReached, togglePageForRework, enterReworkMode, setStep, reset, generatedBookId } = useBookStore();
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const navigate = useNavigate();
+  const { user } = useAuth();
   
   const characterNames = characters.map(c => c.name).filter(Boolean).join(' and ');
 
@@ -364,6 +367,12 @@ export const CompleteStep = () => {
               </>
             )}
           </Button>
+          {user && generatedBookId && (
+            <OrderPhysicalBookDialog 
+              bookId={generatedBookId}
+              bookTitle={`${characterNames || 'My'}'s Coloring Book`}
+            />
+          )}
           <Button
             onClick={() => navigate('/dashboard')}
             size="lg"

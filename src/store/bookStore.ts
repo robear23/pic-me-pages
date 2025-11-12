@@ -41,6 +41,7 @@ interface BookState {
   originalGenerationParams: GenerationParams | null;
   isReworkMode: boolean;
   maxReworksReached: boolean;
+  generatedBookId: string | null;
   
   setStep: (step: BookStep) => void;
   addCharacter: () => void;
@@ -60,6 +61,7 @@ interface BookState {
   setIsGeneratingPrompts: (loading: boolean) => void;
   setIsGeneratingImages: (loading: boolean) => void;
   setCurrentApiCall: (call: 'prompts' | 'images' | 'photos' | null) => void;
+  setGeneratedBookId: (id: string | null) => void;
   enterReworkMode: () => void;
   completeRework: () => void;
   reset: () => void;
@@ -89,6 +91,7 @@ const initialState = {
   originalGenerationParams: null as GenerationParams | null,
   isReworkMode: false,
   maxReworksReached: false,
+  generatedBookId: null as string | null,
 };
 
 export const useBookStore = create<BookState>((set, get) => ({
@@ -182,6 +185,8 @@ export const useBookStore = create<BookState>((set, get) => ({
   setIsGeneratingImages: (loading) => set({ isGeneratingImages: loading }),
   
   setCurrentApiCall: (call) => set({ currentApiCall: call }),
+  
+  setGeneratedBookId: (id) => set({ generatedBookId: id }),
   
   enterReworkMode: () => {
     const state = get();

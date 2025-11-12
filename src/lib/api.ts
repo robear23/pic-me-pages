@@ -82,3 +82,20 @@ export const uploadPhotos = async (
 ): Promise<{ optimizedPhotos: string[]; count: number; totalSize: number }> => {
   return callEdgeFunction('upload-character-photos', { photos });
 };
+
+export interface ShippingAddress {
+  name: string;
+  street1: string;
+  street2?: string;
+  city: string;
+  state: string;
+  postalCode: string;
+  country: string;
+}
+
+export const createPrintOrder = async (
+  bookId: string,
+  shippingAddress: ShippingAddress
+): Promise<{ success: boolean; order: any; luluOrderId: string }> => {
+  return callEdgeFunction('create-print-order', { bookId, shippingAddress });
+};

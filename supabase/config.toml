@@ -8,3 +8,6 @@ verify_jwt = false
 
 [functions.upload-character-photos]
 verify_jwt = false
+
+[functions.create-print-order]
+verify_jwt = false

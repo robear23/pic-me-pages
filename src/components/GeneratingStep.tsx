@@ -34,6 +34,7 @@ export const GeneratingStep = () => {
     setStep,
     setGeneratedPages,
     setApiError,
+    setGeneratedBookId,
     completeRework
   } = useBookStore();
   
@@ -158,6 +159,7 @@ export const GeneratingStep = () => {
 
             if (bookId) {
               console.log('Book saved to database:', bookId);
+              setGeneratedBookId(bookId);
             }
           } catch (saveError) {
             console.error('Failed to save book:', saveError);

@@ -5,8 +5,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, LogOut, BookOpen, Download, Printer } from 'lucide-react';
+import { Plus, LogOut, BookOpen, Download, Package, Truck } from 'lucide-react';
 import { toast } from 'sonner';
+import { OrderPhysicalBookDialog } from '@/components/OrderPhysicalBookDialog';
+import { Badge } from '@/components/ui/badge';
 
 interface Book {
   id: string;
@@ -18,14 +20,27 @@ interface Book {
   created_at: string;
 }
 
+interface Order {
+  id: string;
+  book_id: string;
+  status: string;
+  lulu_order_id: string | null;
+  created_at: string;
+  price_paid: number;
+}
+
 const Dashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [books, setBooks] = useState<Book[]>([]);
+  const [orders, setOrders] = useState<Record<string, Order[]>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadBooks();
+    if (user) {
+      loadBooks();
+      fetchOrders();
+    }
   }, [user]);
 
   const loadBooks = async () => {
@@ -44,6 +59,34 @@ const Dashboard = () => {
       toast.error('Failed to load books');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchOrders = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('user_id', user?.id)
+        .eq('order_type', 'physical')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      // Group orders by book_id
+      const ordersByBook: Record<string, Order[]> = {};
+      data?.forEach((order) => {
+        if (order.book_id) {
+          if (!ordersByBook[order.book_id]) {
+            ordersByBook[order.book_id] = [];
+          }
+          ordersByBook[order.book_id].push(order as Order);
+        }
+      });
+
+      setOrders(ordersByBook);
+    } catch (error: any) {
+      console.error('Error fetching orders:', error);
     }
   };
 
@@ -160,14 +203,10 @@ const Dashboard = () => {
                               <Download className="w-4 h-4 mr-1" />
                               Download
                             </Button>
-                            <Button
-                              size="sm"
-                              className="flex-1"
-                              onClick={() => toast.info('Print ordering coming soon!')}
-                            >
-                              <Printer className="w-4 h-4 mr-1" />
-                              Order Print
-                            </Button>
+                            <OrderPhysicalBookDialog 
+                              bookId={book.id}
+                              bookTitle={`${book.character_name}'s Coloring Book`}
+                            />
                           </>
                         ) : (
                           <Button size="sm" variant="outline" className="w-full" disabled>
@@ -175,6 +214,35 @@ const Dashboard = () => {
                           </Button>
                         )}
                       </div>
+
+                      {/* Show orders for this book */}
+                      {orders[book.id] && orders[book.id].length > 0 && (
+                        <div className="mt-4 pt-4 border-t">
+                          <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                            <Package className="w-4 h-4" />
+                            Physical Orders
+                          </h4>
+                          <div className="space-y-2">
+                            {orders[book.id].map((order) => (
+                              <div key={order.id} className="flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-2">
+                                  <Truck className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-muted-foreground">
+                                    {new Date(order.created_at).toLocaleDateString()}
+                                  </span>
+                                </div>
+                                <Badge variant={
+                                  order.status === 'completed' ? 'default' :
+                                  order.status === 'processing' ? 'secondary' :
+                                  'outline'
+                                }>
+                                  {order.status}
+                                </Badge>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
