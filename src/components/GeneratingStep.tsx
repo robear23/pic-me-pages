@@ -3,7 +3,7 @@ import { useBookStore } from '@/store/bookStore';
 import { Sparkles, Check, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Progress } from '@/components/ui/progress';
-import { generatePrompts, generateImages } from '@/lib/api';
+import { generatePrompts, generateImages, generateCover } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { saveBookToDatabase } from '@/lib/bookStorage';
@@ -14,6 +14,7 @@ const GENERATION_STEPS = [
   'Understanding interests',
   'Creating story prompts',
   'Generating coloring pages',
+  'Creating book cover',
   'Finalizing your book',
 ];
 
@@ -35,6 +36,7 @@ export const GeneratingStep = () => {
     setGeneratedPages,
     setApiError,
     setGeneratedBookId,
+    setCoverImageUrl,
     completeRework
   } = useBookStore();
   
@@ -135,9 +137,33 @@ export const GeneratingStep = () => {
         console.log(`Generated ${successCount}/${finalPages.length} images`);
         setGeneratedPages(finalPages);
 
-        // Step 5: Finalizing (90-100%)
+        // Step 5: Creating book cover (90-95%)
         setGenerationStatus(GENERATION_STEPS[4]);
+        let coverImageUrl: string | null = null;
+        
+        if (!isReworkMode) {
+          try {
+            console.log('Generating cover...');
+            const { coverImage } = await generateCover(
+              characters.map(c => c.name).filter(Boolean).join(' and '),
+              selectedInterests,
+              complexity,
+              charactersWithPhotos
+            );
+            coverImageUrl = coverImage;
+            setCoverImageUrl(coverImage);
+            console.log('Cover generated successfully');
+          } catch (coverError) {
+            console.error('Cover generation failed:', coverError);
+            // Continue without cover - we'll use a text-only cover
+          }
+        }
+        
         setGenerationProgress(95);
+
+        // Step 6: Finalizing (95-100%)
+        setGenerationStatus(GENERATION_STEPS[5]);
+        setGenerationProgress(97);
         
         // Save book to database if user is authenticated and not in rework mode
         if (user && !isReworkMode) {
@@ -155,6 +181,7 @@ export const GeneratingStep = () => {
               consistentCharacters,
               characterPhotos,
               generatedPages: finalPages,
+              coverImageUrl,
             });
 
             if (bookId) {

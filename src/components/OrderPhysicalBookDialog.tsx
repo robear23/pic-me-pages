@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { createPrintOrder, ShippingAddress } from '@/lib/api';
 import { Package } from 'lucide-react';
@@ -41,9 +42,13 @@ export function OrderPhysicalBookDialog({ bookId, bookTitle }: OrderPhysicalBook
     try {
       const result = await createPrintOrder(bookId, shippingAddress);
       
+      const envNote = result.environment === 'sandbox' 
+        ? ' (Test order - no actual printing will occur)'
+        : '';
+      
       toast({
         title: 'Order Placed!',
-        description: `Your physical copy of "${bookTitle}" is being printed and will be shipped soon.`,
+        description: `Your physical copy of "${bookTitle}" is being printed and will be shipped soon.${envNote}`,
       });
       
       setOpen(false);
@@ -79,10 +84,17 @@ export function OrderPhysicalBookDialog({ bookId, bookTitle }: OrderPhysicalBook
       </DialogTrigger>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Order Physical Copy</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            Order Physical Copy
+            <Badge variant="outline" className="text-xs">
+              Test Mode
+            </Badge>
+          </DialogTitle>
           <DialogDescription>
             Order a professionally printed physical copy of "{bookTitle}". 
             Price: $29.99 + shipping
+            <br />
+            <span className="text-xs text-muted-foreground">Note: Currently in test mode. No actual printing will occur.</span>
           </DialogDescription>
         </DialogHeader>
         

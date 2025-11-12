@@ -29,6 +29,13 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const luluApiKey = Deno.env.get('LULU_API_KEY')!;
     const luluApiSecret = Deno.env.get('LULU_API_SECRET')!;
+    const luluEnvironment = Deno.env.get('LULU_ENVIRONMENT') || 'sandbox';
+    
+    const luluBaseUrl = luluEnvironment === 'production' 
+      ? 'https://api.lulu.com'
+      : 'https://api.sandbox.lulu.com';
+    
+    console.log(`Using Lulu ${luluEnvironment} environment: ${luluBaseUrl}`);
     
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -61,12 +68,19 @@ serve(async (req) => {
       throw new Error('Book not found');
     }
 
-    if (!book.pdf_url) {
-      throw new Error('Book PDF not available');
+    // Get cover and interior PDF URLs
+    const coverUrl = book.cover_url || book.pdf_url;
+    const interiorUrl = book.pages?.[0]?.interiorPdfUrl || book.pdf_url;
+    
+    if (!coverUrl || !interiorUrl) {
+      throw new Error('Book PDFs not available');
     }
+    
+    console.log('Using cover URL:', coverUrl);
+    console.log('Using interior URL:', interiorUrl);
 
     // Get Lulu access token
-    const luluAuthResponse = await fetch('https://api.lulu.com/auth/realms/glasstree/protocol/openid-connect/token', {
+    const luluAuthResponse = await fetch(`${luluBaseUrl}/auth/realms/glasstree/protocol/openid-connect/token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -95,8 +109,8 @@ serve(async (req) => {
           page_count: totalPages,
           pod_package_id: 'PBKCSTD075', // Standard color paperback
           title: `${book.character_name}'s Coloring Book`,
-          cover: book.pdf_url, // Using the PDF URL for cover
-          interior: book.pdf_url, // Using the PDF URL for interior
+          cover: coverUrl,
+          interior: interiorUrl,
           quantity: 1,
         },
       ],
@@ -115,7 +129,7 @@ serve(async (req) => {
 
     console.log('Creating Lulu order:', JSON.stringify(luluOrderData, null, 2));
 
-    const luluOrderResponse = await fetch('https://api.lulu.com/print-jobs/', {
+    const luluOrderResponse = await fetch(`${luluBaseUrl}/print-jobs/`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${access_token}`,
@@ -161,6 +175,7 @@ serve(async (req) => {
         success: true, 
         order,
         luluOrderId: luluOrder.id,
+        environment: luluEnvironment,
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },

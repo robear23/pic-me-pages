@@ -20,6 +20,7 @@ export type Database = {
           character_name: string
           complexity: string | null
           consistent_characters: boolean | null
+          cover_url: string | null
           created_at: string | null
           id: string
           interests: string[]
@@ -35,6 +36,7 @@ export type Database = {
           character_name: string
           complexity?: string | null
           consistent_characters?: boolean | null
+          cover_url?: string | null
           created_at?: string | null
           id?: string
           interests: string[]
@@ -50,6 +52,7 @@ export type Database = {
           character_name?: string
           complexity?: string | null
           consistent_characters?: boolean | null
+          cover_url?: string | null
           created_at?: string | null
           id?: string
           interests?: string[]

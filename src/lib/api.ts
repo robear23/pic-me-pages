@@ -96,6 +96,20 @@ export interface ShippingAddress {
 export const createPrintOrder = async (
   bookId: string,
   shippingAddress: ShippingAddress
-): Promise<{ success: boolean; order: any; luluOrderId: string }> => {
+): Promise<{ success: boolean; order: any; luluOrderId: string; environment?: string }> => {
   return callEdgeFunction('create-print-order', { bookId, shippingAddress });
+};
+
+export const generateCover = async (
+  characterName: string,
+  interests: string[],
+  complexity: 'simple' | 'medium' | 'detailed',
+  characters?: Character[]
+): Promise<{ coverImage: string }> => {
+  return callEdgeFunction('generate-cover', { 
+    characterName, 
+    interests, 
+    complexity,
+    characters
+  });
 };
