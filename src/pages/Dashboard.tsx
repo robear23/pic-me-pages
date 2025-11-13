@@ -280,8 +280,8 @@ const Dashboard = () => {
                           <>
                             <Button
                               size="sm"
-                              variant="ghost"
-                              className="flex-1 !bg-white/10 hover:!bg-white/20 !text-white border border-white/20"
+                              variant="default"
+                              className="flex-1 bg-black text-white hover:bg-black/90"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleDownloadOrGenerate(book);
