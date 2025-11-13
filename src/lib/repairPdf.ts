@@ -14,6 +14,13 @@ async function toDataUrl(url: string): Promise<string> {
 
 export async function repairBookPdf(bookId: string, pages: Array<{ imageUrl: string }>): Promise<string> {
   try {
+    // Get current user for proper path structure
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      throw new Error('User must be authenticated to generate PDF');
+    }
+
     // Generate interior PDF from existing page images
     const pdf = new jsPDF({
       orientation: 'portrait',
@@ -45,8 +52,10 @@ export async function repairBookPdf(bookId: string, pages: Array<{ imageUrl: str
     // Convert PDF to blob
     const pdfBlob = pdf.output('blob');
 
-    // Upload to storage
-    const fileName = `${bookId}/interior-${Date.now()}.pdf`;
+    // Upload to storage with userId/bookId path structure for RLS compliance
+    const fileName = `${user.id}/${bookId}/interior-${Date.now()}.pdf`;
+    console.log('[repairPdf] Uploading to path:', fileName);
+    
     const { error: uploadError } = await supabase.storage
       .from('pdfs')
       .upload(fileName, pdfBlob, {
