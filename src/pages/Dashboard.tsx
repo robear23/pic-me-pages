@@ -267,8 +267,8 @@ const Dashboard = () => {
                           <>
                             <Button
                               size="sm"
-                              variant="outline"
-                              className="flex-1"
+                              variant="ghost"
+                              className="flex-1 bg-white/10 hover:bg-white/20 text-white"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleDownloadPDF(book.pdf_url!, book.character_name);
@@ -286,8 +286,8 @@ const Dashboard = () => {
                           <>
                             <Button
                               size="sm"
-                              variant="outline"
-                              className="flex-1"
+                              variant="ghost"
+                              className="flex-1 bg-white/10 hover:bg-white/20 text-white"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedBook(book);
