@@ -21,9 +21,9 @@ serve(async (req) => {
       );
     }
     
-    if (!interests || !Array.isArray(interests) || interests.length < 3) {
+    if (!interests || !Array.isArray(interests) || interests.length < 1) {
       return new Response(
-        JSON.stringify({ error: 'Invalid input: at least 3 interests required' }),
+        JSON.stringify({ error: 'Invalid input: at least 1 interest required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -44,18 +44,26 @@ serve(async (req) => {
       detailed: 'Intricate patterns with fine lines (1-2px). Rich backgrounds. Small details and textures. Ages 8+.'
     };
 
+    const artStyleGuide = {
+      cartoon: 'Fun, playful cartoon style with exaggerated features',
+      realistic: 'Lifelike proportions and natural details',
+      minimalist: 'Clean, simple lines with minimal detail',
+      whimsical: 'Magical, imaginative style with creative flourishes',
+      photorealistic: 'Ultra-realistic photograph quality. Professional portrait photography style. Photographic accuracy with studio lighting. If character photos provided, maintain exact facial features, expressions, and proportions from reference.'
+    };
+
     const systemPrompt = `You are an expert at creating child-friendly coloring page descriptions. Generate 12 unique, detailed prompts for black & white coloring pages featuring ${characterNames} in scenarios related to their interests: ${interests.join(', ')}.
 
 STYLE REQUIREMENTS:
 - Complexity: ${complexity} - ${complexityGuide[complexity as keyof typeof complexityGuide] || complexityGuide.medium}
-- Art Style: ${artStyle}
+- Art Style: ${artStyle} - ${artStyleGuide[artStyle as keyof typeof artStyleGuide] || artStyleGuide.cartoon}
 - Character Consistency: ${consistentCharacters ? 'CRITICAL - Keep character appearances consistent across ALL pages. Use same clothing, hair, facial features throughout.' : 'Varied appearances are OK'}
 - Simple outlines, no shading or gradients
 - Black and white line art only
 - Child-appropriate content
 - Focus on action, setting, and clear character presence
 
-Distribute scenes evenly across the selected interests.
+${interests.length === 1 ? 'Create diverse scenarios all related to: ' + interests[0] : 'Distribute scenes evenly across the selected interests.'}
 
 Return a JSON array of exactly 12 prompts, each with:
 {

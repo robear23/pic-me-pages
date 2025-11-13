@@ -37,16 +37,28 @@ const Dashboard = () => {
   const [books, setBooks] = useState<Book[]>([]);
   const [orders, setOrders] = useState<Record<string, Order[]>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     if (user) {
+      console.log('[Dashboard] User authenticated, loading books...', user.id);
       loadBooks();
       fetchOrders();
+    } else {
+      console.log('[Dashboard] No user found');
     }
-  }, [user]);
+  }, [user, retryCount]);
 
   const loadBooks = async () => {
-    if (!user) return;
+    if (!user) {
+      console.log('[Dashboard] Cannot load books - no user');
+      return;
+    }
+
+    console.log('[Dashboard] Starting books fetch for user:', user.id);
+    setLoading(true);
+    setError(null);
 
     try {
       const { data, error } = await supabase
@@ -55,13 +67,26 @@ const Dashboard = () => {
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[Dashboard] Supabase error loading books:', error);
+        throw error;
+      }
+      
+      console.log('[Dashboard] Books loaded successfully:', data?.length || 0);
       setBooks(data || []);
     } catch (error: any) {
-      toast.error('Failed to load books');
+      console.error('[Dashboard] Failed to load books:', error);
+      const errorMessage = error.message || 'Failed to load books';
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleRetry = () => {
+    console.log('[Dashboard] Manual retry triggered');
+    setRetryCount(prev => prev + 1);
   };
 
   const fetchOrders = async () => {
@@ -118,20 +143,8 @@ const Dashboard = () => {
 
       {/* Header */}
       <div className="border-b border-border/50 bg-card/50 backdrop-blur-xl">
-        <div className="container mx-auto px-6 py-4 flex justify-between items-center">
+        <div className="container mx-auto px-6 py-4">
           <h1 className="text-2xl font-bold text-foreground">My Books</h1>
-          <div className="flex items-center gap-2">
-            {isAdmin && (
-              <Button variant="outline" onClick={() => navigate('/admin')}>
-                <Shield className="w-4 h-4 mr-2" />
-                Admin Panel
-              </Button>
-            )}
-            <Button variant="ghost" onClick={handleSignOut}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign Out
-            </Button>
-          </div>
         </div>
       </div>
 
@@ -146,7 +159,18 @@ const Dashboard = () => {
 
         {loading ? (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">Loading your books...</p>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+            <p className="mt-4 text-muted-foreground">Loading your books...</p>
+          </div>
+        ) : error ? (
+          <div className="text-center py-12">
+            <div className="max-w-md mx-auto">
+              <div className="text-red-500 mb-4">⚠️ Error Loading Books</div>
+              <p className="text-muted-foreground mb-6">{error}</p>
+              <Button onClick={handleRetry} variant="outline">
+                Try Again
+              </Button>
+            </div>
           </div>
         ) : books.length === 0 ? (
           <motion.div

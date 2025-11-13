@@ -15,7 +15,7 @@ export const InterestsStep = () => {
     .map(i => i.trim())
     .filter(i => i.length > 0);
   
-  const isComplete = parsedInterests.length >= 3;
+  const isComplete = parsedInterests.length >= 1;
   const characterNames = characters.map(c => c.name).filter(Boolean).join(', ');
   
   const handleNext = () => {
@@ -42,7 +42,7 @@ export const InterestsStep = () => {
             What Do They Love?
           </h2>
           <p className="text-lg text-muted-foreground text-center mb-2">
-            Enter 3 or more interests to personalize the coloring book
+            Enter 1 or more interests to personalize the coloring book
           </p>
           <p className="text-sm text-muted-foreground text-center mb-8">
             ✨ No limit! Add as many interests as you'd like
@@ -87,9 +87,9 @@ export const InterestsStep = () => {
             Generate {characterNames ? `${characterNames}'s` : 'My'} Book
           </Button>
 
-          {!isComplete && parsedInterests.length < 3 && (
+          {!isComplete && parsedInterests.length < 1 && (
             <p className="text-sm text-muted-foreground text-center mt-4">
-              Please enter at least 3 interests
+              Please enter at least 1 interest
             </p>
           )}
         </motion.div>
