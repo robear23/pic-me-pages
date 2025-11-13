@@ -1,6 +1,17 @@
 import { supabase } from '@/integrations/supabase/client';
 import { jsPDF } from 'jspdf';
 
+async function toDataUrl(url: string): Promise<string> {
+  const response = await fetch(url);
+  const blob = await response.blob();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 interface SaveBookParams {
   userId: string;
   characterName: string;
@@ -127,9 +138,12 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
         const pageWidth = 8.5;
         const pageHeight = 11;
 
+        // Convert cover URL to data URL to avoid CORS issues
+        const coverDataUrl = await toDataUrl(uploadedCoverUrl);
+        
         // Add cover image edge-to-edge
         coverPdf.addImage(
-          uploadedCoverUrl,
+          coverDataUrl,
           'PNG',
           0,
           0,
@@ -199,16 +213,23 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
 
         interiorPdf.addPage();
 
-        interiorPdf.addImage(
-          page.imageUrl,
-          'PNG',
-          margin,
-          margin,
-          imageWidth,
-          imageHeight,
-          undefined,
-          'FAST'
-        );
+        try {
+          // Convert remote URL to data URL to avoid CORS issues
+          const dataUrl = await toDataUrl(page.imageUrl);
+          interiorPdf.addImage(
+            dataUrl,
+            'PNG',
+            margin,
+            margin,
+            imageWidth,
+            imageHeight,
+            undefined,
+            'FAST'
+          );
+        } catch (error) {
+          console.error(`Failed to add page ${i + 1} to PDF:`, error);
+          // Continue with other pages
+        }
 
         interiorPdf.setFontSize(10);
         interiorPdf.setTextColor(100);
