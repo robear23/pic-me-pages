@@ -77,9 +77,9 @@ export function OrderPhysicalBookDialog({ bookId, bookTitle }: OrderPhysicalBook
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-2">
+        <Button variant="ghost" size="sm" className="gap-2 !bg-white/10 hover:!bg-white/20 !text-white border border-white/20">
           <Package className="w-4 h-4" />
-          Order Print
+          Order Physical Book
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-md">
