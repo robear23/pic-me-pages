@@ -6,8 +6,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MAX_RETRIES = 3;
-const BASE_DELAY = 2000;
+const MAX_RETRIES = 2;
+const BASE_DELAY = 1000;
 
 async function generateImageWithRetry(
   prompt: any,
@@ -116,6 +116,8 @@ async function generateImageWithRetry(
 }
 
 serve(async (req) => {
+  console.log(`[HEALTH] generate-images called at ${new Date().toISOString()}`);
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -156,14 +158,24 @@ serve(async (req) => {
 
     const generatedPages = [];
     
-    for (let i = 0; i < prompts.length; i++) {
-      const prompt = prompts[i];
-      console.log(`Processing page ${i + 1}/${prompts.length}: ${prompt.prompt?.substring(0, 50)}...`);
+    // Process images in parallel batches of 3 for faster generation
+    const BATCH_SIZE = 3;
+    console.log(`Processing ${prompts.length} pages in batches of ${BATCH_SIZE}`);
+    
+    for (let batchStart = 0; batchStart < prompts.length; batchStart += BATCH_SIZE) {
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, prompts.length);
+      const batch = prompts.slice(batchStart, batchEnd);
       
-      try {
-        const hasCharacterPhotos = consistentCharacters && characters.some((c: any) => c.photos && c.photos.length > 0);
+      console.log(`Processing batch ${Math.floor(batchStart / BATCH_SIZE) + 1}: pages ${batchStart + 1}-${batchEnd}`);
+      
+      const batchPromises = batch.map(async (prompt, batchIndex) => {
+        const i = batchStart + batchIndex;
+        console.log(`Processing page ${i + 1}/${prompts.length}: ${prompt.prompt?.substring(0, 50)}...`);
         
-        const enhancedPrompt = `Create a black and white coloring book page.
+        try {
+          const hasCharacterPhotos = consistentCharacters && characters.some((c: any) => c.photos && c.photos.length > 0);
+          
+          const enhancedPrompt = `Create a black and white coloring book page.
 
 CHARACTERS: ${characterNames}
 ${hasCharacterPhotos 
@@ -190,54 +202,56 @@ ${consistentCharacters
 - ${complexity === 'simple' ? 'Very thick lines, very simple shapes' : ''}
 ${complexity === 'medium' ? 'Medium lines, moderate detail' : ''}
 ${complexity === 'detailed' ? 'Fine lines, intricate patterns' : ''}`;
-        
-        const contentParts: any[] = [
-          {
-            type: 'text',
-            text: enhancedPrompt
-          }
-        ];
-        
-        if (consistentCharacters && characters.length > 0) {
-          for (const character of characters) {
-            if (character.photos && character.photos.length > 0) {
-              contentParts.push({
-                type: 'image_url',
-                image_url: {
-                  url: character.photos[0]
-                }
-              });
+          
+          const contentParts: any[] = [
+            {
+              type: 'text',
+              text: enhancedPrompt
+            }
+          ];
+          
+          if (consistentCharacters && characters.length > 0) {
+            for (const character of characters) {
+              if (character.photos && character.photos.length > 0) {
+                contentParts.push({
+                  type: 'image_url',
+                  image_url: {
+                    url: character.photos[0]
+                  }
+                });
+              }
+            }
+            
+            if (contentParts.length > 1) {
+              console.log(`Added ${contentParts.length - 1} character reference photo(s) for page ${i + 1}`);
             }
           }
           
-          if (contentParts.length > 1) {
-            console.log(`Added ${contentParts.length - 1} character reference photo(s) for page ${i + 1}`);
-          }
+          const result = await generateImageWithRetry(
+            prompt,
+            contentParts,
+            LOVABLE_API_KEY,
+            i,
+            prompts.length
+          );
+          
+          return result;
+          
+        } catch (error) {
+          console.error(`Error processing page ${i + 1}:`, error);
+          return {
+            pageNumber: prompt.pageNumber || i + 1,
+            imageUrl: '',
+            prompt: prompt.prompt,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          };
         }
-        
-        const result = await generateImageWithRetry(
-          prompt,
-          contentParts,
-          LOVABLE_API_KEY,
-          i,
-          prompts.length
-        );
-        
-        generatedPages.push(result);
-        
-        if (i < prompts.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
-        
-      } catch (error) {
-        console.error(`Error processing page ${i + 1}:`, error);
-        generatedPages.push({
-          pageNumber: prompt.pageNumber || i + 1,
-          imageUrl: '',
-          prompt: prompt.prompt,
-          error: error instanceof Error ? error.message : 'Unknown error'
-        });
-      }
+      });
+      
+      const batchResults = await Promise.all(batchPromises);
+      generatedPages.push(...batchResults);
+      
+      console.log(`Completed batch ${Math.floor(batchStart / BATCH_SIZE) + 1}: ${batchResults.filter(r => r.imageUrl).length}/${batchResults.length} successful`);
     }
 
     const successCount = generatedPages.filter(p => p.imageUrl).length;
