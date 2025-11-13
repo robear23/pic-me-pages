@@ -18,7 +18,7 @@ export interface GeneratedPage {
 export interface GenerationParams {
   characters: Character[];
   complexity: 'simple' | 'medium' | 'detailed';
-  artStyle: 'cartoon' | 'realistic' | 'minimalist' | 'whimsical';
+  artStyle: 'cartoon' | 'realistic' | 'minimalist' | 'whimsical' | 'photorealistic';
   consistentCharacters: boolean;
   interests: string[];
 }
@@ -27,7 +27,7 @@ interface BookState {
   currentStep: BookStep;
   characters: Character[];
   complexity: 'simple' | 'medium' | 'detailed';
-  artStyle: 'cartoon' | 'realistic' | 'minimalist' | 'whimsical';
+  artStyle: 'cartoon' | 'realistic' | 'minimalist' | 'whimsical' | 'photorealistic';
   consistentCharacters: boolean;
   selectedInterests: string[];
   generatedPages: GeneratedPage[];
@@ -50,7 +50,7 @@ interface BookState {
   updateCharacter: (id: string, updates: Partial<Character>) => void;
   setCharacterPhoto: (characterId: string, photoIndex: number, file: File | null) => void;
   setComplexity: (complexity: 'simple' | 'medium' | 'detailed') => void;
-  setArtStyle: (style: 'cartoon' | 'realistic' | 'minimalist' | 'whimsical') => void;
+  setArtStyle: (style: 'cartoon' | 'realistic' | 'minimalist' | 'whimsical' | 'photorealistic') => void;
   toggleConsistentCharacters: () => void;
   toggleInterest: (interest: string) => void;
   setInterests: (interests: string[]) => void;

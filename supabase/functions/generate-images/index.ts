@@ -175,6 +175,16 @@ serve(async (req) => {
         try {
           const hasCharacterPhotos = consistentCharacters && characters.some((c: any) => c.photos && c.photos.length > 0);
           
+          const photorealisticEnhancement = artStyle === 'photorealistic' 
+            ? `\nPHOTOREALISTIC REQUIREMENTS:
+- Ultra-realistic photograph quality - like a professional portrait
+- Photographic accuracy with natural lighting and proportions
+- Professional portrait photography style
+- If character photos are provided, match facial features EXACTLY from the reference photos
+- Natural expressions and proportions like a real photograph
+- Photo-realistic detail while keeping clear coloring book outlines`
+            : '';
+
           const enhancedPrompt = `Create a black and white coloring book page.
 
 CHARACTERS: ${characterNames}
@@ -186,7 +196,7 @@ SCENE: ${prompt.prompt}
 
 STYLE REQUIREMENTS:
 - Complexity: ${complexity} - ${complexityStyles[complexity as keyof typeof complexityStyles] || complexityStyles.medium}
-- Art Style: ${artStyle}
+- Art Style: ${artStyle}${photorealisticEnhancement}
 ${consistentCharacters 
   ? `- CRITICAL: Keep character appearance EXACTLY as shown in reference photos (same face shape, eyes, nose, mouth, hair, clothing, proportions, age)
 - DO NOT age up or change the character's appearance in any way

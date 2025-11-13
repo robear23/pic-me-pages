@@ -45,6 +45,7 @@ export const SettingsStep = () => {
     { value: 'realistic' as const, label: 'Realistic', emoji: '🖼️' },
     { value: 'minimalist' as const, label: 'Minimalist', emoji: '✨' },
     { value: 'whimsical' as const, label: 'Whimsical', emoji: '🌈' },
+    { value: 'photorealistic' as const, label: 'Photorealistic', emoji: '📸' },
   ];
 
   const handleNext = () => {
