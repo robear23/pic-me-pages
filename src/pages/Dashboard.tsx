@@ -139,7 +139,7 @@ const Dashboard = () => {
   const handleGeneratePdf = async (book: Book) => {
     if (!book.pages || book.pages.length === 0) {
       toast.error('No pages available to generate PDF');
-      return;
+      return null;
     }
 
     setIsGeneratingPdf(book.id);
@@ -153,11 +153,24 @@ const Dashboard = () => {
       );
       
       toast.success('PDF generated successfully!');
+      return pdfUrl;
     } catch (error: any) {
       console.error('Error generating PDF:', error);
       toast.error(error.message || 'Failed to generate PDF');
+      return null;
     } finally {
       setIsGeneratingPdf(null);
+    }
+  };
+
+  const handleDownloadOrGenerate = async (book: Book) => {
+    if (book.pdf_url) {
+      handleDownloadPDF(book.pdf_url, book.character_name);
+    } else {
+      const pdfUrl = await handleGeneratePdf(book);
+      if (pdfUrl) {
+        handleDownloadPDF(pdfUrl, book.character_name);
+      }
     }
   };
 
@@ -263,7 +276,7 @@ const Dashboard = () => {
                         ))}
                       </div>
                       <div className="flex gap-2">
-                        {book.status === 'completed' && book.pdf_url ? (
+                        {book.status === 'completed' ? (
                           <>
                             <Button
                               size="sm"
@@ -271,44 +284,17 @@ const Dashboard = () => {
                               className="flex-1 !bg-white/10 hover:!bg-white/20 !text-white border border-white/20"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleDownloadPDF(book.pdf_url!, book.character_name);
+                                handleDownloadOrGenerate(book);
                               }}
+                              disabled={isGeneratingPdf === book.id}
                             >
                               <Download className="w-4 h-4 mr-1" />
-                              Download
+                              {isGeneratingPdf === book.id ? 'Generating...' : 'Download PDF'}
                             </Button>
                             <OrderPhysicalBookDialog 
                               bookId={book.id}
                               bookTitle={`${book.character_name}'s Coloring Book`}
                             />
-                          </>
-                        ) : book.status === 'completed' && !book.pdf_url ? (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="flex-1 !bg-white/10 hover:!bg-white/20 !text-white border border-white/20"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedBook(book);
-                              }}
-                            >
-                              <Eye className="w-4 h-4 mr-1" />
-                              View
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="default"
-                              className="flex-1"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleGeneratePdf(book);
-                              }}
-                              disabled={isGeneratingPdf === book.id}
-                            >
-                              <FileText className="w-4 h-4 mr-1" />
-                              {isGeneratingPdf === book.id ? 'Gen...' : 'PDF'}
-                            </Button>
                           </>
                         ) : (
                           <Button size="sm" variant="outline" className="w-full" disabled>
