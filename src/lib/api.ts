@@ -18,13 +18,16 @@ export interface Character {
 }
 
 const callEdgeFunction = async (functionName: string, body: any) => {
+  const { supabase } = await import('@/integrations/supabase/client');
+  const { data: { session } } = await supabase.auth.getSession();
+  
   const response = await fetch(
     `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
       },
       body: JSON.stringify(body),
     }
