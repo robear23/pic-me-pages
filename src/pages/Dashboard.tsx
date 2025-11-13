@@ -6,10 +6,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAdmin } from '@/hooks/useAdmin';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield } from 'lucide-react';
+import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { OrderPhysicalBookDialog } from '@/components/OrderPhysicalBookDialog';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { repairBookPdf } from '@/lib/repairPdf';
 
 interface Book {
   id: string;
@@ -17,6 +19,7 @@ interface Book {
   interests: string[];
   pages: any;
   pdf_url: string | null;
+  cover_url: string | null;
   status: string;
   created_at: string;
 }
@@ -39,6 +42,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -131,6 +136,35 @@ const Dashboard = () => {
     document.body.removeChild(link);
   };
 
+  const handleGeneratePdf = async (book: Book) => {
+    if (!book.pages || book.pages.length === 0) {
+      toast.error('No pages available to generate PDF');
+      return;
+    }
+
+    setIsGeneratingPdf(book.id);
+    try {
+      toast.info('Generating PDF... This may take a moment');
+      const pdfUrl = await repairBookPdf(book.id, book.pages);
+      
+      // Update local state
+      setBooks(prevBooks => 
+        prevBooks.map(b => b.id === book.id ? { ...b, pdf_url: pdfUrl } : b)
+      );
+      
+      toast.success('PDF generated successfully!');
+    } catch (error: any) {
+      console.error('Error generating PDF:', error);
+      toast.error(error.message || 'Failed to generate PDF');
+    } finally {
+      setIsGeneratingPdf(null);
+    }
+  };
+
+  const getBookCoverImage = (book: Book) => {
+    return book.cover_url || book.pages?.[0]?.imageUrl || '/placeholder.svg';
+  };
+
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       {/* Background Gradient */}
@@ -199,15 +233,18 @@ const Dashboard = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: index * 0.1 }}
               >
-                <Card className="overflow-hidden hover:shadow-lg transition-shadow">
+                <Card 
+                  className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                  onClick={() => book.status === 'completed' && setSelectedBook(book)}
+                >
                   <CardContent className="p-0">
-                    {book.pages?.[0] && (
+                    <div className="aspect-[3/4] relative overflow-hidden bg-muted">
                       <img
-                        src={book.pages[0]}
-                        alt={`${book.character_name}'s book`}
-                        className="w-full h-48 object-cover"
+                        src={getBookCoverImage(book)}
+                        alt={book.character_name}
+                        className="w-full h-full object-cover"
                       />
-                    )}
+                    </div>
                     <div className="p-4">
                       <h3 className="text-lg font-semibold text-foreground mb-1">
                         {book.character_name}'s Coloring Book
@@ -232,7 +269,10 @@ const Dashboard = () => {
                               size="sm"
                               variant="outline"
                               className="flex-1"
-                              onClick={() => handleDownloadPDF(book.pdf_url!, book.character_name)}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadPDF(book.pdf_url!, book.character_name);
+                              }}
                             >
                               <Download className="w-4 h-4 mr-1" />
                               Download
@@ -241,6 +281,34 @@ const Dashboard = () => {
                               bookId={book.id}
                               bookTitle={`${book.character_name}'s Coloring Book`}
                             />
+                          </>
+                        ) : book.status === 'completed' && !book.pdf_url ? (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedBook(book);
+                              }}
+                            >
+                              <Eye className="w-4 h-4 mr-1" />
+                              View
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleGeneratePdf(book);
+                              }}
+                              disabled={isGeneratingPdf === book.id}
+                            >
+                              <FileText className="w-4 h-4 mr-1" />
+                              {isGeneratingPdf === book.id ? 'Gen...' : 'PDF'}
+                            </Button>
                           </>
                         ) : (
                           <Button size="sm" variant="outline" className="w-full" disabled>
@@ -285,6 +353,43 @@ const Dashboard = () => {
           </div>
         )}
       </div>
+
+      {/* Book Pages Modal */}
+      <Dialog open={!!selectedBook} onOpenChange={(open) => !open && setSelectedBook(null)}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-bold">
+              {selectedBook?.character_name} - Coloring Book Pages
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+            {selectedBook?.pages?.map((page: any, index: number) => (
+              <div key={index} className="relative aspect-[3/4] rounded-lg overflow-hidden border border-border">
+                <img
+                  src={page.imageUrl || page}
+                  alt={`Page ${index + 1}`}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm px-2 py-1 rounded text-xs font-medium">
+                  Page {index + 1}
+                </div>
+              </div>
+            ))}
+          </div>
+          {selectedBook && !selectedBook.pdf_url && (
+            <div className="mt-4">
+              <Button
+                onClick={() => selectedBook && handleGeneratePdf(selectedBook)}
+                disabled={isGeneratingPdf === selectedBook.id}
+                className="w-full"
+              >
+                <FileText className="mr-2 h-4 w-4" />
+                {isGeneratingPdf === selectedBook.id ? 'Generating PDF...' : 'Generate PDF'}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
