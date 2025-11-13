@@ -77,7 +77,7 @@ export function OrderPhysicalBookDialog({ bookId, bookTitle }: OrderPhysicalBook
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="gap-2 !bg-white/10 hover:!bg-white/20 !text-white border border-white/20">
+        <Button variant="default" size="sm" className="gap-2 bg-black text-white hover:bg-black/90">
           <Package className="w-4 h-4" />
           Order Physical Book
         </Button>
