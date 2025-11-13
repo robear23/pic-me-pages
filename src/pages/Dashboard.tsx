@@ -174,6 +174,21 @@ const Dashboard = () => {
     }
   };
 
+  const handleOrderFromModal = async (book: Book) => {
+    if (!book.pdf_url) {
+      toast.info("Preparing book for printing...");
+      const pdfUrl = await handleGeneratePdf(book);
+      if (!pdfUrl) {
+        toast.error("Failed to generate PDF for ordering.");
+        return;
+      }
+    }
+    setSelectedBook(null);
+    setTimeout(() => {
+      document.getElementById(`order-trigger-${book.id}`)?.click();
+    }, 100);
+  };
+
   const getBookCoverImage = (book: Book) => {
     return book.cover_url || book.pages?.[0]?.imageUrl || '/placeholder.svg';
   };
@@ -291,10 +306,12 @@ const Dashboard = () => {
                               <Download className="w-4 h-4 mr-1" />
                               {isGeneratingPdf === book.id ? 'Generating...' : 'Download PDF'}
                             </Button>
-                            <OrderPhysicalBookDialog 
-                              bookId={book.id}
-                              bookTitle={`${book.character_name}'s Coloring Book`}
-                            />
+                            <div id={`order-trigger-${book.id}`}>
+                              <OrderPhysicalBookDialog 
+                                bookId={book.id}
+                                bookTitle={`${book.character_name}'s Coloring Book`}
+                              />
+                            </div>
                           </>
                         ) : (
                           <Button size="sm" variant="outline" className="w-full" disabled>
@@ -362,15 +379,25 @@ const Dashboard = () => {
               </div>
             ))}
           </div>
-          {selectedBook && !selectedBook.pdf_url && (
-            <div className="mt-4">
+          {selectedBook && (
+            <div className="mt-6 flex gap-2">
               <Button
-                onClick={() => selectedBook && handleGeneratePdf(selectedBook)}
+                variant="outline"
+                onClick={() => handleDownloadOrGenerate(selectedBook)}
                 disabled={isGeneratingPdf === selectedBook.id}
-                className="w-full"
+                className="flex-1"
               >
-                <FileText className="mr-2 h-4 w-4" />
-                {isGeneratingPdf === selectedBook.id ? 'Generating PDF...' : 'Generate PDF'}
+                <Download className="w-4 h-4 mr-2" />
+                {isGeneratingPdf === selectedBook.id ? 'Generating...' : 'Download PDF'}
+              </Button>
+              <Button
+                variant="default"
+                onClick={() => handleOrderFromModal(selectedBook)}
+                disabled={isGeneratingPdf === selectedBook.id}
+                className="flex-1 bg-black text-white hover:bg-black/90"
+              >
+                <Package className="w-4 h-4 mr-2" />
+                Order Physical Book
               </Button>
             </div>
           )}
