@@ -172,13 +172,12 @@ export function OrderPhysicalBookDialog({
             </div>
             
             <div>
-              <Label htmlFor="state">State</Label>
+              <Label htmlFor="state">State/Region/County</Label>
               <Input
                 id="state"
                 value={shippingAddress.state}
                 onChange={(e) => setShippingAddress({ ...shippingAddress, state: e.target.value })}
-                placeholder="CA"
-                required
+                placeholder="CA (leave empty for non-US)"
               />
             </div>
           </div>
