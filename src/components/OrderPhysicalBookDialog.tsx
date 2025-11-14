@@ -11,6 +11,13 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { createPrintOrder, ShippingAddress } from '@/lib/api';
 import { Package } from 'lucide-react';
@@ -175,13 +182,37 @@ export function OrderPhysicalBookDialog({
             
             <div>
               <Label htmlFor="country">Country</Label>
-              <Input
-                id="country"
+              <Select
                 value={shippingAddress.country}
-                onChange={(e) => setShippingAddress({ ...shippingAddress, country: e.target.value })}
-                placeholder="US"
+                onValueChange={(value) => setShippingAddress({ ...shippingAddress, country: value })}
                 required
-              />
+              >
+                <SelectTrigger id="country">
+                  <SelectValue placeholder="Select country" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="US">United States</SelectItem>
+                  <SelectItem value="GB">United Kingdom</SelectItem>
+                  <SelectItem value="CA">Canada</SelectItem>
+                  <SelectItem value="AU">Australia</SelectItem>
+                  <SelectItem value="DE">Germany</SelectItem>
+                  <SelectItem value="FR">France</SelectItem>
+                  <SelectItem value="ES">Spain</SelectItem>
+                  <SelectItem value="IT">Italy</SelectItem>
+                  <SelectItem value="NL">Netherlands</SelectItem>
+                  <SelectItem value="BE">Belgium</SelectItem>
+                  <SelectItem value="IE">Ireland</SelectItem>
+                  <SelectItem value="CH">Switzerland</SelectItem>
+                  <SelectItem value="AT">Austria</SelectItem>
+                  <SelectItem value="SE">Sweden</SelectItem>
+                  <SelectItem value="NO">Norway</SelectItem>
+                  <SelectItem value="DK">Denmark</SelectItem>
+                  <SelectItem value="FI">Finland</SelectItem>
+                  <SelectItem value="PL">Poland</SelectItem>
+                  <SelectItem value="PT">Portugal</SelectItem>
+                  <SelectItem value="NZ">New Zealand</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
           
