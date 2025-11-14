@@ -147,6 +147,20 @@ serve(async (req) => {
 
     console.log('Interior page count:', interiorPageCount);
     console.log('POD Package ID:', podPackageId);
+    
+    // Guardrail: paperback requires at least 24 pages
+    if (podPackageId.includes('PB') && interiorPageCount < 24) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Paperback requires at least 24 pages. Please regenerate your book with more content.' 
+        }),
+        { 
+          status: 422,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+        }
+      );
+    }
+    
     console.log('Note: Lulu validates files automatically during print job creation');
 
     // Determine shipping level - use basic MAIL for sandbox, more options for production
