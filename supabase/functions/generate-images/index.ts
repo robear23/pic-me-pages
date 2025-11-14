@@ -148,7 +148,26 @@ serve(async (req) => {
       );
     }
 
-    const characterNames = characters.map((c: any) => c.name).join(' and ');
+    // Build character descriptions with photo reference notes
+    let characterNames = '';
+    if (consistentCharacters && characters && characters.length > 0) {
+      const characterDescriptions = characters
+        .filter((c: any) => c.name && c.name.trim())
+        .map((character: any) => {
+          const photoNote = character.photos && character.photos.length > 0
+            ? ` (Reference photos provided: Study these images to learn the character's unique facial features, hair style, approximate age, and overall appearance. Generate this character in new poses and expressions that fit each scene.)`
+            : '';
+          return `${character.name}${photoNote}`;
+        });
+      
+      if (characterDescriptions.length > 0) {
+        characterNames = characterDescriptions.join(' and ');
+      }
+    }
+    
+    if (!characterNames) {
+      characterNames = characters.map((c: any) => c.name).join(' and ');
+    }
     
     const complexityStyles = {
       simple: 'Ultra simple thick lines (4-6px). Only 5-8 large basic shapes. Minimal detail. Very easy for young children to color.',
@@ -175,33 +194,61 @@ serve(async (req) => {
         try {
           const hasCharacterPhotos = consistentCharacters && characters.some((c: any) => c.photos && c.photos.length > 0);
           
-          const photorealisticEnhancement = artStyle === 'photorealistic' 
-            ? `\nPHOTOREALISTIC REQUIREMENTS:
-- Ultra-realistic photograph quality - like a professional portrait
-- Photographic accuracy with natural lighting and proportions
-- Professional portrait photography style
-- If character photos are provided, match facial features EXACTLY from the reference photos
-- Natural expressions and proportions like a real photograph
-- Photo-realistic detail while keeping clear coloring book outlines`
-            : '';
+          // Art style guide for non-character elements
+          const artStyleGuide: Record<string, string> = {
+            cartoon: 'Fun, playful cartoon style with exaggerated features',
+            realistic: 'Lifelike proportions and natural details',
+            minimalist: 'Clean, simple lines with minimal detail',
+            whimsical: 'Magical, imaginative style with creative flourishes',
+            photorealistic: 'Ultra-realistic photograph quality with natural lighting'
+          };
+          
+          // Build styling instructions based on whether characters have photos
+          const stylingInstructions = hasCharacterPhotos
+            ? `HYBRID STYLING WITH DYNAMIC CHARACTER GENERATION:
+
+CHARACTER RENDERING (${characterNames}):
+- Style: PHOTOREALISTIC ONLY (professional photograph quality)
+- Use reference photos to LEARN the character's appearance (facial features, hair, skin tone, age, build)
+- Generate NEW poses, expressions, and angles that fit the scene naturally
+- Character should be actively engaged in the scene's activity
+- Facial expressions should match the emotion/action of the scene
+- Body language and pose should be appropriate for the activity
+- Maintain the character's LIKENESS and IDENTITY across all variations
+- DO NOT copy/paste reference photos - CREATE NEW IMAGES of the same character
+- Natural, realistic lighting and proportions
+- DO NOT apply ${artStyle} style to characters
+
+BACKGROUND/SCENE/ENVIRONMENT:
+- Art Style: ${artStyle}
+- Apply ${artStyle} characteristics to: setting, scenery, props, objects, animals, vehicles
+- Clear visual distinction: photorealistic characters against styled background
+
+DYNAMIC SCENE INTEGRATION:
+- Character should naturally interact with environment
+- Pose and expression should tell the story of the scene
+- Each page should show the character differently but recognizably
+- Avoid repetitive poses across pages`
+            : `UNIFORM STYLING:
+- Art Style: ${artStyle} (apply to entire image)
+- ${artStyleGuide[artStyle] || 'Consistent artistic style throughout'}`;
 
           const enhancedPrompt = `Create a black and white coloring book page.
 
 CHARACTERS: ${characterNames}
 ${hasCharacterPhotos 
-  ? `IMPORTANT: Reference photos of the characters are provided below. Study each character's facial features, hairstyle, clothing style, body proportions, and age carefully. Maintain EXACT consistency with these visual references.`
+  ? `IMPORTANT: Reference photos of the characters are provided below. Study each character's unique features to create a recognizable character model. Then generate NEW dynamic poses and expressions for this scene.`
   : ''
 }
 SCENE: ${prompt.prompt}
 
 STYLE REQUIREMENTS:
 - Complexity: ${complexity} - ${complexityStyles[complexity as keyof typeof complexityStyles] || complexityStyles.medium}
-- Art Style: ${artStyle}${photorealisticEnhancement}
+${stylingInstructions}
 ${consistentCharacters 
-  ? `- CRITICAL: Keep character appearance EXACTLY as shown in reference photos (same face shape, eyes, nose, mouth, hair, clothing, proportions, age)
-- DO NOT age up or change the character's appearance in any way
-- Match the exact age, features, and styling from the provided photos
-- Maintain perfect consistency across all pages`
+  ? `- CRITICAL: Maintain character identity and recognizability across all pages
+- Keep core features consistent (face shape, hair, approximate age, body type)
+- Vary poses, expressions, and angles to fit each scene naturally`
   : ''
 }
 - Black and white line art ONLY

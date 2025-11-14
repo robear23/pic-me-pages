@@ -38,6 +38,8 @@ serve(async (req) => {
     }
 
     const characterNames = characters.map((c: any) => c.name).join(' and ');
+    const hasCharacterPhotos = consistentCharacters && characters.some((c: any) => c.photos && c.photos.length > 0);
+    
     const complexityGuide = {
       simple: 'Use thick, clear lines (4-6px). Minimal background. Large simple shapes. Ages 3-5.',
       medium: 'Balanced detail with moderate line weight (2-3px). Some background elements. Mix of shapes. Ages 5-8.',
@@ -49,15 +51,25 @@ serve(async (req) => {
       realistic: 'Lifelike proportions and natural details',
       minimalist: 'Clean, simple lines with minimal detail',
       whimsical: 'Magical, imaginative style with creative flourishes',
-      photorealistic: 'Ultra-realistic photograph quality. Professional portrait photography style. Photographic accuracy with studio lighting. If character photos provided, maintain exact facial features, expressions, and proportions from reference.'
+      photorealistic: 'Ultra-realistic photograph quality. Professional portrait photography style. Photographic accuracy with studio lighting.'
     };
+
+    const characterGuidance = hasCharacterPhotos
+      ? `\nIMPORTANT - DYNAMIC CHARACTER SCENES: For characters with reference photos, create scenes where the character is:
+- In different poses and positions (not repetitive)
+- Showing varied facial expressions appropriate to the activity
+- Actively engaged with the scene (playing, exploring, creating, discovering)
+- At different angles and perspectives
+- Naturally interacting with environment and props
+Each scene should feel unique and alive - the character should be doing something different in each page.`
+      : '';
 
     const systemPrompt = `You are an expert at creating child-friendly coloring page descriptions. Generate 12 unique, detailed prompts for black & white coloring pages featuring ${characterNames} in scenarios related to their interests: ${interests.join(', ')}.
 
 STYLE REQUIREMENTS:
 - Complexity: ${complexity} - ${complexityGuide[complexity as keyof typeof complexityGuide] || complexityGuide.medium}
 - Art Style: ${artStyle} - ${artStyleGuide[artStyle as keyof typeof artStyleGuide] || artStyleGuide.cartoon}
-- Character Consistency: ${consistentCharacters ? 'CRITICAL - Keep character appearances consistent across ALL pages. Use same clothing, hair, facial features throughout.' : 'Varied appearances are OK'}
+- Character Consistency: ${consistentCharacters ? 'CRITICAL - Keep character identity consistent across ALL pages. Recognize the same character throughout.' : 'Varied appearances are OK'}${characterGuidance}
 - Simple outlines, no shading or gradients
 - Black and white line art only
 - Child-appropriate content
