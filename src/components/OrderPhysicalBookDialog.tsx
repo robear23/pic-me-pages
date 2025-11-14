@@ -115,9 +115,13 @@ export function OrderPhysicalBookDialog({
         ? ' (Test order - no actual printing will occur)'
         : '';
       
+      const shippingNote = result.shippingLevel && result.shippingLevel !== 'MAIL'
+        ? ` Shipping via ${result.shippingLevel}.`
+        : '';
+      
       toast({
         title: 'Order Placed!',
-        description: `Your physical copy of "${bookTitle}" is being printed and will be shipped soon.${envNote}`,
+        description: `Your physical copy of "${bookTitle}" is being printed and will be shipped soon.${envNote}${shippingNote}`,
       });
       
       setOpen(false);
@@ -134,9 +138,22 @@ export function OrderPhysicalBookDialog({
         country: 'US',
       });
     } catch (error: any) {
+      console.error('Order error:', error);
+      
+      // Check if this is a validation error with specific details
+      const isValidationError = error.message?.includes('validation failed') || 
+                               error.message?.includes('not accessible') ||
+                               error.message?.includes('not a PDF') ||
+                               error.message?.includes('appears to be empty');
+      
+      const title = isValidationError ? 'Print File Validation Failed' : 'Order Failed';
+      const suggestion = isValidationError 
+        ? ' Try regenerating your book and ensure all pages are complete.'
+        : ' Please try again or contact support if the issue persists.';
+      
       toast({
-        title: 'Order Failed',
-        description: error.message || 'Failed to create print order. Please try again.',
+        title,
+        description: (error.message || 'Failed to place order.') + suggestion,
         variant: 'destructive',
       });
     } finally {
