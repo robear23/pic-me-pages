@@ -57,7 +57,10 @@ serve(async (req) => {
     const luluEnvironment = Deno.env.get('LULU_ENVIRONMENT') || 'sandbox';
     
     // Configurable product and shipping
-    const podPackageId = Deno.env.get('LULU_POD_PACKAGE_ID') || '0850X1100FCPRECO060UW444MXX';
+    // Default: 8.5"x11" B&W Standard Paperback, 60# White (works in sandbox)
+    // Note: Coil binding and specialty products may only work in production environment
+    // To use coil binding: set LULU_POD_PACKAGE_ID to 0850X1100FCPRECO060UW444MXX
+    const podPackageId = Deno.env.get('LULU_POD_PACKAGE_ID') || '0850X1100BWSTDPB060UW444MXX';
     
     const luluBaseUrl = luluEnvironment === 'production' 
       ? 'https://api.lulu.com'
@@ -196,6 +199,25 @@ serve(async (req) => {
       const errorText = await luluOrderResponse.text();
       console.error('Lulu API Error Response:', errorText);
       console.error('Status:', luluOrderResponse.status);
+      
+      // Check if Lulu returned HTML error page (indicates invalid product or sandbox limitation)
+      const isHtmlError = errorText.trim().toLowerCase().startsWith('<!doctype') || 
+                          errorText.trim().toLowerCase().startsWith('<html');
+      
+      if (isHtmlError) {
+        console.error('Lulu returned HTML error page - likely invalid product for sandbox environment');
+        return new Response(
+          JSON.stringify({ 
+            error: `Lulu sandbox error: The product type (${podPackageId}) may not be supported in the test environment. Try using a standard paperback (0850X1100BWSTDPB060UW444MXX) or switch to production for specialty products.`,
+            validationError: true,
+            productNotSupported: true,
+          }),
+          { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 422,
+          }
+        );
+      }
       
       // Parse validation errors from 4xx responses
       if (luluOrderResponse.status >= 400 && luluOrderResponse.status < 500) {
