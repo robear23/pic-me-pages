@@ -15,6 +15,7 @@ interface PrintOrderRequest {
     city: string;
     state: string;
     postalCode: string;
+    phoneNumber: string;
     country: string;
   };
 }
@@ -103,11 +104,17 @@ serve(async (req) => {
     const totalPages = pageCount + 1; // +1 for cover page
 
     // Create print job with Lulu
+    // POD Package ID: 0850X1100FCSTDCO060UW444MXX
+    // - 0850X1100: 8.5" x 11" size
+    // - FC: Full Color
+    // - STD: Standard paper (60lb Premium Uncoated)
+    // - CO: Coil Binding
+    // - 060UW444MXX: Paper/cover specifications
     const luluOrderData = {
       line_items: [
         {
           page_count: totalPages,
-          pod_package_id: 'PBKCSTD075', // Standard color paperback
+          pod_package_id: '0850X1100FCSTDCO060UW444MXX', // 8.5"x11" Coil Binding (Standard)
           title: `${book.character_name}'s Coloring Book`,
           cover: coverUrl,
           interior: interiorUrl,
@@ -149,7 +156,7 @@ serve(async (req) => {
     console.log('Lulu order created:', luluOrder);
 
     // Calculate price (Lulu provides this in their response)
-    const pricePaid = luluOrder.line_items?.[0]?.total_cost?.amount || 29.99;
+    const pricePaid = luluOrder.line_items?.[0]?.total_cost?.amount || 19.99;
 
     // Save order to database
     const { data: order, error: orderError } = await supabase
