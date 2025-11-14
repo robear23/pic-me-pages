@@ -121,6 +121,7 @@ serve(async (req) => {
         city: shippingAddress.city,
         state_code: shippingAddress.state,
         postcode: shippingAddress.postalCode,
+        phone_number: shippingAddress.phoneNumber,
         country_code: shippingAddress.country,
       },
       contact_email: user.email,

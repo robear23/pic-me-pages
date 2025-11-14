@@ -50,6 +50,7 @@ export function OrderPhysicalBookDialog({
     city: '',
     state: '',
     postalCode: '',
+    phoneNumber: '',
     country: 'US',
   });
 
@@ -79,6 +80,7 @@ export function OrderPhysicalBookDialog({
         city: '',
         state: '',
         postalCode: '',
+        phoneNumber: '',
         country: 'US',
       });
     } catch (error: any) {
@@ -123,6 +125,18 @@ export function OrderPhysicalBookDialog({
               id="name"
               value={shippingAddress.name}
               onChange={(e) => setShippingAddress({ ...shippingAddress, name: e.target.value })}
+              required
+            />
+          </div>
+          
+          <div>
+            <Label htmlFor="phoneNumber">Phone Number</Label>
+            <Input
+              id="phoneNumber"
+              type="tel"
+              value={shippingAddress.phoneNumber}
+              onChange={(e) => setShippingAddress({ ...shippingAddress, phoneNumber: e.target.value })}
+              placeholder="+44 1234 567890"
               required
             />
           </div>

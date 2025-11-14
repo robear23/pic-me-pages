@@ -93,6 +93,7 @@ export interface ShippingAddress {
   city: string;
   state: string;
   postalCode: string;
+  phoneNumber: string;
   country: string;
 }
 
