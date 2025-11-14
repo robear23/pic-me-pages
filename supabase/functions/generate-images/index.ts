@@ -40,97 +40,115 @@ async function generateImageWithRetry(
   totalPages: number,
   systemMessage: string = SYSTEM_MESSAGE
 ): Promise<any> {
+  const MODELS = ['google/gemini-2.5-flash-image', 'google/gemini-2.5-flash-image-preview'];
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      console.log(`Generating image ${pageIndex + 1}/${totalPages} (attempt ${attempt}/${MAX_RETRIES})`);
-      
-      const imageResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash-image-preview',
-          messages: [
-            {
-              role: 'system',
-              content: systemMessage
-            },
-            {
-              role: 'user',
-              content: contentParts
-            }
-          ],
-          modalities: ['image', 'text']
-        }),
-      });
-
-      if (imageResponse.status === 429) {
-        const delay = BASE_DELAY * Math.pow(2, attempt - 1);
-        console.log(`Rate limited on page ${pageIndex + 1}, waiting ${delay}ms before retry ${attempt}/${MAX_RETRIES}`);
+    for (const model of MODELS) {
+      try {
+        console.log(`Generating image ${pageIndex + 1}/${totalPages} (attempt ${attempt}/${MAX_RETRIES}, model: ${model})`);
         
-        if (attempt < MAX_RETRIES) {
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
+        // Merge system message with first text content (no system role for image generation)
+        const firstTextIndex = contentParts.findIndex((part: any) => part.type === 'text');
+        const mergedContent = [...contentParts];
+        
+        if (firstTextIndex >= 0) {
+          mergedContent[firstTextIndex] = {
+            type: 'text',
+            text: systemMessage + '\n\n' + contentParts[firstTextIndex].text
+          };
         } else {
-          throw new Error('Rate limit exceeded after all retries');
+          mergedContent.unshift({ type: 'text', text: systemMessage });
         }
-      }
+        
+        const imageResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [
+              {
+                role: 'user',
+                content: mergedContent
+              }
+            ],
+            modalities: ['image', 'text']
+          }),
+        });
 
-      if (!imageResponse.ok) {
-        const errorText = await imageResponse.text();
-        console.error(`HTTP error ${imageResponse.status} for page ${pageIndex + 1} (attempt ${attempt}):`, errorText);
+        if (imageResponse.status === 429) {
+          const delay = BASE_DELAY * Math.pow(2, attempt - 1);
+          console.log(`Rate limited on page ${pageIndex + 1} (model: ${model}), waiting ${delay}ms before retry ${attempt}/${MAX_RETRIES}`);
+          
+          if (attempt < MAX_RETRIES) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+            break; // Break model loop to retry with first model
+          } else {
+            throw new Error('Rate limit exceeded after all retries');
+          }
+        }
+
+        if (!imageResponse.ok) {
+          const errorText = await imageResponse.text();
+          console.error(`HTTP error ${imageResponse.status} for page ${pageIndex + 1} (model: ${model}, attempt ${attempt}):`, errorText);
+          
+          if (attempt < MAX_RETRIES || model !== MODELS[MODELS.length - 1]) {
+            const delay = 3000;
+            console.log(`Retrying page ${pageIndex + 1} with ${model === MODELS[MODELS.length - 1] ? 'next attempt' : 'next model'}...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue; // Try next model
+          } else {
+            throw new Error(`Generation failed after ${MAX_RETRIES} attempts: ${errorText}`);
+          }
+        }
+
+        const imageData = await imageResponse.json();
+        const generatedImage = imageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+        
+        if (!generatedImage) {
+          console.error(`No image in response for page ${pageIndex + 1} (model: ${model}, attempt ${attempt})`);
+          console.error('Response payload snippet:', JSON.stringify(imageData).slice(0, 1000));
+          
+          if (attempt < MAX_RETRIES || model !== MODELS[MODELS.length - 1]) {
+            const delay = 2000;
+            console.log(`Retrying page ${pageIndex + 1} with ${model === MODELS[MODELS.length - 1] ? 'next attempt' : 'next model'}...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue; // Try next model
+          } else {
+            throw new Error('No image returned after all retries');
+          }
+        }
+
+        console.log(`Successfully generated image ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
+        return {
+          pageNumber: prompt.pageNumber || pageIndex + 1,
+          imageUrl: generatedImage,
+          prompt: prompt.prompt
+        };
+
+      } catch (error) {
+        console.error(`Error generating image ${pageIndex + 1} (model: ${model}, attempt ${attempt}/${MAX_RETRIES}):`, error);
+        
+        // If not last model or not last attempt, continue
+        if (model !== MODELS[MODELS.length - 1]) {
+          continue; // Try next model
+        }
         
         if (attempt < MAX_RETRIES) {
           const delay = 3000;
           console.log(`Retrying page ${pageIndex + 1} in ${delay}ms...`);
           await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
+          break; // Break model loop to retry with first model
         } else {
-          throw new Error(`Generation failed after ${MAX_RETRIES} attempts: ${errorText}`);
+          return {
+            pageNumber: prompt.pageNumber || pageIndex + 1,
+            imageUrl: '',
+            prompt: prompt.prompt,
+            error: error instanceof Error ? error.message : 'Generation failed after retries'
+          };
         }
-      }
-
-      const imageData = await imageResponse.json();
-      const generatedImage = imageData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-      
-      if (!generatedImage) {
-        console.error(`No image in response for page ${pageIndex + 1} (attempt ${attempt})`);
-        
-        if (attempt < MAX_RETRIES) {
-          const delay = 2000;
-          console.log(`Retrying page ${pageIndex + 1} in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        } else {
-          throw new Error('No image returned after all retries');
-        }
-      }
-
-      console.log(`Successfully generated image ${pageIndex + 1}/${totalPages} on attempt ${attempt}`);
-      return {
-        pageNumber: prompt.pageNumber || pageIndex + 1,
-        imageUrl: generatedImage,
-        prompt: prompt.prompt
-      };
-
-    } catch (error) {
-      console.error(`Error generating image ${pageIndex + 1} (attempt ${attempt}/${MAX_RETRIES}):`, error);
-      
-      if (attempt < MAX_RETRIES) {
-        const delay = 3000;
-        console.log(`Retrying page ${pageIndex + 1} in ${delay}ms...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-        continue;
-      } else {
-        return {
-          pageNumber: prompt.pageNumber || pageIndex + 1,
-          imageUrl: '',
-          prompt: prompt.prompt,
-          error: error instanceof Error ? error.message : 'Generation failed after retries'
-        };
       }
     }
   }
@@ -151,12 +169,14 @@ async function refineImageWithRetry(
   pageIndex: number,
   totalPages: number
 ): Promise<string | null> {
+  const MODELS = ['google/gemini-2.5-flash-image', 'google/gemini-2.5-flash-image-preview'];
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      console.log(`Refining likeness for page ${pageIndex + 1}/${totalPages} using ${referencePhotos.length} reference photo(s) (attempt ${attempt}/${MAX_RETRIES})`);
-      
-      const refinementInstruction = `Refine ONLY the character's facial features to EXACTLY match these reference photos. 
+    for (const model of MODELS) {
+      try {
+        console.log(`Refining likeness for page ${pageIndex + 1}/${totalPages} using ${referencePhotos.length} reference photo(s) (attempt ${attempt}/${MAX_RETRIES}, model: ${model})`);
+        
+        const refinementInstruction = `Refine ONLY the character's facial features to EXACTLY match these reference photos. 
 
 CRITICAL INSTRUCTIONS:
 - Study the reference photos with EXTREME PRECISION
@@ -170,88 +190,97 @@ CRITICAL INSTRUCTIONS:
 
 Focus ONLY on enhancing facial feature accuracy and identity match.`;
 
-      const contentParts: any[] = [
-        { type: 'text', text: refinementInstruction },
-        { type: 'image_url', image_url: { url: baseImageUrl } }
-      ];
-      
-      // Add all reference photos
-      for (const photoUrl of referencePhotos) {
-        contentParts.push({
-          type: 'image_url',
-          image_url: { url: photoUrl }
-        });
-      }
-      
-      const refineResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'google/gemini-2.5-flash-image-preview',
-          messages: [
-            { role: 'system', content: SYSTEM_MESSAGE },
-            { role: 'user', content: contentParts }
-          ],
-          modalities: ['image', 'text']
-        }),
-      });
+        // Merge system message with refinement instruction
+        const mergedText = SYSTEM_MESSAGE + '\n\n' + refinementInstruction;
 
-      if (refineResponse.status === 429) {
-        const delay = BASE_DELAY * Math.pow(2, attempt - 1);
-        console.log(`Rate limited during refinement on page ${pageIndex + 1}, waiting ${delay}ms`);
+        const contentParts: any[] = [
+          { type: 'text', text: mergedText },
+          { type: 'image_url', image_url: { url: baseImageUrl } }
+        ];
         
-        if (attempt < MAX_RETRIES) {
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        } else {
-          console.log(`Skipping refinement for page ${pageIndex + 1} due to rate limit`);
-          return null;
+        // Add all reference photos
+        for (const photoUrl of referencePhotos) {
+          contentParts.push({
+            type: 'image_url',
+            image_url: { url: photoUrl }
+          });
         }
-      }
+        
+        const refineResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [
+              { role: 'user', content: contentParts }
+            ],
+            modalities: ['image', 'text']
+          }),
+        });
 
-      if (!refineResponse.ok) {
-        const errorText = await refineResponse.text();
-        console.error(`Refinement HTTP error ${refineResponse.status} for page ${pageIndex + 1}:`, errorText);
+        if (refineResponse.status === 429) {
+          const delay = BASE_DELAY * Math.pow(2, attempt - 1);
+          console.log(`Rate limited during refinement on page ${pageIndex + 1} (model: ${model}), waiting ${delay}ms`);
+          
+          if (attempt < MAX_RETRIES) {
+            await new Promise(resolve => setTimeout(resolve, delay));
+            break; // Break model loop to retry with first model
+          } else {
+            console.log(`Skipping refinement for page ${pageIndex + 1} due to rate limit`);
+            return null;
+          }
+        }
+
+        if (!refineResponse.ok) {
+          const errorText = await refineResponse.text();
+          console.error(`Refinement HTTP error ${refineResponse.status} for page ${pageIndex + 1} (model: ${model}):`, errorText);
+          
+          if (attempt < MAX_RETRIES || model !== MODELS[MODELS.length - 1]) {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            continue; // Try next model
+          } else {
+            console.log(`Skipping refinement for page ${pageIndex + 1} after ${MAX_RETRIES} attempts`);
+            return null;
+          }
+        }
+
+        const refineData = await refineResponse.json();
+        const refinedImage = refineData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+        
+        if (!refinedImage) {
+          console.error(`No refined image for page ${pageIndex + 1} (model: ${model}, attempt ${attempt})`);
+          console.error('Refinement response payload snippet:', JSON.stringify(refineData).slice(0, 1000));
+          
+          if (attempt < MAX_RETRIES || model !== MODELS[MODELS.length - 1]) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+            continue; // Try next model
+          } else {
+            console.log(`Skipping refinement for page ${pageIndex + 1} - no image returned`);
+            return null;
+          }
+        }
+
+        console.log(`Successfully refined likeness for page ${pageIndex + 1}/${totalPages} with model ${model}`);
+        return refinedImage;
+
+      } catch (error) {
+        console.error(`Error refining page ${pageIndex + 1} (model: ${model}, attempt ${attempt}/${MAX_RETRIES}):`, error);
+        
+        // If not last model, try next
+        if (model !== MODELS[MODELS.length - 1]) {
+          continue;
+        }
         
         if (attempt < MAX_RETRIES) {
           await new Promise(resolve => setTimeout(resolve, 3000));
-          continue;
+          break; // Break model loop to retry with first model
         } else {
-          console.log(`Skipping refinement for page ${pageIndex + 1} after ${MAX_RETRIES} attempts`);
+          console.log(`Skipping refinement for page ${pageIndex + 1} after error`);
           return null;
         }
-      }
-
-      const refineData = await refineResponse.json();
-      const refinedImage = refineData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-      
-      if (!refinedImage) {
-        console.error(`No refined image for page ${pageIndex + 1} (attempt ${attempt})`);
-        
-        if (attempt < MAX_RETRIES) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          continue;
-        } else {
-          console.log(`Skipping refinement for page ${pageIndex + 1} - no image returned`);
-          return null;
-        }
-      }
-
-      console.log(`Successfully refined likeness for page ${pageIndex + 1}/${totalPages}`);
-      return refinedImage;
-
-    } catch (error) {
-      console.error(`Error refining page ${pageIndex + 1} (attempt ${attempt}/${MAX_RETRIES}):`, error);
-      
-      if (attempt < MAX_RETRIES) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        continue;
-      } else {
-        console.log(`Skipping refinement for page ${pageIndex + 1} after error`);
-        return null;
       }
     }
   }
