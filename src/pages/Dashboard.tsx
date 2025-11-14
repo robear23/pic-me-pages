@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAdmin } from '@/hooks/useAdmin';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText } from 'lucide-react';
+import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { OrderPhysicalBookDialog } from '@/components/OrderPhysicalBookDialog';
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +45,7 @@ const Dashboard = () => {
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<string | null>(null);
   const [orderingBook, setOrderingBook] = useState<Book | null>(null);
+  const [deletingBookId, setDeletingBookId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -188,6 +189,36 @@ const Dashboard = () => {
     setOrderingBook(book);
   };
 
+  const handleDeleteBook = async (bookId: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+    }
+
+    if (!confirm('Are you sure you want to delete this book? This action cannot be undone.')) {
+      return;
+    }
+
+    setDeletingBookId(bookId);
+    
+    try {
+      const { error } = await supabase
+        .from('books')
+        .delete()
+        .eq('id', bookId);
+
+      if (error) throw error;
+
+      // Update local state
+      setBooks(books.filter(book => book.id !== bookId));
+      toast.success('Book deleted successfully');
+    } catch (error: any) {
+      console.error('Error deleting book:', error);
+      toast.error('Failed to delete book');
+    } finally {
+      setDeletingBookId(null);
+    }
+  };
+
   const getBookCoverImage = (book: Book) => {
     return book.cover_url || book.pages?.[0]?.imageUrl || '/placeholder.svg';
   };
@@ -289,32 +320,44 @@ const Dashboard = () => {
                           </span>
                         ))}
                       </div>
-                      <div className="flex gap-2">
-                        {book.status === 'completed' ? (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="default"
-                              className="flex-1 bg-black text-white hover:bg-black/90"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadOrGenerate(book);
-                              }}
-                              disabled={isGeneratingPdf === book.id}
-                            >
-                              <Download className="w-4 h-4 mr-1" />
-                              {isGeneratingPdf === book.id ? 'Generating...' : 'Download PDF'}
+                      <div className="space-y-2">
+                        <div className="flex gap-2">
+                          {book.status === 'completed' ? (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="default"
+                                className="flex-1 bg-black text-white hover:bg-black/90"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDownloadOrGenerate(book);
+                                }}
+                                disabled={isGeneratingPdf === book.id}
+                              >
+                                <Download className="w-4 h-4 mr-1" />
+                                {isGeneratingPdf === book.id ? 'Generating...' : 'Download PDF'}
+                              </Button>
+                              <OrderPhysicalBookDialog 
+                                bookId={book.id}
+                                bookTitle={`${book.character_name}'s Coloring Book`}
+                              />
+                            </>
+                          ) : (
+                            <Button size="sm" variant="outline" className="w-full" disabled>
+                              Processing...
                             </Button>
-                            <OrderPhysicalBookDialog 
-                              bookId={book.id}
-                              bookTitle={`${book.character_name}'s Coloring Book`}
-                            />
-                          </>
-                        ) : (
-                          <Button size="sm" variant="outline" className="w-full" disabled>
-                            Processing...
-                          </Button>
-                        )}
+                          )}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          onClick={(e) => handleDeleteBook(book.id, e)}
+                          disabled={deletingBookId === book.id}
+                        >
+                          <Trash2 className="w-4 h-4 mr-1" />
+                          {deletingBookId === book.id ? 'Deleting...' : 'Delete Book'}
+                        </Button>
                       </div>
 
                       {/* Show orders for this book */}
