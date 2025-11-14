@@ -1,16 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
-import { jsPDF } from 'jspdf';
-
-async function toDataUrl(url: string): Promise<string> {
-  const response = await fetch(url);
-  const blob = await response.blob();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
+import { repairBookPdf, generateCoverWrapPdf } from './repairPdf';
 
 interface SaveBookParams {
   userId: string;
@@ -62,7 +51,6 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
     }
 
     // 2. Upload generated page images to storage
-    const pageUrls: string[] = [];
     for (let i = 0; i < generatedPages.length; i++) {
       const page = generatedPages[i];
       if (!page.imageUrl) continue;
@@ -82,14 +70,7 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
 
         if (uploadError) {
           console.error('Page upload error:', uploadError);
-          continue;
         }
-
-        const { data: urlData } = supabase.storage
-          .from('generated-pages')
-          .getPublicUrl(fileName);
-
-        pageUrls.push(urlData.publicUrl);
       } catch (error) {
         console.error('Error processing page image:', error);
       }
@@ -122,177 +103,82 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       }
     }
 
-    // 4. Generate and upload PDFs (cover + interior)
-    let coverPdfUrl: string | null = null;
-    let interiorPdfUrl: string | null = null;
-    
-    try {
-      // Generate Cover PDF
-      if (uploadedCoverUrl) {
-        const coverPdf = new jsPDF({
-          orientation: 'portrait',
-          unit: 'in',
-          format: 'letter',
-        });
-
-        const pageWidth = 8.5;
-        const pageHeight = 11;
-
-        // Convert cover URL to data URL to avoid CORS issues
-        const coverDataUrl = await toDataUrl(uploadedCoverUrl);
-        
-        // Add cover image edge-to-edge
-        coverPdf.addImage(
-          coverDataUrl,
-          'PNG',
-          0,
-          0,
-          pageWidth,
-          pageHeight,
-          undefined,
-          'FAST'
-        );
-
-        const coverPdfBlob = coverPdf.output('blob');
-        const coverPdfFileName = `${userId}/${Date.now()}-${characterName}-cover.pdf`;
-
-        const { error: coverPdfUploadError } = await supabase.storage
-          .from('pdfs')
-          .upload(coverPdfFileName, coverPdfBlob, {
-            contentType: 'application/pdf',
-          });
-
-        if (!coverPdfUploadError) {
-          const { data: coverPdfUrlData } = supabase.storage
-            .from('pdfs')
-            .getPublicUrl(coverPdfFileName);
-
-          coverPdfUrl = coverPdfUrlData.publicUrl;
-        }
-      }
-
-      // Generate Interior PDF
-      const interiorPdf = new jsPDF({
-        orientation: 'portrait',
-        unit: 'in',
-        format: 'letter',
-      });
-      
-      const pageWidth = 8.5;
-      const pageHeight = 11;
-      const margin = 0.5;
-      const imageWidth = pageWidth - margin * 2;
-      const imageHeight = pageHeight - margin * 2;
-      // Add title page
-      interiorPdf.setFillColor(255, 255, 255);
-      interiorPdf.rect(0, 0, pageWidth, pageHeight, 'F');
-      
-      interiorPdf.setFontSize(32);
-      interiorPdf.setFont('helvetica', 'bold');
-      const title = `${characterName}'s Coloring Book`;
-      const titleWidth = interiorPdf.getTextWidth(title);
-      interiorPdf.text(title, (pageWidth - titleWidth) / 2, 3);
-      
-      interiorPdf.setFontSize(16);
-      interiorPdf.setFont('helvetica', 'normal');
-      const subtitle = `${generatedPages.length} Pages of Creative Fun!`;
-      const subtitleWidth = interiorPdf.getTextWidth(subtitle);
-      interiorPdf.text(subtitle, (pageWidth - subtitleWidth) / 2, 3.6);
-      
-      if (interests && interests.length > 0) {
-        interiorPdf.setFontSize(12);
-        const interestsText = `Featuring: ${interests.slice(0, 3).join(', ')}`;
-        const interestsWidth = interiorPdf.getTextWidth(interestsText);
-        interiorPdf.text(interestsText, (pageWidth - interestsWidth) / 2, 4.3);
-      }
-
-      // Add coloring pages
-      for (let i = 0; i < generatedPages.length; i++) {
-        const page = generatedPages[i];
-        if (!page.imageUrl) continue;
-
-        interiorPdf.addPage();
-
-        try {
-          // Convert remote URL to data URL to avoid CORS issues
-          const dataUrl = await toDataUrl(page.imageUrl);
-          interiorPdf.addImage(
-            dataUrl,
-            'PNG',
-            margin,
-            margin,
-            imageWidth,
-            imageHeight,
-            undefined,
-            'FAST'
-          );
-        } catch (error) {
-          console.error(`Failed to add page ${i + 1} to PDF:`, error);
-          // Continue with other pages
-        }
-
-        interiorPdf.setFontSize(10);
-        interiorPdf.setTextColor(100);
-        interiorPdf.text(`Page ${i + 1} of ${generatedPages.length}`, pageWidth / 2, pageHeight - 0.25, {
-          align: 'center',
-        });
-      }
-
-      const interiorPdfBlob = interiorPdf.output('blob');
-      const interiorPdfFileName = `${userId}/${Date.now()}-${characterName}-interior.pdf`;
-
-      const { error: interiorPdfUploadError } = await supabase.storage
-        .from('pdfs')
-        .upload(interiorPdfFileName, interiorPdfBlob, {
-          contentType: 'application/pdf',
-        });
-
-      if (!interiorPdfUploadError) {
-        const { data: interiorPdfUrlData } = supabase.storage
-          .from('pdfs')
-          .getPublicUrl(interiorPdfFileName);
-
-        interiorPdfUrl = interiorPdfUrlData.publicUrl;
-      }
-    } catch (pdfError) {
-      console.error('PDF generation error:', pdfError);
-    }
-
-    // 5. Save book metadata to database
-    // Use cover PDF for pdf_url (main download), and store interior separately
-    const mainPdfUrl = coverPdfUrl || interiorPdfUrl;
-    
-    const { data, error } = await supabase
+    // 4. Create initial book record to get bookId
+    const { data: bookData, error: bookInsertError } = await supabase
       .from('books')
       .insert({
         user_id: userId,
         character_name: characterName,
         interests,
-        photo_urls: photoUrls,
-        pdf_url: mainPdfUrl,
-        cover_url: coverPdfUrl,
-        pages: generatedPages.map((p, i) => ({
-          pageNumber: p.pageNumber,
-          imageUrl: pageUrls[i] || p.imageUrl,
-          prompt: p.prompt,
-          interiorPdfUrl: interiorPdfUrl, // Store interior PDF URL in pages metadata
-        })),
         complexity,
         art_style: artStyle,
         consistent_characters: consistentCharacters,
+        photo_urls: photoUrls,
+        pages: generatedPages.map(page => ({
+          pageNumber: page.pageNumber,
+          imageUrl: page.imageUrl || '',
+          prompt: page.prompt,
+        })),
         status: 'completed',
       })
       .select()
       .single();
 
-    if (error) {
-      console.error('Database insert error:', error);
+    if (bookInsertError || !bookData) {
+      console.error('Book insert error:', bookInsertError);
       return null;
     }
 
-    return data.id;
+    const bookId = bookData.id;
+    console.log('Created book with ID:', bookId);
+
+    // 5. Generate Lulu-compliant PDFs using repair functions
+    let coverPdfUrl: string | null = null;
+    let interiorPdfUrl: string | null = null;
+    
+    try {
+      // Generate interior PDF with minimum 24 pages (even count)
+      console.log('Generating Lulu-compliant interior PDF...');
+      interiorPdfUrl = await repairBookPdf(
+        bookId,
+        generatedPages.map(page => ({ imageUrl: page.imageUrl || '' })),
+        { minPages: 24, padWith: 'blank' }
+      );
+      console.log('Interior PDF generated:', interiorPdfUrl);
+
+      // Generate wrap cover PDF if we have a cover image
+      if (uploadedCoverUrl) {
+        console.log('Generating Lulu-compliant wrap cover PDF...');
+        const finalPageCount = Math.max(24, generatedPages.length);
+        const evenPageCount = finalPageCount % 2 === 0 ? finalPageCount : finalPageCount + 1;
+        
+        coverPdfUrl = await generateCoverWrapPdf(
+          bookId,
+          uploadedCoverUrl,
+          evenPageCount
+        );
+        console.log('Wrap cover PDF generated:', coverPdfUrl);
+      }
+    } catch (error) {
+      console.error('PDF generation error:', error);
+    }
+
+    // 6. Update book with PDF URLs
+    const { error: updateError } = await supabase
+      .from('books')
+      .update({
+        cover_url: coverPdfUrl,
+        pdf_url: interiorPdfUrl,
+      })
+      .eq('id', bookId);
+
+    if (updateError) {
+      console.error('Book update error:', updateError);
+    }
+
+    return bookId;
   } catch (error) {
-    console.error('Error saving book:', error);
+    console.error('Error saving book to database:', error);
     return null;
   }
 }

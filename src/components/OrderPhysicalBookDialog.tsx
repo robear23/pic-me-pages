@@ -61,59 +61,7 @@ export function OrderPhysicalBookDialog({
     setLoading(true);
 
     try {
-      toast({
-        title: 'Preparing Files',
-        description: 'Preparing files for printing (padding pages and creating wrap cover)...',
-      });
-
-      // Fetch book details
-      const { data: book, error: bookError } = await supabase
-        .from('books')
-        .select('cover_url, pdf_url, pages')
-        .eq('id', bookId)
-        .single();
-
-      if (bookError) {
-        throw new Error('Failed to fetch book details');
-      }
-
-      const pages = (book.pages as Array<{ imageUrl: string }>) || [];
-      const currentPageCount = pages.length;
-
-      // Ensure interior PDF meets requirements (min 24 pages, even count)
-      if (!book.pdf_url || currentPageCount < 24 || currentPageCount % 2 !== 0) {
-        console.log(`[OrderPhysicalBookDialog] Repairing interior PDF (current pages: ${currentPageCount})`);
-        await repairBookPdf(bookId, pages, { minPages: 24, padWith: 'blank' });
-      }
-
-      // Get the final page count (after repair)
-      const finalPageCount = Math.max(24, currentPageCount % 2 === 0 ? currentPageCount : currentPageCount + 1);
-
-      // Find cover image for wrap cover generation
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        throw new Error('User must be authenticated');
-      }
-
-      const { data: files } = await supabase.storage
-        .from('generated-pages')
-        .list(`${user.id}`);
-      
-      const coverFile = files?.find(f => f.name.includes('cover'));
-      
-      if (!coverFile) {
-        throw new Error('No cover image found. Please regenerate your book.');
-      }
-
-      const { data: coverUrlData } = supabase.storage
-        .from('generated-pages')
-        .getPublicUrl(`${user.id}/${coverFile.name}`);
-
-      // Generate wrap cover PDF
-      console.log(`[OrderPhysicalBookDialog] Generating wrap cover (${finalPageCount} pages)`);
-      await generateCoverWrapPdf(bookId, coverUrlData.publicUrl, finalPageCount);
-
-      // Now create the print order
+      // PDFs are now pre-generated during book creation, so just create the order
       const result = await createPrintOrder(bookId, shippingAddress);
       
       const envNote = result.environment === 'sandbox' 

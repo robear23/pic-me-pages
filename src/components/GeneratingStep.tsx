@@ -15,6 +15,7 @@ const GENERATION_STEPS = [
   'Creating story prompts',
   'Generating coloring pages',
   'Creating book cover',
+  'Creating print-ready PDFs',
   'Finalizing your book',
 ];
 
@@ -137,7 +138,7 @@ export const GeneratingStep = () => {
         console.log(`Generated ${successCount}/${finalPages.length} images`);
         setGeneratedPages(finalPages);
 
-        // Step 5: Creating book cover (90-95%)
+        // Step 5: Creating book cover (90-92%)
         setGenerationStatus(GENERATION_STEPS[4]);
         let coverImageUrl: string | null = null;
         
@@ -159,10 +160,14 @@ export const GeneratingStep = () => {
           }
         }
         
-        setGenerationProgress(95);
+        setGenerationProgress(92);
 
-        // Step 6: Finalizing (95-100%)
+        // Step 6: Creating print-ready PDFs (92-96%)
         setGenerationStatus(GENERATION_STEPS[5]);
+        setGenerationProgress(94);
+
+        // Step 7: Finalizing (96-100%)
+        setGenerationStatus(GENERATION_STEPS[6]);
         setGenerationProgress(97);
         
         // Save book to database if user is authenticated and not in rework mode
