@@ -124,7 +124,7 @@ serve(async (req) => {
         country_code: shippingAddress.country,
       },
       contact_email: user.email,
-      shipping_level: 'STANDARD',
+      shipping_level: 'MAIL', // Valid options: MAIL, GROUND_HD, PRIORITY_MAIL
     };
 
     console.log('Creating Lulu order:', JSON.stringify(luluOrderData, null, 2));
