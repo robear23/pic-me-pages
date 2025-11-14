@@ -96,7 +96,11 @@ Return a JSON array of exactly 12 prompts, each with:
         model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Generate 12 coloring page prompts for ${characterNames} (${complexity} complexity, ${artStyle} style) based on: ${interests.join(', ')}` }
+          { role: 'user', content: `Generate exactly 12 unique coloring book page prompts.
+
+CRITICAL: Return ONLY valid JSON with proper escaping. Use \\n for newlines in text.
+
+Generate prompts for ${characterNames} (${complexity} complexity, ${artStyle} style) based on: ${interests.join(', ')}` }
         ],
         response_format: { type: "json_object" }
       }),
@@ -137,24 +141,17 @@ Return a JSON array of exactly 12 prompts, each with:
       );
     }
 
+    console.log('Raw AI response (first 500 chars):', content.substring(0, 500));
+    console.log('Content length:', content.length);
+
     let prompts;
     try {
       let cleanContent = content.trim();
-      cleanContent = cleanContent.replace(/```json/g, '').replace(/```/g, '').trim();
       
-      // Sanitize control characters that break JSON parsing
-      // Replace literal newlines, tabs, and other control chars with escaped versions
-      cleanContent = cleanContent.replace(/[\u0000-\u001F\u007F-\u009F]/g, (match: string) => {
-        const controlCharMap: { [key: string]: string } = {
-          '\n': '\\n',
-          '\r': '\\r',
-          '\t': '\\t',
-          '\b': '\\b',
-          '\f': '\\f'
-        };
-        return controlCharMap[match] || '';
-      });
-
+      // Remove markdown code blocks
+      cleanContent = cleanContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+      
+      // Extract JSON structure first
       const extractTopLevelJSON = (s: string): string | null => {
         const scan = (open: string, close: string): string | null => {
           let start = s.indexOf(open);
@@ -179,11 +176,37 @@ Return a JSON array of exactly 12 prompts, each with:
         return scan('[', ']') ?? scan('{', '}');
       };
 
-      const candidate = extractTopLevelJSON(cleanContent) ?? cleanContent;
-      const parsed = JSON.parse(candidate);
+      let candidate = extractTopLevelJSON(cleanContent) ?? cleanContent;
+      console.log('Extracted JSON candidate (first 200 chars):', candidate.substring(0, 200));
+      
+      // Try parsing directly first
+      let parsed;
+      try {
+        parsed = JSON.parse(candidate);
+      } catch (firstError) {
+        console.log('First parse failed, attempting sanitization...');
+        
+        // If direct parsing fails, try sanitizing control characters
+        // This is more careful - only replace actual control chars in string contexts
+        candidate = candidate.replace(/[\u0000-\u001F\u007F-\u009F]/g, (match: string) => {
+          const code = match.charCodeAt(0);
+          // Common control characters that should be escaped
+          if (code === 10) return '\\n';  // newline
+          if (code === 13) return '\\r';  // carriage return
+          if (code === 9) return '\\t';   // tab
+          if (code === 8) return '\\b';   // backspace
+          if (code === 12) return '\\f';  // form feed
+          return '';  // Remove other control chars
+        });
+        
+        console.log('Sanitized candidate (first 200 chars):', candidate.substring(0, 200));
+        parsed = JSON.parse(candidate);
+      }
+      
       prompts = parsed.prompts || parsed;
 
       if (!Array.isArray(prompts)) {
+        console.error('Parsed result is not an array:', typeof prompts);
         throw new Error('Parsed JSON is not an array');
       }
       
@@ -197,6 +220,7 @@ Return a JSON array of exactly 12 prompts, each with:
       
     } catch (e) {
       console.error('Failed to parse AI response:', e);
+      console.error('Error details:', e instanceof Error ? e.message : 'Unknown error');
       return new Response(
         JSON.stringify({ error: 'Invalid AI response format' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
