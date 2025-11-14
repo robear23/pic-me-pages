@@ -141,6 +141,19 @@ Return a JSON array of exactly 12 prompts, each with:
     try {
       let cleanContent = content.trim();
       cleanContent = cleanContent.replace(/```json/g, '').replace(/```/g, '').trim();
+      
+      // Sanitize control characters that break JSON parsing
+      // Replace literal newlines, tabs, and other control chars with escaped versions
+      cleanContent = cleanContent.replace(/[\u0000-\u001F\u007F-\u009F]/g, (match: string) => {
+        const controlCharMap: { [key: string]: string } = {
+          '\n': '\\n',
+          '\r': '\\r',
+          '\t': '\\t',
+          '\b': '\\b',
+          '\f': '\\f'
+        };
+        return controlCharMap[match] || '';
+      });
 
       const extractTopLevelJSON = (s: string): string | null => {
         const scan = (open: string, close: string): string | null => {
