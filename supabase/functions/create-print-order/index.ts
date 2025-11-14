@@ -149,11 +149,14 @@ serve(async (req) => {
     console.log('POD Package ID:', podPackageId);
     console.log('Note: Lulu validates files automatically during print job creation');
 
-    // Determine shipping level based on country
-    const defaultShippingLevel = shippingAddress.country === 'US' ? 'MAIL' : 'PRIORITY_MAIL';
+    // Determine shipping level - use basic MAIL for sandbox, more options for production
+    let defaultShippingLevel = 'MAIL';
+    if (luluEnvironment === 'production') {
+      defaultShippingLevel = shippingAddress.country === 'US' ? 'MAIL' : 'PRIORITY_MAIL';
+    }
     const shippingLevel = Deno.env.get('LULU_SHIPPING_LEVEL') || defaultShippingLevel;
     
-    console.log(`Shipping level: ${shippingLevel} (country: ${shippingAddress.country})`);
+    console.log(`Shipping level: ${shippingLevel} (country: ${shippingAddress.country}, env: ${luluEnvironment})`);
     
     const luluOrderData = {
       line_items: [
