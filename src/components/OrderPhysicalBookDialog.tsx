@@ -18,10 +18,21 @@ import { Package } from 'lucide-react';
 interface OrderPhysicalBookDialogProps {
   bookId: string;
   bookTitle: string;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function OrderPhysicalBookDialog({ bookId, bookTitle }: OrderPhysicalBookDialogProps) {
-  const [open, setOpen] = useState(false);
+export function OrderPhysicalBookDialog({ 
+  bookId, 
+  bookTitle, 
+  open: controlledOpen, 
+  onOpenChange: controlledOnOpenChange 
+}: OrderPhysicalBookDialogProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  
+  // Use controlled state if provided, otherwise use internal state
+  const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
+  const setOpen = controlledOnOpenChange || setInternalOpen;
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
   

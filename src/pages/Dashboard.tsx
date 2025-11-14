@@ -44,6 +44,7 @@ const Dashboard = () => {
   const [retryCount, setRetryCount] = useState(0);
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<string | null>(null);
+  const [orderingBook, setOrderingBook] = useState<Book | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -184,9 +185,7 @@ const Dashboard = () => {
       }
     }
     setSelectedBook(null);
-    setTimeout(() => {
-      document.getElementById(`order-trigger-${book.id}`)?.click();
-    }, 100);
+    setOrderingBook(book);
   };
 
   const getBookCoverImage = (book: Book) => {
@@ -306,12 +305,10 @@ const Dashboard = () => {
                               <Download className="w-4 h-4 mr-1" />
                               {isGeneratingPdf === book.id ? 'Generating...' : 'Download PDF'}
                             </Button>
-                            <div id={`order-trigger-${book.id}`}>
-                              <OrderPhysicalBookDialog 
-                                bookId={book.id}
-                                bookTitle={`${book.character_name}'s Coloring Book`}
-                              />
-                            </div>
+                            <OrderPhysicalBookDialog 
+                              bookId={book.id}
+                              bookTitle={`${book.character_name}'s Coloring Book`}
+                            />
                           </>
                         ) : (
                           <Button size="sm" variant="outline" className="w-full" disabled>
@@ -403,6 +400,15 @@ const Dashboard = () => {
           )}
         </DialogContent>
       </Dialog>
+
+      {orderingBook && (
+        <OrderPhysicalBookDialog
+          bookId={orderingBook.id}
+          bookTitle={`${orderingBook.character_name}'s Coloring Book`}
+          open={!!orderingBook}
+          onOpenChange={(open) => !open && setOrderingBook(null)}
+        />
+      )}
     </div>
   );
 };
