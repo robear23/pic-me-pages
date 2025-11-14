@@ -21,6 +21,8 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { createPrintOrder, ShippingAddress } from '@/lib/api';
 import { Package } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { generateCoverPdf } from '@/lib/repairPdf';
 
 interface OrderPhysicalBookDialogProps {
   bookId: string;
@@ -59,6 +61,54 @@ export function OrderPhysicalBookDialog({
     setLoading(true);
 
     try {
+      // Check if book has cover PDF, generate if missing
+      const { data: book, error: bookError } = await supabase
+        .from('books')
+        .select('cover_url, pages')
+        .eq('id', bookId)
+        .single();
+
+      if (bookError) {
+        throw new Error('Failed to fetch book details');
+      }
+
+      // If no cover PDF exists, generate one from the cover image
+      if (!book.cover_url) {
+        const pages = book.pages as Array<{ imageUrl: string }> | null;
+        
+        // Try to find cover image - it might be in the pages array or we need to fetch it
+        const { data: bookWithCover } = await supabase
+          .from('books')
+          .select('*')
+          .eq('id', bookId)
+          .single();
+        
+        // Look for cover image in storage by checking generated-pages bucket for cover files
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: files } = await supabase.storage
+            .from('generated-pages')
+            .list(`${user.id}`);
+          
+          const coverFile = files?.find(f => f.name.includes('cover'));
+          
+          if (coverFile) {
+            const { data: coverUrlData } = supabase.storage
+              .from('generated-pages')
+              .getPublicUrl(`${user.id}/${coverFile.name}`);
+            
+            toast({
+              title: 'Preparing Cover',
+              description: 'Generating cover PDF for printing...',
+            });
+            
+            await generateCoverPdf(bookId, coverUrlData.publicUrl);
+          } else {
+            throw new Error('No cover image found. Please regenerate your book.');
+          }
+        }
+      }
+
       const result = await createPrintOrder(bookId, shippingAddress);
       
       const envNote = result.environment === 'sandbox' 
