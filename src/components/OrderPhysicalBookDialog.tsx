@@ -112,7 +112,7 @@ export function OrderPhysicalBookDialog({
           </DialogTitle>
           <DialogDescription>
             Order a professionally printed physical copy of "{bookTitle}". 
-            Price: $29.99 + shipping
+            Price: $19.99 + shipping
             <br />
             <span className="text-xs text-muted-foreground">Note: Currently in test mode. No actual printing will occur.</span>
           </DialogDescription>
@@ -235,7 +235,7 @@ export function OrderPhysicalBookDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={loading} className="flex-1">
-              {loading ? 'Processing...' : 'Place Order - $29.99'}
+              {loading ? 'Processing...' : 'Place Order - $19.99'}
             </Button>
           </div>
         </form>
