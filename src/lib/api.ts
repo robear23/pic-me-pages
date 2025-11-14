@@ -100,7 +100,7 @@ export interface ShippingAddress {
 export const createPrintOrder = async (
   bookId: string,
   shippingAddress: ShippingAddress
-): Promise<{ success: boolean; order: any; luluOrderId: string; environment?: string }> => {
+): Promise<{ success: boolean; order: any; luluOrderId: string; environment?: string; shippingLevel?: string }> => {
   return callEdgeFunction('create-print-order', { bookId, shippingAddress });
 };
 

@@ -20,6 +20,108 @@ interface PrintOrderRequest {
   };
 }
 
+interface LuluValidationResponse {
+  id: string;
+  status: 'CREATED' | 'PROCESSING' | 'VALIDATED' | 'ERROR';
+  errors?: Array<{
+    message: string;
+    code: string;
+  }>;
+}
+
+async function validatePdfAccessibility(url: string, type: 'cover' | 'interior'): Promise<void> {
+  console.log(`Validating ${type} PDF accessibility:`, url);
+  
+  const response = await fetch(url, { method: 'HEAD' });
+  
+  if (!response.ok) {
+    throw new Error(`${type} PDF not accessible (HTTP ${response.status})`);
+  }
+  
+  const contentType = response.headers.get('content-type');
+  if (!contentType?.includes('application/pdf')) {
+    throw new Error(`${type} file is not a PDF (Content-Type: ${contentType})`);
+  }
+  
+  const contentLength = response.headers.get('content-length');
+  if (!contentLength || parseInt(contentLength) === 0) {
+    throw new Error(`${type} PDF appears to be empty`);
+  }
+  
+  console.log(`✓ ${type} PDF validated: ${contentLength} bytes`);
+}
+
+async function validateWithLulu(
+  accessToken: string,
+  baseUrl: string,
+  type: 'interior' | 'cover',
+  pdfUrl: string,
+  podPackageId: string,
+  pageCount: number
+): Promise<void> {
+  console.log(`Starting Lulu ${type} validation...`);
+  
+  const endpoint = type === 'interior' ? 'print-job-interior-files' : 'print-job-cover-files';
+  const payload = type === 'interior' 
+    ? {
+        pod_package_id: podPackageId,
+        page_count: pageCount,
+        source_url: pdfUrl,
+      }
+    : {
+        pod_package_id: podPackageId,
+        source_url: pdfUrl,
+      };
+  
+  const response = await fetch(`${baseUrl}/${endpoint}/`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Lulu ${type} validation request failed (${response.status}): ${errorText}`);
+  }
+  
+  const validation: LuluValidationResponse = await response.json();
+  console.log(`Lulu ${type} validation started:`, validation.id);
+  
+  // Poll for validation result (max 30 seconds)
+  for (let i = 0; i < 15; i++) {
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+    
+    const statusResponse = await fetch(`${baseUrl}/${endpoint}/${validation.id}/`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
+    
+    if (!statusResponse.ok) {
+      console.warn(`Failed to check ${type} validation status`);
+      continue;
+    }
+    
+    const status: LuluValidationResponse = await statusResponse.json();
+    console.log(`${type} validation status:`, status.status);
+    
+    if (status.status === 'VALIDATED') {
+      console.log(`✓ ${type} validated successfully`);
+      return;
+    }
+    
+    if (status.status === 'ERROR') {
+      const errors = status.errors?.map(e => e.message).join('; ') || 'Unknown validation error';
+      throw new Error(`Lulu ${type} validation failed: ${errors}`);
+    }
+  }
+  
+  console.warn(`${type} validation timeout - proceeding anyway`);
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -32,11 +134,15 @@ serve(async (req) => {
     const luluApiSecret = Deno.env.get('LULU_API_SECRET')!;
     const luluEnvironment = Deno.env.get('LULU_ENVIRONMENT') || 'sandbox';
     
+    // Configurable product and shipping
+    const podPackageId = Deno.env.get('LULU_POD_PACKAGE_ID') || '0850X1100FCPRECO060UW444MXX';
+    
     const luluBaseUrl = luluEnvironment === 'production' 
       ? 'https://api.lulu.com'
       : 'https://api.sandbox.lulu.com';
     
     console.log(`Using Lulu ${luluEnvironment} environment: ${luluBaseUrl}`);
+    console.log(`Product: ${podPackageId}`);
     
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -84,6 +190,10 @@ serve(async (req) => {
     console.log('Using cover URL:', coverUrl);
     console.log('Using interior URL:', interiorUrl);
 
+    // Preflight: Validate PDF accessibility
+    await validatePdfAccessibility(coverUrl, 'cover');
+    await validatePdfAccessibility(interiorUrl, 'interior');
+
     // Get Lulu access token
     const luluAuthResponse = await fetch(`${luluBaseUrl}/auth/realms/glasstree/protocol/openid-connect/token`, {
       method: 'POST',
@@ -103,20 +213,39 @@ serve(async (req) => {
 
     const { access_token } = await luluAuthResponse.json();
 
-    // Calculate page count (interior pages only, not including cover)
-    const interiorPageCount = book.pages?.length || 0;
+    // Calculate page count (interior pages only, ensure even)
+    let interiorPageCount = book.pages?.length || 0;
+    if (interiorPageCount % 2 !== 0) {
+      console.log(`Adjusting page count from ${interiorPageCount} to ${interiorPageCount + 1} (must be even)`);
+      interiorPageCount += 1;
+    }
 
-    // Create print job with Lulu
-    // POD Package ID: 0850X1100FCPRECO060UW444MXX
-    // - 0850X1100: 8.5" x 11" size
-    // - FC: Full Color
-    // - PRE: Premium paper (60lb Premium Uncoated)
-    // - CO: Coil Binding
-    // - 060UW444MXX: Paper/cover specifications
-    const podPackageId = '0850X1100FCPRECO060UW444MXX';
-    
     console.log('Interior page count:', interiorPageCount);
     console.log('POD Package ID:', podPackageId);
+
+    // Validate files with Lulu before creating the job
+    try {
+      await validateWithLulu(access_token, luluBaseUrl, 'interior', interiorUrl, podPackageId, interiorPageCount);
+      await validateWithLulu(access_token, luluBaseUrl, 'cover', coverUrl, podPackageId, interiorPageCount);
+    } catch (validationError: any) {
+      console.error('Lulu validation failed:', validationError.message);
+      return new Response(
+        JSON.stringify({ 
+          error: `Print file validation failed: ${validationError.message}`,
+          validationError: true,
+        }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 422,
+        }
+      );
+    }
+
+    // Determine shipping level based on country
+    const defaultShippingLevel = shippingAddress.country === 'US' ? 'MAIL' : 'PRIORITY_MAIL';
+    const shippingLevel = Deno.env.get('LULU_SHIPPING_LEVEL') || defaultShippingLevel;
+    
+    console.log(`Shipping level: ${shippingLevel} (country: ${shippingAddress.country})`);
     
     const luluOrderData = {
       line_items: [
@@ -144,7 +273,7 @@ serve(async (req) => {
         country_code: shippingAddress.country,
       },
       contact_email: user.email,
-      shipping_level: 'MAIL', // Valid options: MAIL, GROUND_HD, PRIORITY_MAIL
+      shipping_level: shippingLevel,
     };
 
     console.log('Creating Lulu order:', JSON.stringify(luluOrderData, null, 2));
@@ -162,7 +291,61 @@ serve(async (req) => {
       const errorText = await luluOrderResponse.text();
       console.error('Lulu API Error Response:', errorText);
       console.error('Status:', luluOrderResponse.status);
-      console.error('Request payload:', JSON.stringify(luluOrderData, null, 2));
+      
+      // If 5xx error after successful validation, try alternate shipping level
+      if (luluOrderResponse.status >= 500 && shippingLevel !== 'GROUND_HD') {
+        console.log('Retrying with GROUND_HD shipping...');
+        luluOrderData.shipping_level = 'GROUND_HD';
+        
+        const retryResponse = await fetch(`${luluBaseUrl}/print-jobs/`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(luluOrderData),
+        });
+        
+        if (retryResponse.ok) {
+          const luluOrder = await retryResponse.json();
+          console.log('Retry successful with GROUND_HD');
+          
+          const pricePaid = luluOrder.line_items?.[0]?.total_cost?.amount || 19.99;
+          
+          const { data: order, error: orderError } = await supabase
+            .from('orders')
+            .insert({
+              user_id: user.id,
+              book_id: bookId,
+              lulu_order_id: luluOrder.id,
+              order_type: 'physical',
+              status: 'processing',
+              price_paid: pricePaid,
+              shipping_address: shippingAddress,
+            })
+            .select()
+            .single();
+
+          if (orderError) {
+            throw new Error('Failed to save order');
+          }
+
+          return new Response(
+            JSON.stringify({ 
+              success: true, 
+              order,
+              luluOrderId: luluOrder.id,
+              environment: luluEnvironment,
+              shippingLevel: 'GROUND_HD',
+            }),
+            { 
+              headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              status: 200,
+            }
+          );
+        }
+      }
+      
       throw new Error(`Lulu API returned ${luluOrderResponse.status}: ${errorText}`);
     }
 
@@ -198,6 +381,7 @@ serve(async (req) => {
         order,
         luluOrderId: luluOrder.id,
         environment: luluEnvironment,
+        shippingLevel,
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
