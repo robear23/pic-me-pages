@@ -12,6 +12,75 @@ async function toDataUrl(url: string): Promise<string> {
   });
 }
 
+export async function generateCoverPdf(bookId: string, coverImageUrl: string): Promise<string> {
+  try {
+    // Get current user for proper path structure
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    
+    if (userError || !user) {
+      throw new Error('User must be authenticated to generate PDF');
+    }
+
+    // Generate single-page cover PDF
+    const pdf = new jsPDF({
+      orientation: 'portrait',
+      unit: 'in',
+      format: 'letter',
+    });
+
+    const pageWidth = 8.5;
+    const pageHeight = 11;
+
+    try {
+      // Convert remote URL to data URL to avoid CORS issues
+      const dataUrl = await toDataUrl(coverImageUrl);
+      pdf.addImage(dataUrl, 'PNG', 0, 0, pageWidth, pageHeight);
+    } catch (error) {
+      console.error('Failed to add cover image to PDF:', error);
+      throw new Error('Failed to process cover image');
+    }
+
+    // Convert PDF to blob
+    const pdfBlob = pdf.output('blob');
+
+    // Upload to storage with userId/bookId path structure for RLS compliance
+    const fileName = `${user.id}/${bookId}/cover-${Date.now()}.pdf`;
+    console.log('[generateCoverPdf] Uploading to path:', fileName);
+    
+    const { error: uploadError } = await supabase.storage
+      .from('pdfs')
+      .upload(fileName, pdfBlob, {
+        contentType: 'application/pdf',
+      });
+
+    if (uploadError) {
+      throw new Error(`Failed to upload cover PDF: ${uploadError.message}`);
+    }
+
+    // Get public URL
+    const { data: urlData } = supabase.storage
+      .from('pdfs')
+      .getPublicUrl(fileName);
+
+    const pdfUrl = urlData.publicUrl;
+
+    // Update book record with cover_url
+    const { error: updateError } = await supabase
+      .from('books')
+      .update({ cover_url: pdfUrl })
+      .eq('id', bookId);
+
+    if (updateError) {
+      throw new Error(`Failed to update book: ${updateError.message}`);
+    }
+
+    return pdfUrl;
+  } catch (error: any) {
+    console.error('Error generating cover PDF:', error);
+    throw error;
+  }
+}
+
 export async function repairBookPdf(bookId: string, pages: Array<{ imageUrl: string }>): Promise<string> {
   try {
     // Get current user for proper path structure
