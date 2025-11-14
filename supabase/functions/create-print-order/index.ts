@@ -70,11 +70,15 @@ serve(async (req) => {
     }
 
     // Get cover and interior PDF URLs
-    const coverUrl = book.cover_url || book.pdf_url;
-    const interiorUrl = book.pages?.[0]?.interiorPdfUrl || book.pdf_url;
+    const coverUrl = book.cover_url;
+    const interiorUrl = book.pdf_url;
     
-    if (!coverUrl || !interiorUrl) {
-      throw new Error('Book PDFs not available');
+    if (!coverUrl) {
+      throw new Error('Missing cover PDF. Please regenerate the book.');
+    }
+    
+    if (!interiorUrl) {
+      throw new Error('Missing interior PDF. Please regenerate the book.');
     }
     
     console.log('Using cover URL:', coverUrl);
@@ -99,26 +103,34 @@ serve(async (req) => {
 
     const { access_token } = await luluAuthResponse.json();
 
-    // Calculate page count (assuming each page is a coloring page + cover)
-    const pageCount = book.pages?.length || 0;
-    const totalPages = pageCount + 1; // +1 for cover page
+    // Calculate page count (interior pages only, not including cover)
+    const interiorPageCount = book.pages?.length || 0;
 
     // Create print job with Lulu
-    // POD Package ID: 0850X1100FCSTDCO060UW444MXX
+    // POD Package ID: 0850X1100FCPRECO060UW444MXX
     // - 0850X1100: 8.5" x 11" size
     // - FC: Full Color
-    // - STD: Standard paper (60lb Premium Uncoated)
+    // - PRE: Premium paper (60lb Premium Uncoated)
     // - CO: Coil Binding
     // - 060UW444MXX: Paper/cover specifications
+    const podPackageId = '0850X1100FCPRECO060UW444MXX';
+    
+    console.log('Interior page count:', interiorPageCount);
+    console.log('POD Package ID:', podPackageId);
+    
     const luluOrderData = {
       line_items: [
         {
-          page_count: totalPages,
-          pod_package_id: '0850X1100FCSTDCO060UW444MXX', // 8.5"x11" Coil Binding (Standard)
+          page_count: interiorPageCount,
+          pod_package_id: podPackageId,
           title: `${book.character_name}'s Coloring Book`,
-          cover: coverUrl,
-          interior: interiorUrl,
           quantity: 1,
+          interior: {
+            source_url: interiorUrl,
+          },
+          cover: {
+            source_url: coverUrl,
+          },
         },
       ],
       shipping_address: {
