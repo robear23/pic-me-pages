@@ -22,7 +22,7 @@ import { useToast } from '@/hooks/use-toast';
 import { createPrintOrder, ShippingAddress } from '@/lib/api';
 import { Package } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
-import { generateCoverPdf } from '@/lib/repairPdf';
+import { generateCoverWrapPdf, repairBookPdf } from '@/lib/repairPdf';
 
 interface OrderPhysicalBookDialogProps {
   bookId: string;
@@ -61,10 +61,15 @@ export function OrderPhysicalBookDialog({
     setLoading(true);
 
     try {
-      // Check if book has cover PDF, generate if missing
+      toast({
+        title: 'Preparing Files',
+        description: 'Preparing files for printing (padding pages and creating wrap cover)...',
+      });
+
+      // Fetch book details
       const { data: book, error: bookError } = await supabase
         .from('books')
-        .select('cover_url, pages')
+        .select('cover_url, pdf_url, pages')
         .eq('id', bookId)
         .single();
 
@@ -72,43 +77,43 @@ export function OrderPhysicalBookDialog({
         throw new Error('Failed to fetch book details');
       }
 
-      // If no cover PDF exists, generate one from the cover image
-      if (!book.cover_url) {
-        const pages = book.pages as Array<{ imageUrl: string }> | null;
-        
-        // Try to find cover image - it might be in the pages array or we need to fetch it
-        const { data: bookWithCover } = await supabase
-          .from('books')
-          .select('*')
-          .eq('id', bookId)
-          .single();
-        
-        // Look for cover image in storage by checking generated-pages bucket for cover files
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          const { data: files } = await supabase.storage
-            .from('generated-pages')
-            .list(`${user.id}`);
-          
-          const coverFile = files?.find(f => f.name.includes('cover'));
-          
-          if (coverFile) {
-            const { data: coverUrlData } = supabase.storage
-              .from('generated-pages')
-              .getPublicUrl(`${user.id}/${coverFile.name}`);
-            
-            toast({
-              title: 'Preparing Cover',
-              description: 'Generating cover PDF for printing...',
-            });
-            
-            await generateCoverPdf(bookId, coverUrlData.publicUrl);
-          } else {
-            throw new Error('No cover image found. Please regenerate your book.');
-          }
-        }
+      const pages = (book.pages as Array<{ imageUrl: string }>) || [];
+      const currentPageCount = pages.length;
+
+      // Ensure interior PDF meets requirements (min 24 pages, even count)
+      if (!book.pdf_url || currentPageCount < 24 || currentPageCount % 2 !== 0) {
+        console.log(`[OrderPhysicalBookDialog] Repairing interior PDF (current pages: ${currentPageCount})`);
+        await repairBookPdf(bookId, pages, { minPages: 24, padWith: 'blank' });
       }
 
+      // Get the final page count (after repair)
+      const finalPageCount = Math.max(24, currentPageCount % 2 === 0 ? currentPageCount : currentPageCount + 1);
+
+      // Find cover image for wrap cover generation
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('User must be authenticated');
+      }
+
+      const { data: files } = await supabase.storage
+        .from('generated-pages')
+        .list(`${user.id}`);
+      
+      const coverFile = files?.find(f => f.name.includes('cover'));
+      
+      if (!coverFile) {
+        throw new Error('No cover image found. Please regenerate your book.');
+      }
+
+      const { data: coverUrlData } = supabase.storage
+        .from('generated-pages')
+        .getPublicUrl(`${user.id}/${coverFile.name}`);
+
+      // Generate wrap cover PDF
+      console.log(`[OrderPhysicalBookDialog] Generating wrap cover (${finalPageCount} pages)`);
+      await generateCoverWrapPdf(bookId, coverUrlData.publicUrl, finalPageCount);
+
+      // Now create the print order
       const result = await createPrintOrder(bookId, shippingAddress);
       
       const envNote = result.environment === 'sandbox' 
