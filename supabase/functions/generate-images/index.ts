@@ -8,13 +8,37 @@ const corsHeaders = {
 
 const MAX_RETRIES = 2;
 const BASE_DELAY = 1000;
+const ENABLE_LIKENESS_ENHANCEMENT = true; // Two-pass refinement for better face matching
+
+// System message with strict rules for image generation
+const SYSTEM_MESSAGE = `You are generating black-and-white line art coloring book pages with strict requirements:
+
+CRITICAL RULES:
+1. IDENTITY MATCHING: When reference photos are provided, the character's face MUST match the photos exactly - this is the TOP PRIORITY
+2. LINE ART ONLY: Pure black lines on white background - NO shading, NO gradients, NO gray tones whatsoever
+3. PHOTOREALISTIC FACES: Character facial features must capture exact photorealistic details from references (NOT simplified/cartoonish)
+4. BACKGROUND STYLING: Background elements follow the chosen art style, character faces remain photorealistic
+5. COLORING-READY: Clear outlines suitable for children to color in
+
+PRIORITY ORDER:
+1. Exact face/identity match to reference photos (if provided)
+2. Correct pose/expression for the scene
+3. Background style adherence
+
+FORBIDDEN:
+- DO NOT enlarge eyes or simplify facial features
+- DO NOT alter hairline or face proportions from reference
+- DO NOT change age appearance from photos
+- DO NOT add shading or gradients anywhere
+- DO NOT stylize the character's face (keep photorealistic detail)`;
 
 async function generateImageWithRetry(
   prompt: any,
   contentParts: any[],
   LOVABLE_API_KEY: string,
   pageIndex: number,
-  totalPages: number
+  totalPages: number,
+  systemMessage: string = SYSTEM_MESSAGE
 ): Promise<any> {
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -28,8 +52,12 @@ async function generateImageWithRetry(
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'google/gemini-2.5-flash-image',
+          model: 'google/gemini-2.5-flash-image-preview',
           messages: [
+            {
+              role: 'system',
+              content: systemMessage
+            },
             {
               role: 'user',
               content: contentParts
@@ -113,6 +141,122 @@ async function generateImageWithRetry(
     prompt: prompt.prompt,
     error: 'Unexpected error in retry loop'
   };
+}
+
+// Two-pass refinement: edit the generated image to enhance facial likeness
+async function refineImageWithRetry(
+  baseImageUrl: string,
+  referencePhotos: string[],
+  LOVABLE_API_KEY: string,
+  pageIndex: number,
+  totalPages: number
+): Promise<string | null> {
+  
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      console.log(`Refining likeness for page ${pageIndex + 1}/${totalPages} using ${referencePhotos.length} reference photo(s) (attempt ${attempt}/${MAX_RETRIES})`);
+      
+      const refinementInstruction = `Refine ONLY the character's facial features to EXACTLY match these reference photos. 
+
+CRITICAL INSTRUCTIONS:
+- Study the reference photos with EXTREME PRECISION
+- Adjust the character's face to capture EXACT photorealistic likeness
+- DO NOT change the pose, composition, scene, or background
+- DO NOT change body position or clothing
+- ONLY refine facial features: eyes, nose, mouth, face shape, hair, proportions
+- Keep pure black-and-white line art - NO shading, NO gradients
+- Make the face look like a detailed line drawing of the ACTUAL person in the photos
+- Character should be immediately recognizable as the person from the references
+
+Focus ONLY on enhancing facial feature accuracy and identity match.`;
+
+      const contentParts: any[] = [
+        { type: 'text', text: refinementInstruction },
+        { type: 'image_url', image_url: { url: baseImageUrl } }
+      ];
+      
+      // Add all reference photos
+      for (const photoUrl of referencePhotos) {
+        contentParts.push({
+          type: 'image_url',
+          image_url: { url: photoUrl }
+        });
+      }
+      
+      const refineResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash-image-preview',
+          messages: [
+            { role: 'system', content: SYSTEM_MESSAGE },
+            { role: 'user', content: contentParts }
+          ],
+          modalities: ['image', 'text']
+        }),
+      });
+
+      if (refineResponse.status === 429) {
+        const delay = BASE_DELAY * Math.pow(2, attempt - 1);
+        console.log(`Rate limited during refinement on page ${pageIndex + 1}, waiting ${delay}ms`);
+        
+        if (attempt < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        } else {
+          console.log(`Skipping refinement for page ${pageIndex + 1} due to rate limit`);
+          return null;
+        }
+      }
+
+      if (!refineResponse.ok) {
+        const errorText = await refineResponse.text();
+        console.error(`Refinement HTTP error ${refineResponse.status} for page ${pageIndex + 1}:`, errorText);
+        
+        if (attempt < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          continue;
+        } else {
+          console.log(`Skipping refinement for page ${pageIndex + 1} after ${MAX_RETRIES} attempts`);
+          return null;
+        }
+      }
+
+      const refineData = await refineResponse.json();
+      const refinedImage = refineData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+      
+      if (!refinedImage) {
+        console.error(`No refined image for page ${pageIndex + 1} (attempt ${attempt})`);
+        
+        if (attempt < MAX_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          continue;
+        } else {
+          console.log(`Skipping refinement for page ${pageIndex + 1} - no image returned`);
+          return null;
+        }
+      }
+
+      console.log(`Successfully refined likeness for page ${pageIndex + 1}/${totalPages}`);
+      return refinedImage;
+
+    } catch (error) {
+      console.error(`Error refining page ${pageIndex + 1} (attempt ${attempt}/${MAX_RETRIES}):`, error);
+      
+      if (attempt < MAX_RETRIES) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        continue;
+      } else {
+        console.log(`Skipping refinement for page ${pageIndex + 1} after error`);
+        return null;
+      }
+    }
+  }
+  
+  return null;
 }
 
 serve(async (req) => {
@@ -239,35 +383,53 @@ BACKGROUND/SCENE/ENVIRONMENT:
 
 CRITICAL REQUIREMENTS:
 - ALL elements must be black and white LINE ART suitable for coloring
-- NO photorealistic rendering, NO shading, NO gradients anywhere
-- Character maintains realistic proportions and recognizable features from reference
-- Background follows ${artStyle} artistic style
-- Character naturally interacts with environment
-- Each page shows the character in different pose/expression but always recognizable`
+- NO shading, NO gradients, NO gray tones (pure line art)
+- Character: MAXIMUM DETAIL capturing exact photorealistic features from reference
+- Character: Use FINE LINES to capture precise facial features and details
+- Character: Should look like a detailed line drawing of the actual person in the photos
+- Background: ${artStyle.toUpperCase()} style with artistic interpretation
+- Clear visual distinction: hyper-detailed realistic character vs. styled background
+- Character must be immediately recognizable as the specific person from the photos
+- Each page shows the SAME recognizable person in different poses/expressions`
             : `UNIFORM STYLING:
 - Art Style: ${artStyle} (apply to entire image)
 - ${artStyleGuide[artStyle] || 'Consistent artistic style throughout'}`;
 
           const enhancedPrompt = `Create a black and white coloring book page.
 
+PRIORITY ORDER (MOST TO LEAST IMPORTANT):
+1. EXACT FACE/IDENTITY MATCH - Capture precise facial features from reference photos
+2. CORRECT POSE/EXPRESSION - Match the scene requirements
+3. BACKGROUND STYLE - Follow chosen art style for environment
+
+NEGATIVE GUIDANCE (FORBIDDEN):
+- DO NOT enlarge or simplify eyes (keep exact eye shape from photos)
+- DO NOT round or simplify face shape (match actual face structure)
+- DO NOT alter hairline or hair texture from references
+- DO NOT change facial proportions or age appearance
+- DO NOT stylize or cartoonize the character's face
+- DO NOT add big cartoon features (this is NOT a cartoon character)
+
 CHARACTERS: ${characterNames}
 ${hasCharacterPhotos 
   ? `CRITICAL - PHOTOREALISTIC CHARACTER REFERENCE:
 The reference photos below show the REAL PERSON you must draw. This is NOT a generic character.
 
-STUDY THESE PHOTOS CAREFULLY:
-1. Examine EVERY facial feature in detail - eyes, nose, mouth, face shape, proportions
-2. Note UNIQUE identifying features - dimples, freckles, smile, eyebrow shape, etc.
-3. Memorize the EXACT appearance of this specific person
-4. Create a detailed mental model of their face structure and features
+STUDY THESE PHOTOS WITH EXTREME PRECISION:
+1. Examine EVERY facial feature in microscopic detail - eyes (shape, size, spacing, angle), nose (bridge, tip, nostrils), mouth (lip shape, width), face shape (jawline, cheekbones), proportions (eye spacing, forehead height, chin length)
+2. Note EVERY UNIQUE identifying feature - dimples, freckles, birthmarks, smile characteristics, eyebrow shape/thickness, ear shape/position, hair part/texture/volume
+3. Memorize the EXACT appearance - not an approximation, the ACTUAL person
+4. Build a detailed mental model of their SPECIFIC face structure and distinctive features
+5. This person should be IMMEDIATELY RECOGNIZABLE from the line art alone
 
-RENDERING REQUIREMENTS:
-- Draw THIS EXACT PERSON with maximum photorealistic accuracy
-- Capture their distinctive features precisely - not a generic interpretation
-- The character should be immediately recognizable as the person in the photos
-- Generate NEW poses/expressions for this scene, but SAME PERSON
-- Use detailed line work to capture the subtle features that make them unique
-- This is a line art portrait of a real person, not a stylized cartoon`
+RENDERING REQUIREMENTS (TOP PRIORITY):
+- Draw THIS EXACT SPECIFIC PERSON with MAXIMUM photorealistic accuracy
+- Capture their distinctive features with PRECISION - not a generic interpretation
+- Use FINE, DETAILED lines to show subtle facial features that make them unique
+- The character MUST be immediately recognizable as the person in the photos
+- Generate NEW poses/expressions for this scene, but ALWAYS THE SAME IDENTIFIABLE PERSON
+- This is a line art PORTRAIT of a REAL person - treat it like a detailed sketch/tracing
+- DO NOT simplify, stylize, or cartoonize - maintain photorealistic facial detail`
   : ''
 }
 SCENE: ${prompt.prompt}
@@ -297,30 +459,55 @@ ${complexity === 'detailed' ? 'Fine lines, intricate patterns' : ''}`;
             }
           ];
           
+          // Collect reference photos (up to 3 per character for better feature learning)
+          const allReferencePhotos: string[] = [];
           if (consistentCharacters && characters.length > 0) {
             for (const character of characters) {
               if (character.photos && character.photos.length > 0) {
-                contentParts.push({
-                  type: 'image_url',
-                  image_url: {
-                    url: character.photos[0]
-                  }
-                });
+                const characterPhotos = character.photos.slice(0, 3); // Up to 3 photos per character
+                for (const photoUrl of characterPhotos) {
+                  contentParts.push({
+                    type: 'image_url',
+                    image_url: { url: photoUrl }
+                  });
+                  allReferencePhotos.push(photoUrl);
+                }
               }
             }
             
-            if (contentParts.length > 1) {
-              console.log(`Added ${contentParts.length - 1} character reference photo(s) for page ${i + 1}`);
+            if (allReferencePhotos.length > 0) {
+              console.log(`Added ${allReferencePhotos.length} character reference photo(s) for page ${i + 1}`);
             }
           }
           
-          const result = await generateImageWithRetry(
+          // Generate initial image
+          let result = await generateImageWithRetry(
             prompt,
             contentParts,
             LOVABLE_API_KEY,
             i,
-            prompts.length
+            prompts.length,
+            SYSTEM_MESSAGE
           );
+          
+          // Two-pass refinement: if we have references and initial generation succeeded, refine the likeness
+          if (ENABLE_LIKENESS_ENHANCEMENT && result.imageUrl && allReferencePhotos.length > 0) {
+            const refinedImageUrl = await refineImageWithRetry(
+              result.imageUrl,
+              allReferencePhotos,
+              LOVABLE_API_KEY,
+              i,
+              prompts.length
+            );
+            
+            // Use refined image if available, otherwise keep original
+            if (refinedImageUrl) {
+              console.log(`Using refined image for page ${i + 1} (enhanced likeness)`);
+              result.imageUrl = refinedImageUrl;
+            } else {
+              console.log(`Using original image for page ${i + 1} (refinement skipped/failed)`);
+            }
+          }
           
           return result;
           
