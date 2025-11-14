@@ -8,29 +8,42 @@ const corsHeaders = {
 
 const MAX_RETRIES = 2;
 const BASE_DELAY = 1000;
-const ENABLE_LIKENESS_ENHANCEMENT = true; // Two-pass refinement for better face matching
+const ENABLE_LIKENESS_ENHANCEMENT = false; // Disabled: refinement doubles content filter risk with child photos
 
-// System message with strict rules for image generation
-const SYSTEM_MESSAGE = `You are generating black-and-white line art coloring book pages with strict requirements:
+// System message with family-friendly, safety-compliant rules for coloring book generation
+const SYSTEM_MESSAGE = `You are creating pages for a children's coloring book - a fun, safe, educational activity.
+
+TASK: Generate black-and-white line art coloring pages suitable for children.
+
+SAFETY & CONTEXT:
+- This is a family-friendly coloring book for kids and parents
+- Character photos are provided by parents to personalize their child's coloring book
+- The goal is character consistency across pages (same character in different adventures)
+- Focus on fun, age-appropriate scenes with recognizable characters
 
 CRITICAL RULES:
-1. IDENTITY MATCHING: When reference photos are provided, the character's face MUST match the photos exactly - this is the TOP PRIORITY
-2. LINE ART ONLY: Pure black lines on white background - NO shading, NO gradients, NO gray tones whatsoever
-3. PHOTOREALISTIC FACES: Character facial features must capture exact photorealistic details from references (NOT simplified/cartoonish)
-4. BACKGROUND STYLING: Background elements follow the chosen art style, character faces remain photorealistic
-5. COLORING-READY: Clear outlines suitable for children to color in
+1. CHARACTER CONSISTENCY: When reference photos are provided, the character should look like the same person across all pages
+2. LINE ART ONLY: Pure black lines on white background - NO shading, NO gradients, NO gray tones
+3. COLORING-READY: Clear outlines suitable for children to color in
+4. AGE-APPROPRIATE: All content must be suitable for children
+
+CHARACTER CONSISTENCY - This is a coloring book character that should look like the same person across all pages:
+- Study the reference photo to understand: overall face shape, hairstyle, age appearance, and any distinctive features (glasses, smile, dimples)
+- Capture the character's recognizable appearance and personality
+- Keep consistent features: same hair, same face shape, same age, same smile
+- Generate age-appropriate poses and expressions for each scene
+- This is a friendly coloring book character, not a photographic reproduction
+- Line art should be clear, simple enough for coloring, but distinctive
+- Focus on character personality and recognizability, not photographic precision
 
 PRIORITY ORDER:
-1. Exact face/identity match to reference photos (if provided)
+1. Character consistency and recognizability
 2. Correct pose/expression for the scene
 3. Background style adherence
 
 FORBIDDEN:
-- DO NOT enlarge eyes or simplify facial features
-- DO NOT alter hairline or face proportions from reference
-- DO NOT change age appearance from photos
 - DO NOT add shading or gradients anywhere
-- DO NOT stylize the character's face (keep photorealistic detail)`;
+- DO NOT make content that isn't appropriate for children`;
 
 async function generateImageWithRetry(
   prompt: any,
@@ -349,9 +362,10 @@ serve(async (req) => {
     };
 
     const generatedPages = [];
+    let contentFilterCount = 0; // Track content filter blocks
     
-    // Process images in parallel batches of 3 for faster generation
-    const BATCH_SIZE = 3;
+    // Process images in parallel batches of 2 to reduce CPU load and avoid worker limits
+    const BATCH_SIZE = 2;
     console.log(`Processing ${prompts.length} pages in batches of ${BATCH_SIZE}`);
     
     for (let batchStart = 0; batchStart < prompts.length; batchStart += BATCH_SIZE) {
@@ -378,73 +392,49 @@ serve(async (req) => {
           
           // Build styling instructions based on whether characters have photos
           const stylingInstructions = hasCharacterPhotos
-            ? `HYBRID LINE ART STYLING:
+            ? `CHARACTER CONSISTENCY STYLING:
 
 CHARACTER RENDERING (${characterNames}):
-- Line Art Style: PHOTOREALISTIC DETAIL with exact feature matching
-- Study the reference photos with EXTREME PRECISION to capture:
-  * EXACT face shape (round, oval, heart-shaped, square, etc.)
-  * PRECISE eye shape, size, spacing, and angle (almond, round, hooded, etc.)
-  * SPECIFIC nose shape (button, straight, wide, narrow, etc.)
-  * EXACT mouth shape and lip proportions
-  * ACCURATE facial proportions (distance between eyes, nose to mouth, etc.)
-  * DISTINCTIVE facial features (dimples, freckles, birthmarks, eyebrow shape, etc.)
-  * PRECISE hair texture, style, part, and volume
-  * EXACT age appearance (toddler, young child, older child features)
-  * SPECIFIC body type and proportions for their age
-  * Any unique identifying characteristics (glasses style, smile characteristics, etc.)
-- Render as HIGHLY DETAILED LINE ART with maximum precision
-- This should look like a line art TRACING of the actual photograph
-- Capture EVERY distinctive feature that makes this person recognizable
-- Use fine, precise lines to capture subtle facial details
-- Generate NEW dynamic poses, expressions, and angles that fit each scene
-- Maintain the EXACT SAME PERSON across all pages - same face structure, features, proportions
-- The character should be immediately recognizable as the person in the reference photos
-- DO NOT simplify or stylize the character - capture photorealistic accuracy
-- DO NOT apply ${artStyle} styling to the character - maintain photorealistic detail
-- Character line work should be detailed but still suitable for coloring
+- This is a coloring book character that should be recognizable across all pages
+- Study the reference photo to understand the character's overall appearance
+- Capture key features: face shape, hairstyle, age, smile, any glasses or distinctive features
+- Keep the same character consistent: same hair, same face proportions, same age appearance
+- Generate age-appropriate poses and expressions that fit each scene
+- Line art should be clear and suitable for children to color
+- Focus on making the character recognizable and friendly, not photographic
+- The character should feel like the same person across all pages in the book
 
 BACKGROUND/SCENE/ENVIRONMENT:
 - Line Art Style: ${artStyle.toUpperCase()}
 - Apply ${artStyle} characteristics to: setting, scenery, props, objects, animals, vehicles
 - Background elements follow ${artStyle} artistic conventions
-- Clear visual distinction: realistic character proportions vs. styled background elements
+- Create fun, engaging scenes appropriate for children
 
-CRITICAL REQUIREMENTS:
+COLORING BOOK REQUIREMENTS:
 - ALL elements must be black and white LINE ART suitable for coloring
 - NO shading, NO gradients, NO gray tones (pure line art)
-- Character: MAXIMUM DETAIL capturing exact photorealistic features from reference
-- Character: Use FINE LINES to capture precise facial features and details
-- Character: Should look like a detailed line drawing of the actual person in the photos
+- Character: Clear, recognizable, consistent across pages
+- Character: Age-appropriate and friendly appearance
 - Background: ${artStyle.toUpperCase()} style with artistic interpretation
-- Clear visual distinction: hyper-detailed realistic character vs. styled background
-- Character must be immediately recognizable as the specific person from the photos
-- Each page shows the SAME recognizable person in different poses/expressions`
+- Overall: Fun, safe, child-friendly content`
             : `UNIFORM STYLING:
 - Art Style: ${artStyle} (apply to entire image)
 - ${artStyleGuide[artStyle] || 'Consistent artistic style throughout'}`;
 
-          const enhancedPrompt = `Create a black and white coloring book page.
+          const enhancedPrompt = `Create a black and white coloring book page for children.
+
+This is a personalized coloring book where the character should be recognizable across all pages.
 
 PRIORITY ORDER (MOST TO LEAST IMPORTANT):
-1. EXACT FACE/IDENTITY MATCH - Capture precise facial features from reference photos
+1. CHARACTER CONSISTENCY - Same recognizable character across pages
 2. CORRECT POSE/EXPRESSION - Match the scene requirements
 3. BACKGROUND STYLE - Follow chosen art style for environment
 
-NEGATIVE GUIDANCE (FORBIDDEN):
-- DO NOT enlarge or simplify eyes (keep exact eye shape from photos)
-- DO NOT round or simplify face shape (match actual face structure)
-- DO NOT alter hairline or hair texture from references
-- DO NOT change facial proportions or age appearance
-- DO NOT stylize or cartoonize the character's face
-- DO NOT add big cartoon features (this is NOT a cartoon character)
-
 CHARACTERS: ${characterNames}
 ${hasCharacterPhotos 
-  ? `CRITICAL - PHOTOREALISTIC CHARACTER REFERENCE:
-The reference photos below show the REAL PERSON you must draw. This is NOT a generic character.
-
-STUDY THESE PHOTOS WITH EXTREME PRECISION:
+  ? `CHARACTER REFERENCE PROVIDED:
+The reference photo shows the character that should appear in this coloring book.
+Study it to understand the character's appearance and keep them consistent across pages:
 1. Examine EVERY facial feature in microscopic detail - eyes (shape, size, spacing, angle), nose (bridge, tip, nostrils), mouth (lip shape, width), face shape (jawline, cheekbones), proportions (eye spacing, forehead height, chin length)
 2. Note EVERY UNIQUE identifying feature - dimples, freckles, birthmarks, smile characteristics, eyebrow shape/thickness, ear shape/position, hair part/texture/volume
 3. Memorize the EXACT appearance - not an approximation, the ACTUAL person
@@ -488,19 +478,17 @@ ${complexity === 'detailed' ? 'Fine lines, intricate patterns' : ''}`;
             }
           ];
           
-          // Collect reference photos (up to 3 per character for better feature learning)
+          // Collect reference photos (use only 1 photo to avoid triggering content filters)
           const allReferencePhotos: string[] = [];
           if (consistentCharacters && characters.length > 0) {
             for (const character of characters) {
               if (character.photos && character.photos.length > 0) {
-                const characterPhotos = character.photos.slice(0, 3); // Up to 3 photos per character
-                for (const photoUrl of characterPhotos) {
-                  contentParts.push({
-                    type: 'image_url',
-                    image_url: { url: photoUrl }
-                  });
-                  allReferencePhotos.push(photoUrl);
-                }
+                // Use only first photo to reduce content filter risk
+                contentParts.push({
+                  type: 'image_url',
+                  image_url: { url: character.photos[0] }
+                });
+                allReferencePhotos.push(character.photos[0]);
               }
             }
             
@@ -542,6 +530,25 @@ ${complexity === 'detailed' ? 'Fine lines, intricate patterns' : ''}`;
           
         } catch (error) {
           console.error(`Error processing page ${i + 1}:`, error);
+          
+          // Track content filter blocks
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          if (errorMsg.includes('content_filter') || errorMsg.includes('PROHIBITED_CONTENT')) {
+            contentFilterCount++;
+            console.warn(`Content filter triggered for page ${i + 1}. Total: ${contentFilterCount}/${prompts.length}`);
+            
+            // If multiple pages are being blocked, stop and provide helpful error
+            if (contentFilterCount >= 3) {
+              console.error('Multiple content filter blocks detected. Character descriptions may need adjustment.');
+              return {
+                pageNumber: prompt.pageNumber || i + 1,
+                imageUrl: '',
+                prompt: prompt.prompt,
+                error: 'Content generation blocked by safety filters. Try simplifying character descriptions or removing reference photos.'
+              };
+            }
+          }
+          
           return {
             pageNumber: prompt.pageNumber || i + 1,
             imageUrl: '',
