@@ -205,30 +205,39 @@ serve(async (req) => {
           
           // Build styling instructions based on whether characters have photos
           const stylingInstructions = hasCharacterPhotos
-            ? `HYBRID STYLING WITH DYNAMIC CHARACTER GENERATION:
+            ? `HYBRID LINE ART STYLING:
 
 CHARACTER RENDERING (${characterNames}):
-- Style: PHOTOREALISTIC ONLY (professional photograph quality)
-- Use reference photos to LEARN the character's appearance (facial features, hair, skin tone, age, build)
-- Generate NEW poses, expressions, and angles that fit the scene naturally
-- Character should be actively engaged in the scene's activity
+- Line Art Style: REALISTIC PROPORTIONS with feature consistency
+- Study reference photos to LEARN the character's unique identifying features:
+  * Exact face shape and proportions
+  * Distinctive hair style and texture
+  * Facial feature placement (eyes, nose, mouth)
+  * Age-appropriate body proportions
+  * Any unique characteristics (glasses, freckles, dimples, etc.)
+- Render character as CLEAN LINE ART (black outlines, no shading)
+- Use realistic, anatomically correct proportions for the character
+- Generate NEW dynamic poses, expressions, and angles that fit each scene
 - Facial expressions should match the emotion/action of the scene
-- Body language and pose should be appropriate for the activity
-- Maintain the character's LIKENESS and IDENTITY across all variations
-- DO NOT copy/paste reference photos - CREATE NEW IMAGES of the same character
-- Natural, realistic lighting and proportions
-- DO NOT apply ${artStyle} style to characters
+- Body language and pose appropriate for the activity
+- Maintain the character's LIKENESS and IDENTITY across all pages
+- DO NOT copy/paste reference photos - CREATE NEW POSES of the same recognizable character
+- Character line work should be clear, simple outlines suitable for coloring
+- DO NOT apply ${artStyle} styling to the character's features or proportions
 
 BACKGROUND/SCENE/ENVIRONMENT:
-- Art Style: ${artStyle}
+- Line Art Style: ${artStyle.toUpperCase()}
 - Apply ${artStyle} characteristics to: setting, scenery, props, objects, animals, vehicles
-- Clear visual distinction: photorealistic characters against styled background
+- Background elements follow ${artStyle} artistic conventions
+- Clear visual distinction: realistic character proportions vs. styled background elements
 
-DYNAMIC SCENE INTEGRATION:
-- Character should naturally interact with environment
-- Pose and expression should tell the story of the scene
-- Each page should show the character differently but recognizably
-- Avoid repetitive poses across pages`
+CRITICAL REQUIREMENTS:
+- ALL elements must be black and white LINE ART suitable for coloring
+- NO photorealistic rendering, NO shading, NO gradients anywhere
+- Character maintains realistic proportions and recognizable features from reference
+- Background follows ${artStyle} artistic style
+- Character naturally interacts with environment
+- Each page shows the character in different pose/expression but always recognizable`
             : `UNIFORM STYLING:
 - Art Style: ${artStyle} (apply to entire image)
 - ${artStyleGuide[artStyle] || 'Consistent artistic style throughout'}`;
@@ -237,7 +246,12 @@ DYNAMIC SCENE INTEGRATION:
 
 CHARACTERS: ${characterNames}
 ${hasCharacterPhotos 
-  ? `IMPORTANT: Reference photos of the characters are provided below. Study each character's unique features to create a recognizable character model. Then generate NEW dynamic poses and expressions for this scene.`
+  ? `IMPORTANT: Reference photos provided below show the real character(s). Study their IDENTIFYING FEATURES carefully:
+- Memorize face shape, facial features, hair, age, and body type
+- Create a mental model of this specific person
+- Generate this same recognizable person in a NEW pose/expression for this scene
+- Render as line art, but keep features consistent with the reference
+- The character should be identifiable as the same person from the photos`
   : ''
 }
 SCENE: ${prompt.prompt}
