@@ -20,14 +20,6 @@ interface PrintOrderRequest {
   };
 }
 
-interface LuluValidationResponse {
-  id: string;
-  status: 'CREATED' | 'PROCESSING' | 'VALIDATED' | 'ERROR';
-  errors?: Array<{
-    message: string;
-    code: string;
-  }>;
-}
 
 async function validatePdfAccessibility(url: string, type: 'cover' | 'interior'): Promise<void> {
   console.log(`Validating ${type} PDF accessibility:`, url);
@@ -51,76 +43,6 @@ async function validatePdfAccessibility(url: string, type: 'cover' | 'interior')
   console.log(`✓ ${type} PDF validated: ${contentLength} bytes`);
 }
 
-async function validateWithLulu(
-  accessToken: string,
-  baseUrl: string,
-  type: 'interior' | 'cover',
-  pdfUrl: string,
-  podPackageId: string,
-  pageCount: number
-): Promise<void> {
-  console.log(`Starting Lulu ${type} validation...`);
-  
-  const endpoint = type === 'interior' ? 'print-job-interior-files' : 'print-job-cover-files';
-  const payload = type === 'interior' 
-    ? {
-        pod_package_id: podPackageId,
-        page_count: pageCount,
-        source_url: pdfUrl,
-      }
-    : {
-        pod_package_id: podPackageId,
-        source_url: pdfUrl,
-      };
-  
-  const response = await fetch(`${baseUrl}/${endpoint}/`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${accessToken}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(payload),
-  });
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Lulu ${type} validation request failed (${response.status}): ${errorText}`);
-  }
-  
-  const validation: LuluValidationResponse = await response.json();
-  console.log(`Lulu ${type} validation started:`, validation.id);
-  
-  // Poll for validation result (max 30 seconds)
-  for (let i = 0; i < 15; i++) {
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
-    
-    const statusResponse = await fetch(`${baseUrl}/${endpoint}/${validation.id}/`, {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-      },
-    });
-    
-    if (!statusResponse.ok) {
-      console.warn(`Failed to check ${type} validation status`);
-      continue;
-    }
-    
-    const status: LuluValidationResponse = await statusResponse.json();
-    console.log(`${type} validation status:`, status.status);
-    
-    if (status.status === 'VALIDATED') {
-      console.log(`✓ ${type} validated successfully`);
-      return;
-    }
-    
-    if (status.status === 'ERROR') {
-      const errors = status.errors?.map(e => e.message).join('; ') || 'Unknown validation error';
-      throw new Error(`Lulu ${type} validation failed: ${errors}`);
-    }
-  }
-  
-  console.warn(`${type} validation timeout - proceeding anyway`);
-}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -222,24 +144,7 @@ serve(async (req) => {
 
     console.log('Interior page count:', interiorPageCount);
     console.log('POD Package ID:', podPackageId);
-
-    // Validate files with Lulu before creating the job
-    try {
-      await validateWithLulu(access_token, luluBaseUrl, 'interior', interiorUrl, podPackageId, interiorPageCount);
-      await validateWithLulu(access_token, luluBaseUrl, 'cover', coverUrl, podPackageId, interiorPageCount);
-    } catch (validationError: any) {
-      console.error('Lulu validation failed:', validationError.message);
-      return new Response(
-        JSON.stringify({ 
-          error: `Print file validation failed: ${validationError.message}`,
-          validationError: true,
-        }),
-        { 
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          status: 422,
-        }
-      );
-    }
+    console.log('Note: Lulu validates files automatically during print job creation');
 
     // Determine shipping level based on country
     const defaultShippingLevel = shippingAddress.country === 'US' ? 'MAIL' : 'PRIORITY_MAIL';
@@ -292,7 +197,36 @@ serve(async (req) => {
       console.error('Lulu API Error Response:', errorText);
       console.error('Status:', luluOrderResponse.status);
       
-      // If 5xx error after successful validation, try alternate shipping level
+      // Parse validation errors from 4xx responses
+      if (luluOrderResponse.status >= 400 && luluOrderResponse.status < 500) {
+        let errorMessage = `Print order failed (${luluOrderResponse.status})`;
+        try {
+          const errorJson = JSON.parse(errorText);
+          if (errorJson.errors || errorJson.error) {
+            const errors = errorJson.errors || [errorJson.error];
+            errorMessage = Array.isArray(errors) 
+              ? errors.map((e: any) => e.message || e).join('; ')
+              : errors.message || errors;
+          }
+        } catch {
+          // If not JSON, use raw text
+          errorMessage = errorText || errorMessage;
+        }
+        
+        console.error('Validation error from Lulu:', errorMessage);
+        return new Response(
+          JSON.stringify({ 
+            error: `Print file validation failed: ${errorMessage}`,
+            validationError: true,
+          }),
+          { 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            status: 422,
+          }
+        );
+      }
+      
+      // If 5xx error, try alternate shipping level
       if (luluOrderResponse.status >= 500 && shippingLevel !== 'GROUND_HD') {
         console.log('Retrying with GROUND_HD shipping...');
         luluOrderData.shipping_level = 'GROUND_HD';
