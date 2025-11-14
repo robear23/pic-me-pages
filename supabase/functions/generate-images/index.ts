@@ -208,22 +208,28 @@ serve(async (req) => {
             ? `HYBRID LINE ART STYLING:
 
 CHARACTER RENDERING (${characterNames}):
-- Line Art Style: REALISTIC PROPORTIONS with feature consistency
-- Study reference photos to LEARN the character's unique identifying features:
-  * Exact face shape and proportions
-  * Distinctive hair style and texture
-  * Facial feature placement (eyes, nose, mouth)
-  * Age-appropriate body proportions
-  * Any unique characteristics (glasses, freckles, dimples, etc.)
-- Render character as CLEAN LINE ART (black outlines, no shading)
-- Use realistic, anatomically correct proportions for the character
+- Line Art Style: PHOTOREALISTIC DETAIL with exact feature matching
+- Study the reference photos with EXTREME PRECISION to capture:
+  * EXACT face shape (round, oval, heart-shaped, square, etc.)
+  * PRECISE eye shape, size, spacing, and angle (almond, round, hooded, etc.)
+  * SPECIFIC nose shape (button, straight, wide, narrow, etc.)
+  * EXACT mouth shape and lip proportions
+  * ACCURATE facial proportions (distance between eyes, nose to mouth, etc.)
+  * DISTINCTIVE facial features (dimples, freckles, birthmarks, eyebrow shape, etc.)
+  * PRECISE hair texture, style, part, and volume
+  * EXACT age appearance (toddler, young child, older child features)
+  * SPECIFIC body type and proportions for their age
+  * Any unique identifying characteristics (glasses style, smile characteristics, etc.)
+- Render as HIGHLY DETAILED LINE ART with maximum precision
+- This should look like a line art TRACING of the actual photograph
+- Capture EVERY distinctive feature that makes this person recognizable
+- Use fine, precise lines to capture subtle facial details
 - Generate NEW dynamic poses, expressions, and angles that fit each scene
-- Facial expressions should match the emotion/action of the scene
-- Body language and pose appropriate for the activity
-- Maintain the character's LIKENESS and IDENTITY across all pages
-- DO NOT copy/paste reference photos - CREATE NEW POSES of the same recognizable character
-- Character line work should be clear, simple outlines suitable for coloring
-- DO NOT apply ${artStyle} styling to the character's features or proportions
+- Maintain the EXACT SAME PERSON across all pages - same face structure, features, proportions
+- The character should be immediately recognizable as the person in the reference photos
+- DO NOT simplify or stylize the character - capture photorealistic accuracy
+- DO NOT apply ${artStyle} styling to the character - maintain photorealistic detail
+- Character line work should be detailed but still suitable for coloring
 
 BACKGROUND/SCENE/ENVIRONMENT:
 - Line Art Style: ${artStyle.toUpperCase()}
@@ -246,12 +252,22 @@ CRITICAL REQUIREMENTS:
 
 CHARACTERS: ${characterNames}
 ${hasCharacterPhotos 
-  ? `IMPORTANT: Reference photos provided below show the real character(s). Study their IDENTIFYING FEATURES carefully:
-- Memorize face shape, facial features, hair, age, and body type
-- Create a mental model of this specific person
-- Generate this same recognizable person in a NEW pose/expression for this scene
-- Render as line art, but keep features consistent with the reference
-- The character should be identifiable as the same person from the photos`
+  ? `CRITICAL - PHOTOREALISTIC CHARACTER REFERENCE:
+The reference photos below show the REAL PERSON you must draw. This is NOT a generic character.
+
+STUDY THESE PHOTOS CAREFULLY:
+1. Examine EVERY facial feature in detail - eyes, nose, mouth, face shape, proportions
+2. Note UNIQUE identifying features - dimples, freckles, smile, eyebrow shape, etc.
+3. Memorize the EXACT appearance of this specific person
+4. Create a detailed mental model of their face structure and features
+
+RENDERING REQUIREMENTS:
+- Draw THIS EXACT PERSON with maximum photorealistic accuracy
+- Capture their distinctive features precisely - not a generic interpretation
+- The character should be immediately recognizable as the person in the photos
+- Generate NEW poses/expressions for this scene, but SAME PERSON
+- Use detailed line work to capture the subtle features that make them unique
+- This is a line art portrait of a real person, not a stylized cartoon`
   : ''
 }
 SCENE: ${prompt.prompt}
