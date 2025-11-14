@@ -126,7 +126,7 @@ serve(async (req) => {
         street1: shippingAddress.street1,
         street2: shippingAddress.street2 || '',
         city: shippingAddress.city,
-        state_code: shippingAddress.state,
+        state_code: shippingAddress.country === 'US' ? shippingAddress.state : '',
         postcode: shippingAddress.postalCode,
         phone_number: shippingAddress.phoneNumber,
         country_code: shippingAddress.country,
@@ -148,8 +148,10 @@ serve(async (req) => {
 
     if (!luluOrderResponse.ok) {
       const errorText = await luluOrderResponse.text();
-      console.error('Lulu order error:', errorText);
-      throw new Error(`Failed to create print order: ${errorText}`);
+      console.error('Lulu API Error Response:', errorText);
+      console.error('Status:', luluOrderResponse.status);
+      console.error('Request payload:', JSON.stringify(luluOrderData, null, 2));
+      throw new Error(`Lulu API returned ${luluOrderResponse.status}: ${errorText}`);
     }
 
     const luluOrder = await luluOrderResponse.json();
