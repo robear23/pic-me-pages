@@ -51,15 +51,11 @@ const callEdgeFunction = async (functionName: string, body: any) => {
 export const generatePrompts = async (
   characters: Character[],
   interests: string[],
-  complexity: 'simple' | 'medium' | 'detailed',
-  artStyle: string,
   consistentCharacters: boolean
 ): Promise<{ prompts: GeneratedPrompt[] }> => {
   return callEdgeFunction('generate-prompts', { 
     characters, 
     interests,
-    complexity,
-    artStyle,
     consistentCharacters
   });
 };
@@ -67,15 +63,11 @@ export const generatePrompts = async (
 export const generateImages = async (
   prompts: GeneratedPrompt[], 
   characters: Character[],
-  complexity: 'simple' | 'medium' | 'detailed',
-  artStyle: string,
   consistentCharacters: boolean
 ): Promise<{ pages: GeneratedPage[]; successCount: number; totalCount: number }> => {
   return callEdgeFunction('generate-images', { 
     prompts, 
     characters,
-    complexity,
-    artStyle,
     consistentCharacters
   });
 };
@@ -107,13 +99,11 @@ export const createPrintOrder = async (
 export const generateCover = async (
   characterName: string,
   interests: string[],
-  complexity: 'simple' | 'medium' | 'detailed',
   characters?: Character[]
 ): Promise<{ coverImage: string }> => {
   return callEdgeFunction('generate-cover', { 
     characterName, 
-    interests, 
-    complexity,
+    interests,
     characters
   });
 };

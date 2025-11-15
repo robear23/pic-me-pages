@@ -23,10 +23,8 @@ export const GeneratingStep = () => {
   const { 
     characters,
     selectedInterests,
-    complexity,
-    artStyle,
     consistentCharacters,
-    generationProgress, 
+    generationProgress,
     generationStatus,
     isReworkMode,
     selectedPagesForRework,
@@ -82,8 +80,6 @@ export const GeneratingStep = () => {
         const { prompts: generatedPrompts } = await generatePrompts(
           charactersWithPhotos, 
           selectedInterests,
-          complexity,
-          artStyle,
           consistentCharacters
         );
         setPrompts(generatedPrompts);
@@ -109,8 +105,6 @@ export const GeneratingStep = () => {
           const { pages: reworkedPages } = await generateImages(
             promptsToRework,
             charactersWithPhotos,
-            complexity,
-            artStyle,
             consistentCharacters
           );
           
@@ -125,8 +119,6 @@ export const GeneratingStep = () => {
           const { pages } = await generateImages(
             generatedPrompts,
             charactersWithPhotos,
-            complexity,
-            artStyle,
             consistentCharacters
           );
           finalPages = pages;
@@ -148,7 +140,6 @@ export const GeneratingStep = () => {
             const { coverImage } = await generateCover(
               characters.map(c => c.name).filter(Boolean).join(' and '),
               selectedInterests,
-              complexity,
               charactersWithPhotos
             );
             coverImageUrl = coverImage;
@@ -181,8 +172,6 @@ export const GeneratingStep = () => {
               userId: user.id,
               characterName: characters.map(c => c.name).filter(Boolean).join(' and '),
               interests: selectedInterests,
-              complexity,
-              artStyle,
               consistentCharacters,
               characterPhotos,
               generatedPages: finalPages,
@@ -244,8 +233,6 @@ export const GeneratingStep = () => {
   }, [
     characters,
     selectedInterests,
-    complexity,
-    artStyle,
     consistentCharacters,
     isReworkMode,
     selectedPagesForRework,

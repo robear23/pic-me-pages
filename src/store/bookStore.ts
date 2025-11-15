@@ -17,8 +17,6 @@ export interface GeneratedPage {
 
 export interface GenerationParams {
   characters: Character[];
-  complexity: 'simple' | 'medium' | 'detailed';
-  artStyle: 'cartoon' | 'realistic' | 'minimalist' | 'whimsical' | 'photorealistic';
   consistentCharacters: boolean;
   interests: string[];
 }
@@ -26,8 +24,6 @@ export interface GenerationParams {
 interface BookState {
   currentStep: BookStep;
   characters: Character[];
-  complexity: 'simple' | 'medium' | 'detailed';
-  artStyle: 'cartoon' | 'realistic' | 'minimalist' | 'whimsical' | 'photorealistic';
   consistentCharacters: boolean;
   selectedInterests: string[];
   generatedPages: GeneratedPage[];
@@ -49,8 +45,6 @@ interface BookState {
   removeCharacter: (id: string) => void;
   updateCharacter: (id: string, updates: Partial<Character>) => void;
   setCharacterPhoto: (characterId: string, photoIndex: number, file: File | null) => void;
-  setComplexity: (complexity: 'simple' | 'medium' | 'detailed') => void;
-  setArtStyle: (style: 'cartoon' | 'realistic' | 'minimalist' | 'whimsical' | 'photorealistic') => void;
   toggleConsistentCharacters: () => void;
   toggleInterest: (interest: string) => void;
   setInterests: (interests: string[]) => void;
@@ -78,8 +72,6 @@ const createDefaultCharacter = (): Character => ({
 const initialState = {
   currentStep: 'hero' as BookStep,
   characters: [createDefaultCharacter()],
-  complexity: 'medium' as const,
-  artStyle: 'cartoon' as const,
   consistentCharacters: true,
   selectedInterests: [] as string[],
   generatedPages: [] as GeneratedPage[],
@@ -134,10 +126,6 @@ export const useBookStore = create<BookState>((set, get) => ({
         return { ...c, photos: newPhotos };
       }),
     })),
-  
-  setComplexity: (complexity) => set({ complexity }),
-  
-  setArtStyle: (artStyle) => set({ artStyle }),
   
   toggleConsistentCharacters: () =>
     set((state) => ({ consistentCharacters: !state.consistentCharacters })),
@@ -199,8 +187,6 @@ export const useBookStore = create<BookState>((set, get) => ({
       isReworkMode: true,
       originalGenerationParams: {
         characters: state.characters,
-        complexity: state.complexity,
-        artStyle: state.artStyle,
         consistentCharacters: state.consistentCharacters,
         interests: state.selectedInterests,
       },
