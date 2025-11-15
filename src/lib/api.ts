@@ -63,12 +63,16 @@ export const generatePrompts = async (
 export const generateImages = async (
   prompts: GeneratedPrompt[], 
   characters: Character[],
-  consistentCharacters: boolean
-): Promise<{ pages: GeneratedPage[]; successCount: number; totalCount: number }> => {
+  consistentCharacters: boolean,
+  batchIndex?: number,
+  batchSize?: number
+): Promise<{ pages: GeneratedPage[]; successCount: number; totalCount: number; batchInfo?: any }> => {
   return callEdgeFunction('generate-images', { 
     prompts, 
     characters,
-    consistentCharacters
+    consistentCharacters,
+    batchIndex,
+    batchSize
   });
 };
 
