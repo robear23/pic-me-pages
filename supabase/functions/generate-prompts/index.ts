@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { characters, interests, complexity, artStyle, consistentCharacters } = await req.json();
+    const { characters, interests, consistentCharacters } = await req.json();
     
     if (!characters || !Array.isArray(characters) || characters.length === 0) {
       return new Response(
@@ -39,20 +39,6 @@ serve(async (req) => {
 
     const characterNames = characters.map((c: any) => c.name).join(' and ');
     const hasCharacterPhotos = consistentCharacters && characters.some((c: any) => c.photos && c.photos.length > 0);
-    
-    const complexityGuide = {
-      simple: 'Use thick, clear lines (4-6px). Minimal background. Large simple shapes. Ages 3-5.',
-      medium: 'Balanced detail with moderate line weight (2-3px). Some background elements. Mix of shapes. Ages 5-8.',
-      detailed: 'Intricate patterns with fine lines (1-2px). Rich backgrounds. Small details and textures. Ages 8+.'
-    };
-
-    const artStyleGuide = {
-      cartoon: 'Fun, playful cartoon style with exaggerated features',
-      realistic: 'Lifelike proportions and natural details',
-      minimalist: 'Clean, simple lines with minimal detail',
-      whimsical: 'Magical, imaginative style with creative flourishes',
-      photorealistic: 'Ultra-realistic photograph quality. Professional portrait photography style. Photographic accuracy with studio lighting.'
-    };
 
     const characterGuidance = hasCharacterPhotos
       ? `\nIMPORTANT - DYNAMIC CHARACTER SCENES: For characters with reference photos, create scenes where the character is:
@@ -67,13 +53,13 @@ Each scene should feel unique and alive - the character should be doing somethin
     const systemPrompt = `You are an expert at creating child-friendly coloring page descriptions. Generate 12 unique, detailed prompts for black & white coloring pages featuring ${characterNames} in scenarios related to their interests: ${interests.join(', ')}.
 
 STYLE REQUIREMENTS:
-- Complexity: ${complexity} - ${complexityGuide[complexity as keyof typeof complexityGuide] || complexityGuide.medium}
-- Art Style: ${artStyle} - ${artStyleGuide[artStyle as keyof typeof artStyleGuide] || artStyleGuide.cartoon}
+- Photogenic illustrated style with soft, natural lighting and flattering angles
 - Character Consistency: ${consistentCharacters ? 'CRITICAL - Keep character identity consistent across ALL pages. Recognize the same character throughout.' : 'Varied appearances are OK'}${characterGuidance}
 - Simple outlines, no shading or gradients
 - Black and white line art only
 - Child-appropriate content
 - Focus on action, setting, and clear character presence
+- Pleasant composition with clean, uncluttered backgrounds
 
 ${interests.length === 1 ? 'Create diverse scenarios all related to: ' + interests[0] : 'Distribute scenes evenly across the selected interests.'}
 
@@ -100,7 +86,7 @@ Return a JSON array of exactly 12 prompts, each with:
 
 CRITICAL: Return ONLY valid JSON with proper escaping. Use \\n for newlines in text.
 
-Generate prompts for ${characterNames} (${complexity} complexity, ${artStyle} style) based on: ${interests.join(', ')}` }
+Generate prompts for ${characterNames} using photogenic illustrated style based on: ${interests.join(', ')}` }
         ],
         response_format: { type: "json_object" }
       }),
