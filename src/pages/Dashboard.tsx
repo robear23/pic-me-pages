@@ -17,7 +17,7 @@ interface Book {
   id: string;
   character_name: string;
   interests: string[];
-  pages: any;
+  pages?: any;
   pdf_url: string | null;
   cover_url: string | null;
   status: string;
@@ -46,6 +46,8 @@ const Dashboard = () => {
   const [isGeneratingPdf, setIsGeneratingPdf] = useState<string | null>(null);
   const [orderingBook, setOrderingBook] = useState<Book | null>(null);
   const [deletingBookId, setDeletingBookId] = useState<string | null>(null);
+  const [selectedBookPages, setSelectedBookPages] = useState<any[] | null>(null);
+  const [loadingPages, setLoadingPages] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -70,7 +72,7 @@ const Dashboard = () => {
     try {
       const { data, error } = await supabase
         .from('books')
-        .select('*')
+        .select('id, character_name, interests, pdf_url, cover_url, status, created_at, user_id')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -121,6 +123,28 @@ const Dashboard = () => {
       setOrders(ordersByBook);
     } catch (error: any) {
       console.error('Error fetching orders:', error);
+    }
+  };
+
+  const loadBookPages = async (bookId: string) => {
+    setLoadingPages(true);
+    try {
+      const { data, error } = await supabase
+        .from('books')
+        .select('pages')
+        .eq('id', bookId)
+        .single();
+      
+      if (error) throw error;
+      
+      const pages = data?.pages;
+      setSelectedBookPages(Array.isArray(pages) ? pages : []);
+    } catch (error: any) {
+      console.error('[Dashboard] Failed to load book pages:', error);
+      toast.error('Failed to load book pages');
+      setSelectedBookPages([]);
+    } finally {
+      setLoadingPages(false);
     }
   };
 
@@ -293,7 +317,12 @@ const Dashboard = () => {
               >
                 <Card 
                   className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
-                  onClick={() => book.status === 'completed' && setSelectedBook(book)}
+                  onClick={async () => {
+                    if (book.status === 'completed') {
+                      setSelectedBook(book);
+                      await loadBookPages(book.id);
+                    }
+                  }}
                 >
                   <CardContent className="p-0">
                     <div className="aspect-[3/4] relative overflow-hidden bg-muted">
@@ -398,7 +427,12 @@ const Dashboard = () => {
       </div>
 
       {/* Book Pages Modal */}
-      <Dialog open={!!selectedBook} onOpenChange={(open) => !open && setSelectedBook(null)}>
+      <Dialog open={!!selectedBook} onOpenChange={(open) => {
+        if (!open) {
+          setSelectedBook(null);
+          setSelectedBookPages(null);
+        }
+      }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">
@@ -406,7 +440,11 @@ const Dashboard = () => {
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
-            {selectedBook?.pages?.map((page: any, index: number) => (
+            {loadingPages ? (
+              <div className="col-span-full text-center py-8">
+                <p className="text-muted-foreground">Loading pages...</p>
+              </div>
+            ) : selectedBookPages?.map((page: any, index: number) => (
               <div key={index} className="relative aspect-[3/4] rounded-lg overflow-hidden border border-border">
                 <img
                   src={page.imageUrl || page}
