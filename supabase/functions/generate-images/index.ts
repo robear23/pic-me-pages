@@ -309,7 +309,7 @@ serve(async (req) => {
   }
 
   try {
-    const { prompts, characters, complexity, artStyle, consistentCharacters } = await req.json();
+    const { prompts, characters, consistentCharacters } = await req.json();
     
     if (!prompts || !Array.isArray(prompts) || prompts.length === 0) {
       return new Response(
@@ -355,17 +355,11 @@ serve(async (req) => {
       characterNames = characters.map((c: any) => c.name).join(' and ');
     }
     
-    const complexityStyles = {
-      simple: 'Ultra simple thick lines (4-6px). Only 5-8 large basic shapes. Minimal detail. Very easy for young children to color.',
-      medium: 'Moderate line weight (2-3px). 10-15 medium shapes. Balanced detail with some texture. Good for elementary age.',
-      detailed: 'Fine intricate lines (1-2px). 20+ shapes with patterns and textures. Rich decorative detail. Challenging for older kids.'
-    };
-
     const generatedPages = [];
     let contentFilterCount = 0; // Track content filter blocks
     
-    // Process images in parallel batches of 2 to reduce CPU load and avoid worker limits
-    const BATCH_SIZE = 2;
+    // Process images sequentially to avoid worker limits
+    const BATCH_SIZE = 1;
     console.log(`Processing ${prompts.length} pages in batches of ${BATCH_SIZE}`);
     
     for (let batchStart = 0; batchStart < prompts.length; batchStart += BATCH_SIZE) {
@@ -381,20 +375,12 @@ serve(async (req) => {
         try {
           const hasCharacterPhotos = consistentCharacters && characters.some((c: any) => c.photos && c.photos.length > 0);
           
-          // Art style guide for non-character elements
-          const artStyleGuide: Record<string, string> = {
-            cartoon: 'Fun, playful cartoon style with exaggerated features',
-            realistic: 'Lifelike proportions and natural details',
-            minimalist: 'Clean, simple lines with minimal detail',
-            whimsical: 'Magical, imaginative style with creative flourishes',
-            photorealistic: 'Ultra-realistic photograph quality with natural lighting'
-          };
-          
-          // Build styling instructions based on whether characters have photos
+          // Build photogenic styling instructions
           const stylingInstructions = hasCharacterPhotos
-            ? `CHARACTER CONSISTENCY STYLING:
+            ? `PHOTOGENIC ILLUSTRATED STYLE - CHARACTER CONSISTENCY:
 
 CHARACTER RENDERING (${characterNames}):
+- Photogenic illustrated portrait style with soft, natural lighting
 - This is a coloring book character that should be recognizable across all pages
 - Study the reference photo to understand the character's overall appearance
 - Capture key features: face shape, hairstyle, age, smile, any glasses or distinctive features
@@ -404,22 +390,34 @@ CHARACTER RENDERING (${characterNames}):
 - Focus on making the character recognizable and friendly, not photographic
 - The character should feel like the same person across all pages in the book
 
-BACKGROUND/SCENE/ENVIRONMENT:
-- Line Art Style: ${artStyle.toUpperCase()}
-- Apply ${artStyle} characteristics to: setting, scenery, props, objects, animals, vehicles
-- Background elements follow ${artStyle} artistic conventions
-- Create fun, engaging scenes appropriate for children
+SCENE & COMPOSITION:
+- Photogenic illustrated style: soft lighting, flattering angles, gentle depth
+- Simple, uncluttered background that complements the character
+- Pleasant colors and natural tones (for reference, will be converted to line art)
+- Clean composition with the character as the focal point
+- Fun, engaging scenes appropriate for children
 
 COLORING BOOK REQUIREMENTS:
 - ALL elements must be black and white LINE ART suitable for coloring
 - NO shading, NO gradients, NO gray tones (pure line art)
-- Character: Clear, recognizable, consistent across pages
+- Character: Clear, recognizable, consistent across pages with photogenic qualities
 - Character: Age-appropriate and friendly appearance
-- Background: ${artStyle.toUpperCase()} style with artistic interpretation
+- Background: Photogenic illustrated style with soft, pleasant composition
 - Overall: Fun, safe, child-friendly content`
-            : `UNIFORM STYLING:
-- Art Style: ${artStyle} (apply to entire image)
-- ${artStyleGuide[artStyle] || 'Consistent artistic style throughout'}`;
+            : `PHOTOGENIC ILLUSTRATED STYLE - UNIFORM:
+
+RENDERING STYLE:
+- Photogenic illustrated portrait style throughout
+- Soft, natural lighting and flattering angles
+- Simple, pleasant composition with gentle depth
+- Clean, uncluttered backgrounds
+- Natural tones and pleasing color palette (for reference, converted to line art)
+
+COLORING BOOK REQUIREMENTS:
+- ALL elements must be black and white LINE ART suitable for coloring
+- NO shading, NO gradients, NO gray tones
+- Consistent photogenic illustrated style throughout
+- Age-appropriate and family-friendly content`;
 
           const enhancedPrompt = `Create a black and white coloring book page for children.
 
@@ -454,7 +452,6 @@ RENDERING REQUIREMENTS (TOP PRIORITY):
 SCENE: ${prompt.prompt}
 
 STYLE REQUIREMENTS:
-- Complexity: ${complexity} - ${complexityStyles[complexity as keyof typeof complexityStyles] || complexityStyles.medium}
 ${stylingInstructions}
 ${consistentCharacters 
   ? `- CRITICAL: Maintain character identity and recognizability across all pages
@@ -466,10 +463,7 @@ ${consistentCharacters
 - NO shading, NO gradients, NO gray tones
 - Pure white background
 - Clear outlines suitable for children to color
-- Age-appropriate and friendly
-- ${complexity === 'simple' ? 'Very thick lines, very simple shapes' : ''}
-${complexity === 'medium' ? 'Medium lines, moderate detail' : ''}
-${complexity === 'detailed' ? 'Fine lines, intricate patterns' : ''}`;
+- Age-appropriate and friendly`;
           
           const contentParts: any[] = [
             {
