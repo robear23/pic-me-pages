@@ -93,7 +93,7 @@ export const GeneratingStep = () => {
 
         // Step 4: Generating coloring pages (50-90%)
         setGenerationStatus(GENERATION_STEPS[3]);
-        console.log('Generating images...');
+        console.log('Generating images with batch processing...');
         
         // If in rework mode, only regenerate selected pages
         let finalPages;
@@ -102,26 +102,63 @@ export const GeneratingStep = () => {
             selectedPagesForRework.includes(p.pageNumber)
           );
           
-          const { pages: reworkedPages } = await generateImages(
-            promptsToRework,
-            charactersWithPhotos,
-            consistentCharacters
-          );
+          // Process rework in batches
+          const BATCH_SIZE = 3;
+          const totalBatches = Math.ceil(promptsToRework.length / BATCH_SIZE);
+          let allReworkedPages: any[] = [];
+          
+          for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+            setGenerationStatus(`${GENERATION_STEPS[3]} (batch ${batchIndex + 1}/${totalBatches})`);
+            console.log(`Processing rework batch ${batchIndex + 1}/${totalBatches}`);
+            
+            const { pages: batchPages } = await generateImages(
+              promptsToRework,
+              charactersWithPhotos,
+              consistentCharacters,
+              batchIndex,
+              BATCH_SIZE
+            );
+            
+            allReworkedPages = [...allReworkedPages, ...batchPages];
+            
+            // Update progress within the 50-90% range
+            const batchProgress = 50 + (40 * (batchIndex + 1) / totalBatches);
+            setGenerationProgress(Math.round(batchProgress));
+          }
           
           // Merge with existing pages
           finalPages = generatedPages.map(page => {
-            const reworked = reworkedPages.find(p => p.pageNumber === page.pageNumber);
+            const reworked = allReworkedPages.find(p => p.pageNumber === page.pageNumber);
             return reworked || page;
           });
           
           completeRework();
         } else {
-          const { pages } = await generateImages(
-            generatedPrompts,
-            charactersWithPhotos,
-            consistentCharacters
-          );
-          finalPages = pages;
+          // Process all pages in batches
+          const BATCH_SIZE = 3;
+          const totalBatches = Math.ceil(generatedPrompts.length / BATCH_SIZE);
+          let allPages: any[] = [];
+          
+          for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+            setGenerationStatus(`${GENERATION_STEPS[3]} (batch ${batchIndex + 1}/${totalBatches})`);
+            console.log(`Processing batch ${batchIndex + 1}/${totalBatches}`);
+            
+            const { pages: batchPages } = await generateImages(
+              generatedPrompts,
+              charactersWithPhotos,
+              consistentCharacters,
+              batchIndex,
+              BATCH_SIZE
+            );
+            
+            allPages = [...allPages, ...batchPages];
+            
+            // Update progress within the 50-90% range
+            const batchProgress = 50 + (40 * (batchIndex + 1) / totalBatches);
+            setGenerationProgress(Math.round(batchProgress));
+          }
+          
+          finalPages = allPages;
         }
         
         setGenerationProgress(90);

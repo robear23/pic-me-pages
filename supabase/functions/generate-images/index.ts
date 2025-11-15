@@ -245,17 +245,36 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is required');
     }
 
-    const { prompts, characters, consistentCharacters } = await req.json();
+    const { prompts, characters, consistentCharacters, batchIndex, batchSize = 3 } = await req.json();
 
     if (!prompts || !Array.isArray(prompts)) {
       throw new Error('Invalid prompts array');
     }
 
     // Filter out any prompts that don't have the required fields
-    const validPrompts = prompts.filter((p: any) => p && p.prompt && p.pageNumber);
+    let validPrompts = prompts.filter((p: any) => p && p.prompt && p.pageNumber);
     
     if (validPrompts.length === 0) {
       throw new Error('No valid prompts provided');
+    }
+
+    // Calculate batch range if batchIndex is provided
+    let batchInfo = null;
+    
+    if (typeof batchIndex === 'number') {
+      const startIdx = batchIndex * batchSize;
+      const endIdx = Math.min(startIdx + batchSize, validPrompts.length);
+      validPrompts = validPrompts.slice(startIdx, endIdx);
+      
+      const totalBatches = Math.ceil(prompts.filter((p: any) => p && p.prompt && p.pageNumber).length / batchSize);
+      batchInfo = {
+        batchIndex,
+        batchSize,
+        totalBatches,
+        processedPages: validPrompts.map((p: any) => p.pageNumber)
+      };
+      
+      console.log(`Processing batch ${batchIndex + 1}/${totalBatches} (pages ${startIdx + 1}-${endIdx} of original prompt list)`);
     }
 
     console.log(`Processing ${validPrompts.length} pages in batches of 1`);
@@ -390,7 +409,8 @@ STYLE:
       JSON.stringify({ 
         pages,
         successCount,
-        totalCount: validPrompts.length
+        totalCount: validPrompts.length,
+        batchInfo
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
