@@ -13,7 +13,6 @@ interface Character {
 interface GenerateCoverRequest {
   characterName: string;
   interests: string[];
-  complexity: string;
   characters?: Character[];
 }
 
@@ -30,13 +29,13 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY not configured');
     }
 
-    const { characterName, interests, complexity, characters }: GenerateCoverRequest = await req.json();
+    const { characterName, interests, characters }: GenerateCoverRequest = await req.json();
 
     console.log('Generating cover for:', characterName, interests);
 
     // Create a detailed prompt for the cover
     const interestsText = interests.slice(0, 3).join(', ');
-    const coverPrompt = `Create a vibrant, child-friendly coloring book cover design for "${characterName}'s Coloring Book". The cover should feature decorative elements and imagery related to: ${interestsText}. Style: Whimsical and inviting with a colorful decorative border frame. The center should have an attractive illustration suitable for a children's coloring book. Complexity level: ${complexity}. Important: Do not include any text or words in the image - this is purely decorative artwork for the cover background.`;
+    const coverPrompt = `Create a vibrant, child-friendly coloring book cover design for "${characterName}'s Coloring Book". The cover should feature decorative elements and imagery related to: ${interestsText}. Style: Photogenic illustrated style with soft, inviting composition and a colorful decorative border frame. The center should have an attractive illustration suitable for a children's coloring book with pleasant, natural tones and gentle depth. Important: Do not include any text or words in the image - this is purely decorative artwork for the cover background.`;
 
     console.log('Cover prompt:', coverPrompt);
 
