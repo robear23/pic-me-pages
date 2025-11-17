@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { characters, interests, consistentCharacters } = await req.json();
+    const { characters, interests, consistentCharacters, targetPageCount = 12 } = await req.json();
     
     if (!characters || !Array.isArray(characters) || characters.length === 0) {
       return new Response(
@@ -50,7 +50,7 @@ serve(async (req) => {
 Each scene should feel unique and alive - the character should be doing something different in each page.`
       : '';
 
-    const systemPrompt = `You are an expert at creating child-friendly coloring page descriptions. Generate 12 unique, detailed prompts for black & white coloring pages featuring ${characterNames} in scenarios related to their interests: ${interests.join(', ')}.
+    const systemPrompt = `You are an expert at creating child-friendly coloring page descriptions. Generate ${targetPageCount} unique, detailed prompts for black & white coloring pages featuring ${characterNames} in scenarios related to their interests: ${interests.join(', ')}.
 
 STYLE REQUIREMENTS:
 - Photogenic illustrated style with soft, natural lighting and flattering angles
@@ -63,9 +63,9 @@ STYLE REQUIREMENTS:
 
 ${interests.length === 1 ? 'Create diverse scenarios all related to: ' + interests[0] : 'Distribute scenes evenly across the selected interests.'}
 
-Return a JSON array of exactly 12 prompts, each with:
+Return a JSON array of exactly ${targetPageCount} prompts, each with:
 {
-  "pageNumber": 1-12,
+  "pageNumber": 1-${targetPageCount},
   "interest": "the interest category",
   "prompt": "detailed scene description including character names and style notes"
 }`;
@@ -82,7 +82,7 @@ Return a JSON array of exactly 12 prompts, each with:
         model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Generate exactly 12 unique coloring book page prompts.
+          { role: 'user', content: `Generate exactly ${targetPageCount} unique coloring book page prompts.
 
 CRITICAL: Return ONLY valid JSON with proper escaping. Use \\n for newlines in text.
 

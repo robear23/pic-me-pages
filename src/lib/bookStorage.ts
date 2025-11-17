@@ -9,6 +9,10 @@ interface SaveBookParams {
   characterPhotos: File[];
   generatedPages: Array<{ pageNumber: number; imageUrl: string; prompt: string }>;
   coverImageUrl?: string | null;
+  selectedPageCount?: number;
+  selectedBinding?: string;
+  selectedPrice?: number;
+  selectedPodPackageId?: string;
 }
 
 export async function saveBookToDatabase(params: SaveBookParams): Promise<string | null> {
@@ -21,6 +25,10 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       characterPhotos,
       generatedPages,
       coverImageUrl,
+      selectedPageCount,
+      selectedBinding,
+      selectedPrice,
+      selectedPodPackageId,
     } = params;
 
     // 1. Upload character photos to storage
@@ -116,6 +124,10 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
           prompt: page.prompt,
         })),
         status: 'completed',
+        selected_page_count: selectedPageCount,
+        selected_binding_type: selectedBinding,
+        selected_price: selectedPrice,
+        selected_pod_package_id: selectedPodPackageId,
       })
       .select()
       .single();
@@ -133,19 +145,20 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
     let interiorPdfUrl: string | null = null;
     
     try {
-      // Generate interior PDF with minimum 24 pages (even count)
-      console.log('Generating Lulu-compliant interior PDF...');
+      // Generate interior PDF with selected page count (or default to generated pages)
+      const pdfPageCount = selectedPageCount || Math.max(12, generatedPages.length);
+      console.log(`Generating Lulu-compliant interior PDF with ${pdfPageCount} pages...`);
       interiorPdfUrl = await repairBookPdf(
         bookId,
         generatedPages.map(page => ({ imageUrl: page.imageUrl || '' })),
-        { minPages: 24, padWith: 'blank' }
+        { pageCount: pdfPageCount, padWith: 'blank' }
       );
       console.log('Interior PDF generated:', interiorPdfUrl);
 
       // Generate wrap cover PDF if we have a cover image
       if (uploadedCoverUrl) {
         console.log('Generating Lulu-compliant wrap cover PDF...');
-        const finalPageCount = Math.max(24, generatedPages.length);
+        const finalPageCount = pdfPageCount;
         const evenPageCount = finalPageCount % 2 === 0 ? finalPageCount : finalPageCount + 1;
         
         coverPdfUrl = await generateCoverWrapPdf(

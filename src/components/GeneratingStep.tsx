@@ -24,6 +24,10 @@ export const GeneratingStep = () => {
     characters,
     selectedInterests,
     consistentCharacters,
+    selectedPageCount,
+    selectedBinding,
+    selectedPrice,
+    selectedPodPackageId,
     generationProgress,
     generationStatus,
     isReworkMode,
@@ -80,7 +84,8 @@ export const GeneratingStep = () => {
         const { prompts: generatedPrompts } = await generatePrompts(
           charactersWithPhotos, 
           selectedInterests,
-          consistentCharacters
+          consistentCharacters,
+          selectedPageCount
         );
         setPrompts(generatedPrompts);
         setGenerationProgress(40);
@@ -213,6 +218,10 @@ export const GeneratingStep = () => {
               characterPhotos,
               generatedPages: finalPages,
               coverImageUrl,
+              selectedPageCount,
+              selectedBinding,
+              selectedPrice,
+              selectedPodPackageId,
             });
 
             if (bookId) {

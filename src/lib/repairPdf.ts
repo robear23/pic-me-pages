@@ -177,7 +177,7 @@ export async function generateCoverWrapPdf(
 export async function repairBookPdf(
   bookId: string,
   pages: Array<{ imageUrl: string }>,
-  options?: { minPages?: number; padWith?: 'blank' | 'repeat' }
+  options?: { minPages?: number; padWith?: 'blank' | 'repeat'; pageCount?: number }
 ): Promise<string> {
   try {
     // Get current user for proper path structure
@@ -187,7 +187,9 @@ export async function repairBookPdf(
       throw new Error('User must be authenticated to generate PDF');
     }
 
-    const { minPages = 24, padWith = 'blank' } = options || {};
+    const { minPages = 24, padWith = 'blank', pageCount } = options || {};
+    // Use pageCount if provided, otherwise use minPages
+    const targetPages = pageCount || minPages;
 
     // Generate interior PDF from existing page images
     const pdf = new jsPDF({
@@ -221,8 +223,8 @@ export async function repairBookPdf(
       }
     }
 
-    // Pad to minimum page count
-    while (processedPages < minPages) {
+    // Pad to target page count
+    while (processedPages < targetPages) {
       pdf.addPage();
       // Leave blank (white background by default)
       processedPages++;
@@ -234,7 +236,7 @@ export async function repairBookPdf(
       processedPages++;
     }
 
-    console.log(`[repairBookPdf] Final page count: ${processedPages} (min: ${minPages})`);
+    console.log(`[repairBookPdf] Final page count: ${processedPages} (target: ${targetPages})`);
 
     // Convert PDF to blob
     const pdfBlob = pdf.output('blob');

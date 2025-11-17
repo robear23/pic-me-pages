@@ -51,12 +51,14 @@ const callEdgeFunction = async (functionName: string, body: any) => {
 export const generatePrompts = async (
   characters: Character[],
   interests: string[],
-  consistentCharacters: boolean
+  consistentCharacters: boolean,
+  targetPageCount: number = 12
 ): Promise<{ prompts: GeneratedPrompt[] }> => {
   return callEdgeFunction('generate-prompts', { 
     characters, 
     interests,
-    consistentCharacters
+    consistentCharacters,
+    targetPageCount
   });
 };
 
