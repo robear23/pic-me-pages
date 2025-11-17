@@ -138,8 +138,17 @@ serve(async (req) => {
 
     const { access_token } = await luluAuthResponse.json();
 
-    // Calculate page count (interior pages only, ensure even)
-    let interiorPageCount = book.pages?.length || 0;
+    // Calculate page count for Lulu API
+    // Note: The actual PDF has been padded by repairBookPdf to meet Lulu requirements
+    let interiorPageCount = book.pages?.length || 24;
+
+    // For paperbacks, ensure minimum 24 pages
+    if (podPackageId.includes('PB') && interiorPageCount < 24) {
+      console.log(`Book has ${book.pages?.length || 0} pages in DB, using minimum 24 for paperback`);
+      interiorPageCount = 24;
+    }
+
+    // Ensure even page count (Lulu requirement)
     if (interiorPageCount % 2 !== 0) {
       console.log(`Adjusting page count from ${interiorPageCount} to ${interiorPageCount + 1} (must be even)`);
       interiorPageCount += 1;
@@ -147,19 +156,6 @@ serve(async (req) => {
 
     console.log('Interior page count:', interiorPageCount);
     console.log('POD Package ID:', podPackageId);
-    
-    // Guardrail: paperback requires at least 24 pages
-    if (podPackageId.includes('PB') && interiorPageCount < 24) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Paperback requires at least 24 pages. Please regenerate your book with more content.' 
-        }),
-        { 
-          status: 422,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-        }
-      );
-    }
     
     console.log('Note: Lulu validates files automatically during print job creation');
 
