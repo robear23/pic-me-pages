@@ -5,6 +5,7 @@ import { ProgressBar } from '@/components/ProgressBar';
 import { UploadStep } from '@/components/UploadStep';
 import { SettingsStep } from '@/components/SettingsStep';
 import { InterestsStep } from '@/components/InterestsStep';
+import { BookOptionsStep } from '@/components/BookOptionsStep';
 import { GeneratingStep } from '@/components/GeneratingStep';
 import { CompleteStep } from '@/components/CompleteStep';
 import { ReworkSettingsStep } from '@/components/ReworkSettingsStep';
@@ -29,6 +30,7 @@ const Index = () => {
         {currentStep === 'upload' && <UploadStep key="upload" />}
         {currentStep === 'settings' && <SettingsStep key="settings" />}
         {currentStep === 'interests' && <InterestsStep key="interests" />}
+        {currentStep === 'book-options' && <BookOptionsStep key="book-options" />}
         {currentStep === 'generating' && <GeneratingStep key="generating" />}
         {currentStep === 'complete' && <CompleteStep key="complete" />}
         {currentStep === 'rework-settings' && <ReworkSettingsStep key="rework-settings" />}
