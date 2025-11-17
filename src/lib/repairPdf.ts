@@ -1,7 +1,7 @@
 import { supabase } from '@/integrations/supabase/client';
 import { jsPDF } from 'jspdf';
 
-async function toDataUrl(url: string): Promise<string> {
+export async function toDataUrl(url: string): Promise<string> {
   // If already a data URL, return as-is to avoid re-converting
   if (url.startsWith('data:')) {
     return url;

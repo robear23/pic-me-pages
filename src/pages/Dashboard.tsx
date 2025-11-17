@@ -12,7 +12,8 @@ import { OrderPhysicalBookDialog } from '@/components/OrderPhysicalBookDialog';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
-import { repairBookPdf } from '@/lib/repairPdf';
+import { repairBookPdf, toDataUrl } from '@/lib/repairPdf';
+import { jsPDF } from 'jspdf';
 
 interface Book {
   id: string;
@@ -52,6 +53,7 @@ const Dashboard = () => {
   const [selectedBookPages, setSelectedBookPages] = useState<any[] | null>(null);
   const [loadingPages, setLoadingPages] = useState(false);
   const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
+  const [downloadingBookId, setDownloadingBookId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -157,13 +159,43 @@ const Dashboard = () => {
     navigate('/');
   };
 
-  const handleDownloadPDF = (pdfUrl: string, bookName: string) => {
-    const link = document.createElement('a');
-    link.href = pdfUrl;
-    link.download = `${bookName}-coloring-book.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const handleDownloadPDF = async (pdfUrl: string, bookName: string) => {
+    try {
+      toast.info('Preparing download...');
+      
+      // Fetch the PDF from Supabase Storage
+      const response = await fetch(pdfUrl);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch PDF');
+      }
+      
+      // Get the PDF as a blob
+      const blob = await response.blob();
+      
+      // Create a local blob URL
+      const blobUrl = URL.createObjectURL(blob);
+      
+      // Create link and trigger download
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `${bookName}-coloring-book.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      
+      // Clean up
+      document.body.removeChild(link);
+      
+      // Revoke the blob URL after a short delay to ensure download started
+      setTimeout(() => {
+        URL.revokeObjectURL(blobUrl);
+      }, 100);
+      
+      toast.success('Download started!');
+    } catch (error: any) {
+      console.error('Download error:', error);
+      toast.error('Failed to download PDF. Please try again.');
+    }
   };
 
   const handleGeneratePdf = async (book: Book, quickPreview = false) => {
@@ -204,20 +236,63 @@ const Dashboard = () => {
   };
 
   const handleQuickPreview = async (book: Book) => {
-    const pdfUrl = await handleGeneratePdf(book, true);
-    if (pdfUrl) {
-      handleDownloadPDF(pdfUrl, `${book.character_name}-preview`);
+    if (!book.pages || book.pages.length === 0) {
+      toast.error('No pages available');
+      return;
+    }
+    
+    setIsGeneratingPdf(book.id);
+    setPdfProgress({ current: 0, total: book.pages.length });
+    
+    try {
+      toast.info('Generating preview...');
+      
+      // Generate PDF directly in browser without uploading to Supabase
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'in',
+        format: 'letter',
+      });
+      
+      for (let i = 0; i < book.pages.length; i++) {
+        if (i > 0) pdf.addPage();
+        
+        setPdfProgress({ current: i + 1, total: book.pages.length });
+        
+        const page = book.pages[i];
+        const dataUrl = page.imageUrl.startsWith('data:') 
+          ? page.imageUrl 
+          : await toDataUrl(page.imageUrl);
+        
+        pdf.addImage(dataUrl, 'PNG', 0, 0, 8.5, 11);
+      }
+      
+      // Download directly without uploading to Supabase
+      pdf.save(`${book.character_name}-preview.pdf`);
+      
+      toast.success('Preview downloaded!');
+    } catch (error: any) {
+      console.error('Error generating preview:', error);
+      toast.error('Failed to generate preview');
+    } finally {
+      setIsGeneratingPdf(null);
+      setPdfProgress(null);
     }
   };
 
   const handleDownloadOrGenerate = async (book: Book) => {
-    if (book.pdf_url) {
-      handleDownloadPDF(book.pdf_url, book.character_name);
-    } else {
-      const pdfUrl = await handleGeneratePdf(book, false);
-      if (pdfUrl) {
-        handleDownloadPDF(pdfUrl, book.character_name);
+    setDownloadingBookId(book.id);
+    try {
+      if (book.pdf_url) {
+        await handleDownloadPDF(book.pdf_url, book.character_name);
+      } else {
+        const pdfUrl = await handleGeneratePdf(book, false);
+        if (pdfUrl) {
+          await handleDownloadPDF(pdfUrl, book.character_name);
+        }
       }
+    } finally {
+      setDownloadingBookId(null);
     }
   };
 
@@ -391,10 +466,10 @@ const Dashboard = () => {
                                   e.stopPropagation();
                                   handleDownloadOrGenerate(book);
                                 }}
-                                disabled={isGeneratingPdf === book.id}
+                                disabled={isGeneratingPdf === book.id || downloadingBookId === book.id}
                               >
                                 <Download className="w-4 h-4 mr-1" />
-                                {isGeneratingPdf === book.id ? 'Generating...' : 'Download PDF'}
+                                {downloadingBookId === book.id ? 'Downloading...' : isGeneratingPdf === book.id ? 'Generating...' : 'Download PDF'}
                               </Button>
                               <OrderPhysicalBookDialog 
                                 bookId={book.id}
@@ -507,17 +582,17 @@ const Dashboard = () => {
               <Button
                 variant="outline"
                 onClick={() => handleDownloadOrGenerate(selectedBook)}
-                disabled={isGeneratingPdf === selectedBook.id}
+                disabled={isGeneratingPdf === selectedBook.id || downloadingBookId === selectedBook.id}
                 className="flex-1"
               >
                 <Download className="w-4 h-4 mr-2" />
-                {isGeneratingPdf === selectedBook.id ? 'Generating...' : 'Download PDF'}
+                {downloadingBookId === selectedBook.id ? 'Downloading...' : isGeneratingPdf === selectedBook.id ? 'Generating...' : 'Download PDF'}
               </Button>
               <Button
                 variant="default"
                 onClick={() => handleOrderFromModal(selectedBook)}
                 disabled={isGeneratingPdf === selectedBook.id}
-                className="flex-1 bg-black text-white hover:bg-black/90"
+                className="flex-1"
               >
                 <Package className="w-4 h-4 mr-2" />
                 Order Physical Book
