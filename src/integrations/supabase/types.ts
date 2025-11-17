@@ -28,6 +28,10 @@ export type Database = {
           pages: Json | null
           pdf_url: string | null
           photo_urls: string[]
+          selected_binding_type: string | null
+          selected_page_count: number | null
+          selected_pod_package_id: string | null
+          selected_price: number | null
           status: string | null
           updated_at: string | null
           user_id: string
@@ -45,6 +49,10 @@ export type Database = {
           pages?: Json | null
           pdf_url?: string | null
           photo_urls: string[]
+          selected_binding_type?: string | null
+          selected_page_count?: number | null
+          selected_pod_package_id?: string | null
+          selected_price?: number | null
           status?: string | null
           updated_at?: string | null
           user_id: string
@@ -62,6 +70,10 @@ export type Database = {
           pages?: Json | null
           pdf_url?: string | null
           photo_urls?: string[]
+          selected_binding_type?: string | null
+          selected_page_count?: number | null
+          selected_pod_package_id?: string | null
+          selected_price?: number | null
           status?: string | null
           updated_at?: string | null
           user_id?: string
