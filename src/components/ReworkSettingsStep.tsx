@@ -10,6 +10,7 @@ export const ReworkSettingsStep = () => {
     consistentCharacters, 
     selectedPagesForRework,
     originalGenerationParams,
+    generatedBookId,
     toggleConsistentCharacters,
     setStep,
   } = useBookStore();
@@ -39,6 +40,13 @@ export const ReworkSettingsStep = () => {
           <p className="text-lg text-muted-foreground text-center mb-8">
             Regenerating pages: {selectedPagesForRework.sort((a, b) => a - b).join(', ')}
           </p>
+
+          <Alert className="mb-8 border-amber-500/30 bg-amber-500/5">
+            <AlertDescription className="text-foreground">
+              <strong>⚠️ Important:</strong> This will update your existing book, not create a new one. 
+              The selected pages will be regenerated and replaced in your current book.
+            </AlertDescription>
+          </Alert>
 
           {originalGenerationParams && (
             <Alert className="mb-8 border-primary/30 bg-primary/5">

@@ -32,17 +32,22 @@ CRITICAL: This is NOT line art yet - create a realistic photo-style image first.
 // System message for Step 2: Convert realistic image to line art
 const LINE_ART_SYSTEM_MESSAGE = `You are converting a realistic image into black and white line art for a children's coloring book.
 
-TASK: Transform the provided image into simple, clear line art suitable for coloring.
+TASK: Transform the provided image into PURE BLACK AND WHITE line art suitable for coloring.
 
-REQUIREMENTS:
-- Convert to pure black lines on white background
-- NO shading, NO gradients, NO gray tones
-- Clear, bold outlines that children can color within
-- Maintain the character's recognizable features in line form
+CRITICAL REQUIREMENTS - MUST BE FOLLOWED EXACTLY:
+- ONLY pure black lines (#000000) on PURE white background (#FFFFFF)
+- ABSOLUTELY NO colors, NO shading, NO gradients, NO gray tones whatsoever
+- NO texture fills, NO patterns inside shapes
+- NO photorealistic elements - everything must be simple outlines
+- Think of this as a traditional black ink outline drawing on white paper
+- All areas should be either 100% black (lines only) or 100% white (empty spaces to color)
+- Clear, bold outlines that children aged 3-12 can easily color within
+- Maintain the character's recognizable features using only simple line contours
 - Keep composition simple and uncluttered
-- Preserve the character's identity and scene elements
 
-STYLE: Simple line art suitable for ages 3-12 to color in.`;
+VERIFICATION: Before generating, confirm the output will contain ONLY black lines on white background with zero colors or shading.
+
+STYLE: Pure black and white line art coloring book page - no exceptions.`;
 
 async function generateRealisticImage(
   prompt: any,

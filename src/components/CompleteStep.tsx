@@ -11,7 +11,7 @@ import { OrderPhysicalBookDialog } from './OrderPhysicalBookDialog';
 import { useAuth } from '@/contexts/AuthContext';
 
 export const CompleteStep = () => {
-  const { characters, generatedPages, selectedPagesForRework, maxReworksReached, togglePageForRework, enterReworkMode, setStep, reset, generatedBookId } = useBookStore();
+  const { characters, generatedPages, selectedPagesForRework, maxReworksReached, togglePageForRework, enterReworkMode, setStep, reset, generatedBookId, isReworkMode } = useBookStore();
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -170,7 +170,7 @@ export const CompleteStep = () => {
           className="text-center mb-12"
         >
           <h2 className="font-black text-5xl md:text-6xl mb-4">
-            Your Book is Ready! 🎉
+            {isReworkMode ? 'Book Updated! 🎨' : 'Your Book is Ready! 🎉'}
           </h2>
           <p className="text-xl text-muted-foreground">
             {characterNames ? `${characterNames}'s` : 'Your'} personalized coloring book with {pages.length} unique page{pages.length !== 1 ? 's' : ''}

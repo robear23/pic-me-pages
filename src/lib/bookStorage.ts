@@ -13,6 +13,7 @@ interface SaveBookParams {
   selectedBinding?: string;
   selectedPrice?: number;
   selectedPodPackageId?: string;
+  bookId?: string | null; // Optional: if provided, update existing book instead of creating new
 }
 
 export async function saveBookToDatabase(params: SaveBookParams): Promise<string | null> {
@@ -29,7 +30,11 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       selectedBinding,
       selectedPrice,
       selectedPodPackageId,
+      bookId: existingBookId,
     } = params;
+    
+    // If bookId is provided, we're updating an existing book
+    const isUpdate = !!existingBookId;
 
     // 1. Upload character photos to storage
     const photoUrls: string[] = [];
@@ -107,38 +112,66 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       }
     }
 
-    // 4. Create initial book record to get bookId
-    const { data: bookData, error: bookInsertError } = await supabase
-      .from('books')
-      .insert({
-        user_id: userId,
-        character_name: characterName,
-        interests,
-        complexity: 'medium', // Default photogenic style
-        art_style: 'photogenic',
-        consistent_characters: consistentCharacters,
-        photo_urls: photoUrls,
-        pages: generatedPages.map(page => ({
-          pageNumber: page.pageNumber,
-          imageUrl: page.imageUrl || '',
-          prompt: page.prompt,
-        })),
-        status: 'completed',
-        selected_page_count: selectedPageCount,
-        selected_binding_type: selectedBinding,
-        selected_price: selectedPrice,
-        selected_pod_package_id: selectedPodPackageId,
-      })
-      .select()
-      .single();
+    // 4. Create or update book record
+    let bookId: string;
+    
+    if (isUpdate && existingBookId) {
+      // Update existing book
+      console.log('Updating existing book:', existingBookId);
+      const { error: bookUpdateError } = await supabase
+        .from('books')
+        .update({
+          pages: generatedPages.map(page => ({
+            pageNumber: page.pageNumber,
+            imageUrl: page.imageUrl || '',
+            prompt: page.prompt,
+          })),
+          photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingBookId);
 
-    if (bookInsertError || !bookData) {
-      console.error('Book insert error:', bookInsertError);
-      return null;
+      if (bookUpdateError) {
+        console.error('Book update error:', bookUpdateError);
+        return null;
+      }
+      
+      bookId = existingBookId;
+      console.log('Updated book with ID:', bookId);
+    } else {
+      // Create new book
+      const { data: bookData, error: bookInsertError } = await supabase
+        .from('books')
+        .insert({
+          user_id: userId,
+          character_name: characterName,
+          interests,
+          complexity: 'medium', // Default photogenic style
+          art_style: 'photogenic',
+          consistent_characters: consistentCharacters,
+          photo_urls: photoUrls,
+          pages: generatedPages.map(page => ({
+            pageNumber: page.pageNumber,
+            imageUrl: page.imageUrl || '',
+            prompt: page.prompt,
+          })),
+          status: 'completed',
+          selected_page_count: selectedPageCount,
+          selected_binding_type: selectedBinding,
+          selected_price: selectedPrice,
+          selected_pod_package_id: selectedPodPackageId,
+        })
+        .select()
+        .single();
+
+      if (bookInsertError || !bookData) {
+        console.error('Book insert error:', bookInsertError);
+        return null;
+      }
+
+      bookId = bookData.id;
+      console.log('Created book with ID:', bookId);
     }
-
-    const bookId = bookData.id;
-    console.log('Created book with ID:', bookId);
 
     // 5. Generate Lulu-compliant PDFs using repair functions
     let coverPdfUrl: string | null = null;
