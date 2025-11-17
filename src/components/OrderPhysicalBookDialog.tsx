@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -20,9 +20,10 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { createPrintOrder, ShippingAddress } from '@/lib/api';
-import { Package } from 'lucide-react';
+import { Package, Book, Sparkles } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { generateCoverWrapPdf, repairBookPdf } from '@/lib/repairPdf';
+import type { BindingType } from '@/types/bookOptions';
 
 interface OrderPhysicalBookDialogProps {
   bookId: string;
@@ -43,6 +44,11 @@ export function OrderPhysicalBookDialog({
   const open = controlledOpen !== undefined ? controlledOpen : internalOpen;
   const setOpen = controlledOnOpenChange || setInternalOpen;
   const [loading, setLoading] = useState(false);
+  const [bookDetails, setBookDetails] = useState<{
+    pageCount: number;
+    bindingType: BindingType;
+    price: number;
+  } | null>(null);
   const { toast } = useToast();
   
   const [shippingAddress, setShippingAddress] = useState<ShippingAddress>({
@@ -55,6 +61,29 @@ export function OrderPhysicalBookDialog({
     phoneNumber: '',
     country: 'US',
   });
+
+  // Fetch book details when dialog opens
+  useEffect(() => {
+    if (open && bookId) {
+      const fetchBookDetails = async () => {
+        const { data: book } = await supabase
+          .from('books')
+          .select('selected_page_count, selected_binding_type, selected_price')
+          .eq('id', bookId)
+          .single();
+        
+        if (book) {
+          setBookDetails({
+            pageCount: book.selected_page_count || 12,
+            bindingType: (book.selected_binding_type as BindingType) || 'premium',
+            price: book.selected_price || 24.99,
+          });
+        }
+      };
+      
+      fetchBookDetails();
+    }
+  }, [open, bookId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,12 +160,51 @@ export function OrderPhysicalBookDialog({
             </Badge>
           </DialogTitle>
           <DialogDescription>
-            Order a professionally printed physical copy of "{bookTitle}". 
-            Price: $19.99 + shipping
+            Order a professionally printed physical copy of "{bookTitle}".
             <br />
             <span className="text-xs text-muted-foreground">Note: Currently in test mode. No actual printing will occur.</span>
           </DialogDescription>
         </DialogHeader>
+        
+        {/* Book Specifications */}
+        {bookDetails && (
+          <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-2">
+            <div className="flex items-center gap-2 mb-2">
+              <Book className="w-4 h-4 text-primary" />
+              <h4 className="font-semibold text-sm">Book Specifications</h4>
+            </div>
+            <div className="space-y-1.5 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Pages:</span>
+                <span className="font-medium">{bookDetails.pageCount} pages</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Binding:</span>
+                <span className="font-medium flex items-center gap-1">
+                  {bookDetails.bindingType === 'premium' ? (
+                    <>
+                      <Sparkles className="w-3 h-3 text-primary" />
+                      Premium Coil Binding
+                    </>
+                  ) : (
+                    'Standard Binding'
+                  )}
+                </span>
+              </div>
+              {bookDetails.bindingType === 'premium' && (
+                <div className="text-xs text-muted-foreground italic pt-1">
+                  ✨ Lays completely flat for easy coloring
+                </div>
+              )}
+              <div className="flex justify-between pt-2 border-t border-border">
+                <span className="text-muted-foreground">Price:</span>
+                <span className="font-bold text-base">
+                  ${bookDetails.price.toFixed(2)} + shipping
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
