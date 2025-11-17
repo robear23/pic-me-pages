@@ -337,7 +337,7 @@ const Dashboard = () => {
                 transition={{ delay: index * 0.1 }}
               >
                 <Card 
-                  className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+                  className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer bg-card/80 backdrop-blur-sm border-border/50"
                   onClick={async () => {
                     if (book.status === 'completed') {
                       setSelectedBook(book);
@@ -364,7 +364,7 @@ const Dashboard = () => {
                         {book.interests.slice(0, 3).map((interest, i) => (
                           <span
                             key={i}
-                            className="text-xs px-2 py-1 bg-primary/10 text-primary rounded-full"
+                            className="text-xs px-2 py-1 bg-primary/20 text-primary-foreground rounded-full"
                           >
                             {interest}
                           </span>
@@ -372,8 +372,8 @@ const Dashboard = () => {
                       </div>
                       <div className="space-y-2">
                         {isGeneratingPdf === book.id && pdfProgress && (
-                          <div className="space-y-1 mb-2">
-                            <div className="flex justify-between text-xs text-muted-foreground">
+                          <div className="space-y-1 mb-2 p-3 bg-secondary/50 rounded-lg border border-border/50">
+                            <div className="flex justify-between text-xs text-foreground font-medium">
                               <span>Generating PDF...</span>
                               <span>{pdfProgress.current} / {pdfProgress.total} pages</span>
                             </div>
@@ -386,7 +386,7 @@ const Dashboard = () => {
                               <Button
                                 size="sm"
                                 variant="default"
-                                className="flex-1 bg-black text-white hover:bg-black/90"
+                                className="flex-1"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleDownloadOrGenerate(book);
@@ -436,12 +436,12 @@ const Dashboard = () => {
 
                       {/* Show orders for this book */}
                       {orders[book.id] && orders[book.id].length > 0 && (
-                        <div className="mt-4 pt-4 border-t">
-                          <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                        <div className="mt-4 pt-4 border-t border-border/50">
+                          <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground">
                             <Package className="w-4 h-4" />
                             Physical Orders
                           </h4>
-                          <div className="space-y-2">
+                          <div className="space-y-2 p-3 bg-secondary/30 rounded-lg">
                             {orders[book.id].map((order) => (
                               <div key={order.id} className="flex items-center justify-between text-sm">
                                 <div className="flex items-center gap-2">
