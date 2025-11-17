@@ -6,11 +6,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAdmin } from '@/hooks/useAdmin';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2 } from 'lucide-react';
+import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { OrderPhysicalBookDialog } from '@/components/OrderPhysicalBookDialog';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
 import { repairBookPdf } from '@/lib/repairPdf';
 
 interface Book {
@@ -50,6 +51,7 @@ const Dashboard = () => {
   const [deletingBookId, setDeletingBookId] = useState<string | null>(null);
   const [selectedBookPages, setSelectedBookPages] = useState<any[] | null>(null);
   const [loadingPages, setLoadingPages] = useState(false);
+  const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -164,16 +166,25 @@ const Dashboard = () => {
     document.body.removeChild(link);
   };
 
-  const handleGeneratePdf = async (book: Book) => {
+  const handleGeneratePdf = async (book: Book, quickPreview = false) => {
     if (!book.pages || book.pages.length === 0) {
       toast.error('No pages available to generate PDF');
       return null;
     }
 
     setIsGeneratingPdf(book.id);
+    setPdfProgress({ current: 0, total: book.pages.length });
+    
     try {
-      toast.info('Generating PDF... This may take a moment');
-      const pdfUrl = await repairBookPdf(book.id, book.pages);
+      toast.info(quickPreview ? 'Generating quick preview PDF...' : 'Generating PDF with padding...');
+      
+      const pdfUrl = await repairBookPdf(book.id, book.pages, {
+        minPages: quickPreview ? 0 : 24,
+        pageCount: quickPreview ? book.pages.length : undefined,
+        onProgress: (current, total) => {
+          setPdfProgress({ current, total });
+        }
+      });
       
       // Update local state
       setBooks(prevBooks => 
@@ -188,6 +199,14 @@ const Dashboard = () => {
       return null;
     } finally {
       setIsGeneratingPdf(null);
+      setPdfProgress(null);
+    }
+  };
+
+  const handleQuickPreview = async (book: Book) => {
+    const pdfUrl = await handleGeneratePdf(book, true);
+    if (pdfUrl) {
+      handleDownloadPDF(pdfUrl, `${book.character_name}-preview`);
     }
   };
 
@@ -195,7 +214,7 @@ const Dashboard = () => {
     if (book.pdf_url) {
       handleDownloadPDF(book.pdf_url, book.character_name);
     } else {
-      const pdfUrl = await handleGeneratePdf(book);
+      const pdfUrl = await handleGeneratePdf(book, false);
       if (pdfUrl) {
         handleDownloadPDF(pdfUrl, book.character_name);
       }
@@ -352,6 +371,15 @@ const Dashboard = () => {
                         ))}
                       </div>
                       <div className="space-y-2">
+                        {isGeneratingPdf === book.id && pdfProgress && (
+                          <div className="space-y-1 mb-2">
+                            <div className="flex justify-between text-xs text-muted-foreground">
+                              <span>Generating PDF...</span>
+                              <span>{pdfProgress.current} / {pdfProgress.total} pages</span>
+                            </div>
+                            <Progress value={(pdfProgress.current / pdfProgress.total) * 100} />
+                          </div>
+                        )}
                         <div className="flex gap-2">
                           {book.status === 'completed' ? (
                             <>
@@ -379,6 +407,21 @@ const Dashboard = () => {
                             </Button>
                           )}
                         </div>
+                        {book.status === 'completed' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleQuickPreview(book);
+                            }}
+                            disabled={isGeneratingPdf === book.id}
+                          >
+                            <Zap className="w-4 h-4 mr-1" />
+                            Quick Preview (No Padding)
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="outline"
