@@ -2,6 +2,11 @@ import { supabase } from '@/integrations/supabase/client';
 import { jsPDF } from 'jspdf';
 
 async function toDataUrl(url: string): Promise<string> {
+  // If already a data URL, return as-is to avoid re-converting
+  if (url.startsWith('data:')) {
+    return url;
+  }
+  
   const response = await fetch(url);
   const blob = await response.blob();
   return new Promise((resolve, reject) => {
@@ -177,7 +182,7 @@ export async function generateCoverWrapPdf(
 export async function repairBookPdf(
   bookId: string,
   pages: Array<{ imageUrl: string }>,
-  options?: { minPages?: number; padWith?: 'blank' | 'repeat'; pageCount?: number }
+  options?: { minPages?: number; padWith?: 'blank' | 'repeat'; pageCount?: number; onProgress?: (current: number, total: number) => void }
 ): Promise<string> {
   try {
     // Get current user for proper path structure
@@ -187,7 +192,7 @@ export async function repairBookPdf(
       throw new Error('User must be authenticated to generate PDF');
     }
 
-    const { minPages = 24, padWith = 'blank', pageCount } = options || {};
+    const { minPages = 24, padWith = 'blank', pageCount, onProgress } = options || {};
     // Use pageCount if provided, otherwise use minPages
     const targetPages = pageCount || minPages;
 
@@ -213,6 +218,11 @@ export async function repairBookPdf(
       }
 
       try {
+        // Report progress
+        if (onProgress) {
+          onProgress(i + 1, pages.length);
+        }
+        
         // Convert remote URL to data URL to avoid CORS issues
         const dataUrl = await toDataUrl(page.imageUrl);
         pdf.addImage(dataUrl, 'PNG', 0, 0, pageWidth, pageHeight);
