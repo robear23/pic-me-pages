@@ -56,18 +56,11 @@ serve(async (req) => {
     const luluApiSecret = Deno.env.get('LULU_API_SECRET')!;
     const luluEnvironment = Deno.env.get('LULU_ENVIRONMENT') || 'sandbox';
     
-    // Configurable product and shipping
-    // Default: 8.5"x11" B&W Standard Paperback, 60# White (works in sandbox)
-    // Note: Coil binding and specialty products may only work in production environment
-    // To use coil binding: set LULU_POD_PACKAGE_ID to 0850X1100FCPRECO060UW444MXX
-    const podPackageId = Deno.env.get('LULU_POD_PACKAGE_ID') || '0850X1100BWSTDPB060UW444MXX';
-    
     const luluBaseUrl = luluEnvironment === 'production' 
       ? 'https://api.lulu.com'
       : 'https://api.sandbox.lulu.com';
     
     console.log(`Using Lulu ${luluEnvironment} environment: ${luluBaseUrl}`);
-    console.log(`Product: ${podPackageId}`);
     
     const supabase = createClient(supabaseUrl, supabaseKey);
 
@@ -104,6 +97,10 @@ serve(async (req) => {
     const coverUrl = book.cover_url;
     const interiorUrl = book.pdf_url;
     
+    // Use book's selected POD package ID if available, otherwise fall back to environment variable
+    const selectedPodPackageId = book.selected_pod_package_id || Deno.env.get('LULU_POD_PACKAGE_ID') || '0850X1100BWSTDPB060UW444MXX';
+    console.log('Using POD Package ID:', selectedPodPackageId, book.selected_pod_package_id ? '(from book)' : '(from env/default)');
+    
     if (!coverUrl) {
       throw new Error('Missing cover PDF. Please regenerate the book.');
     }
@@ -139,13 +136,24 @@ serve(async (req) => {
     const { access_token } = await luluAuthResponse.json();
 
     // Calculate page count for Lulu API
-    // Note: The actual PDF has been padded by repairBookPdf to meet Lulu requirements
-    let interiorPageCount = book.pages?.length || 24;
+    // Use selected page count from book if available
+    let interiorPageCount = book.selected_page_count || book.pages?.length || 12;
+    
+    console.log(`Book selected page count: ${book.selected_page_count || 'not set'}, pages array: ${book.pages?.length || 0}`);
 
-    // For paperbacks, ensure minimum 24 pages
-    if (podPackageId.includes('PB') && interiorPageCount < 24) {
-      console.log(`Book has ${book.pages?.length || 0} pages in DB, using minimum 24 for paperback`);
-      interiorPageCount = 24;
+    // For paperbacks, ensure minimum based on binding type
+    if (selectedPodPackageId.includes('PB')) {
+      // Standard paperback minimum is 24 pages
+      if (interiorPageCount < 24) {
+        console.log(`Paperback requires minimum 24 pages, adjusting from ${interiorPageCount}`);
+        interiorPageCount = 24;
+      }
+    } else if (selectedPodPackageId.includes('CO')) {
+      // Coil binding - verify minimum requirements (typically 12+ pages)
+      if (interiorPageCount < 12) {
+        console.log(`Coil binding requires minimum 12 pages, adjusting from ${interiorPageCount}`);
+        interiorPageCount = 12;
+      }
     }
 
     // Ensure even page count (Lulu requirement)
@@ -154,8 +162,8 @@ serve(async (req) => {
       interiorPageCount += 1;
     }
 
-    console.log('Interior page count:', interiorPageCount);
-    console.log('POD Package ID:', podPackageId);
+    console.log('Final interior page count:', interiorPageCount);
+    console.log('POD Package ID:', selectedPodPackageId);
     
     console.log('Note: Lulu validates files automatically during print job creation');
 
@@ -172,7 +180,7 @@ serve(async (req) => {
       line_items: [
         {
           page_count: interiorPageCount,
-          pod_package_id: podPackageId,
+          pod_package_id: selectedPodPackageId,
           title: `${book.character_name}'s Coloring Book`,
           quantity: 1,
           interior: {
@@ -221,7 +229,7 @@ serve(async (req) => {
         console.error('Lulu returned HTML error page - likely invalid product for sandbox environment');
         return new Response(
           JSON.stringify({ 
-            error: `Lulu sandbox error: The product type (${podPackageId}) may not be supported in the test environment. Try using a standard paperback (0850X1100BWSTDPB060UW444MXX) or switch to production for specialty products.`,
+            error: `Lulu sandbox error: The product type (${selectedPodPackageId}) may not be supported in the test environment. Try using a standard paperback (0850X1100BWSTDPB060UW444MXX) or switch to production for specialty products.`,
             validationError: true,
             productNotSupported: true,
           }),
