@@ -1,6 +1,8 @@
 import { create } from 'zustand';
+import type { BindingType, PageCount, BookOption } from '@/types/bookOptions';
+import { getBookOption } from '@/types/bookOptions';
 
-export type BookStep = 'hero' | 'upload' | 'settings' | 'interests' | 'generating' | 'complete' | 'rework-settings';
+export type BookStep = 'hero' | 'upload' | 'settings' | 'interests' | 'book-options' | 'generating' | 'complete' | 'rework-settings';
 
 export interface Character {
   id: string;
@@ -39,6 +41,10 @@ interface BookState {
   maxReworksReached: boolean;
   generatedBookId: string | null;
   coverImageUrl: string | null;
+  selectedPageCount: PageCount;
+  selectedBinding: BindingType;
+  selectedPrice: number;
+  selectedPodPackageId: string;
   
   setStep: (step: BookStep) => void;
   addCharacter: () => void;
@@ -58,6 +64,8 @@ interface BookState {
   setCurrentApiCall: (call: 'prompts' | 'images' | 'photos' | null) => void;
   setGeneratedBookId: (id: string | null) => void;
   setCoverImageUrl: (url: string | null) => void;
+  setBookOptions: (pageCount: PageCount, binding: BindingType) => void;
+  getSelectedBookOption: () => BookOption;
   enterReworkMode: () => void;
   completeRework: () => void;
   reset: () => void;
@@ -87,6 +95,10 @@ const initialState = {
   maxReworksReached: false,
   generatedBookId: null as string | null,
   coverImageUrl: null as string | null,
+  selectedPageCount: 24 as PageCount,
+  selectedBinding: 'premium' as BindingType,
+  selectedPrice: 39.99,
+  selectedPodPackageId: '0850X1100FCPRECO060UW444MXX',
 };
 
 export const useBookStore = create<BookState>((set, get) => ({
@@ -180,6 +192,21 @@ export const useBookStore = create<BookState>((set, get) => ({
   setGeneratedBookId: (id) => set({ generatedBookId: id }),
   
   setCoverImageUrl: (url) => set({ coverImageUrl: url }),
+  
+  setBookOptions: (pageCount, binding) => {
+    const option = getBookOption(pageCount, binding);
+    set({
+      selectedPageCount: pageCount,
+      selectedBinding: binding,
+      selectedPrice: option.price,
+      selectedPodPackageId: option.podPackageId,
+    });
+  },
+  
+  getSelectedBookOption: () => {
+    const state = get();
+    return getBookOption(state.selectedPageCount, state.selectedBinding);
+  },
   
   enterReworkMode: () => {
     const state = get();

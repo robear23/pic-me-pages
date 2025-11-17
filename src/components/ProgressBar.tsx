@@ -9,6 +9,7 @@ interface ProgressBarProps {
 const steps = [
   { id: 'upload', label: 'Upload' },
   { id: 'interests', label: 'Interests' },
+  { id: 'book-options', label: 'Options' },
   { id: 'generating', label: 'Generate' },
   { id: 'complete', label: 'Complete' },
 ];
