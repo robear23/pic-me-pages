@@ -20,6 +20,7 @@ export type Database = {
           character_name: string
           complexity: string | null
           consistent_characters: boolean | null
+          cover_image_url: string | null
           cover_url: string | null
           created_at: string | null
           id: string
@@ -36,6 +37,7 @@ export type Database = {
           character_name: string
           complexity?: string | null
           consistent_characters?: boolean | null
+          cover_image_url?: string | null
           cover_url?: string | null
           created_at?: string | null
           id?: string
@@ -52,6 +54,7 @@ export type Database = {
           character_name?: string
           complexity?: string | null
           consistent_characters?: boolean | null
+          cover_image_url?: string | null
           cover_url?: string | null
           created_at?: string | null
           id?: string

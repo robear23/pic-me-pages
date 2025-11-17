@@ -164,6 +164,7 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       .from('books')
       .update({
         cover_url: coverPdfUrl,
+        cover_image_url: uploadedCoverUrl,
         pdf_url: interiorPdfUrl,
       })
       .eq('id', bookId);
