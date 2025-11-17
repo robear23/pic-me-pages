@@ -20,8 +20,10 @@ interface Book {
   pages?: any;
   pdf_url: string | null;
   cover_url: string | null;
+  cover_image_url?: string | null;
   status: string;
   created_at: string;
+  user_id: string;
 }
 
 interface Order {
@@ -72,7 +74,7 @@ const Dashboard = () => {
     try {
       const { data, error } = await supabase
         .from('books')
-        .select('id, character_name, interests, pdf_url, cover_url, status, created_at, user_id')
+        .select('id, character_name, interests, pdf_url, cover_url, cover_image_url, status, created_at, user_id')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -244,7 +246,7 @@ const Dashboard = () => {
   };
 
   const getBookCoverImage = (book: Book) => {
-    return book.cover_url || book.pages?.[0]?.imageUrl || '/placeholder.svg';
+    return book.cover_image_url || '/placeholder.svg';
   };
 
   return (
@@ -307,7 +309,7 @@ const Dashboard = () => {
             </Button>
           </motion.div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
             {books.map((book, index) => (
               <motion.div
                 key={book.id}
