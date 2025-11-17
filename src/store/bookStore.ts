@@ -220,7 +220,23 @@ export const useBookStore = create<BookState>((set, get) => ({
     });
   },
   
-  completeRework: () => set({ maxReworksReached: true, isReworkMode: false }),
+  completeRework: () =>
+    set((state) => {
+      // Preserve important state through rework
+      return {
+        isReworkMode: false,
+        selectedPagesForRework: [],
+        originalGenerationParams: null,
+        maxReworksReached: true,
+        currentStep: 'complete',
+        generatedBookId: state.generatedBookId, // Preserve book ID
+        coverImageUrl: state.coverImageUrl, // Preserve cover
+        selectedPageCount: state.selectedPageCount,
+        selectedBinding: state.selectedBinding,
+        selectedPrice: state.selectedPrice,
+        selectedPodPackageId: state.selectedPodPackageId,
+      };
+    }),
   
   reset: () => set(initialState),
 }));

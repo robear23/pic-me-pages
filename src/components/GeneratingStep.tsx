@@ -79,18 +79,32 @@ export const GeneratingStep = () => {
 
         // Step 2: Understanding interests (20-40%)
         setGenerationStatus(GENERATION_STEPS[1]);
-        console.log('Generating prompts for:', charactersWithPhotos.map(c => c.name).join(', '), selectedInterests);
         
-        const { prompts: generatedPrompts } = await generatePrompts(
-          charactersWithPhotos, 
-          selectedInterests,
-          consistentCharacters,
-          selectedPageCount
-        );
+        // In rework mode, reuse existing prompts instead of generating new ones
+        let generatedPrompts: GeneratedPrompt[];
+        if (isReworkMode && generatedPages.length > 0) {
+          console.log('Rework mode: Reusing existing prompts');
+          generatedPrompts = generatedPages.map(page => ({
+            pageNumber: page.pageNumber,
+            interest: '', // Not needed for rework
+            prompt: page.prompt,
+            characterName: characters[0]?.name || ''
+          }));
+        } else {
+          console.log('Generating prompts for:', charactersWithPhotos.map(c => c.name).join(', '), selectedInterests);
+          const result = await generatePrompts(
+            charactersWithPhotos, 
+            selectedInterests,
+            consistentCharacters,
+            selectedPageCount
+          );
+          generatedPrompts = result.prompts;
+        }
+        
         setPrompts(generatedPrompts);
         setGenerationProgress(40);
         
-        console.log('Generated prompts:', generatedPrompts);
+        console.log('Prompts ready:', generatedPrompts);
 
         // Step 3: Creating story prompts (40-50%)
         setGenerationStatus(GENERATION_STEPS[2]);
@@ -203,9 +217,17 @@ export const GeneratingStep = () => {
         setGenerationStatus(GENERATION_STEPS[6]);
         setGenerationProgress(97);
         
-        // Save book to database if user is authenticated and not in rework mode
-        if (user && !isReworkMode) {
+        // Save book to database if user is authenticated
+        if (user) {
           try {
+            const existingBookId = useBookStore.getState().generatedBookId;
+            
+            if (isReworkMode && existingBookId) {
+              console.log('Rework mode: Updating existing book', existingBookId);
+            } else {
+              console.log('Creating new book in database...');
+            }
+            
             const characterPhotos = characters.flatMap(c => 
               c.photos.filter((p): p is File => p !== null)
             );
@@ -222,6 +244,7 @@ export const GeneratingStep = () => {
               selectedBinding,
               selectedPrice,
               selectedPodPackageId,
+              bookId: isReworkMode ? existingBookId : undefined,
             });
 
             if (bookId) {
