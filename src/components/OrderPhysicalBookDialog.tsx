@@ -23,7 +23,9 @@ import { createPrintOrder, ShippingAddress } from '@/lib/api';
 import { Package, Book, Sparkles } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { generateCoverWrapPdf, repairBookPdf } from '@/lib/repairPdf';
-import type { BindingType } from '@/types/bookOptions';
+import type { BindingType, PageCount } from '@/types/bookOptions';
+import { BindingSelector } from './BindingSelector';
+import { getOptionsForPageCount } from '@/types/bookOptions';
 
 interface OrderPhysicalBookDialogProps {
   bookId: string;
@@ -49,6 +51,11 @@ export function OrderPhysicalBookDialog({
     bindingType: BindingType;
     price: number;
   } | null>(null);
+  
+  // Selected options (can be modified by user)
+  const [selectedPageCount, setSelectedPageCount] = useState<PageCount>(12);
+  const [selectedBinding, setSelectedBinding] = useState<BindingType>('premium');
+  
   const { toast } = useToast();
   
   const [shippingAddress, setShippingAddress] = useState<ShippingAddress>({
@@ -73,23 +80,50 @@ export function OrderPhysicalBookDialog({
           .single();
         
         if (book) {
+          const pageCount = (book.selected_page_count || 12) as PageCount;
+          const bindingType = (book.selected_binding_type as BindingType) || 'premium';
+          
           setBookDetails({
-            pageCount: book.selected_page_count || 12,
-            bindingType: (book.selected_binding_type as BindingType) || 'premium',
+            pageCount,
+            bindingType,
             price: book.selected_price || 24.99,
           });
+          
+          // Initialize selected options with book's current values
+          setSelectedPageCount(pageCount);
+          setSelectedBinding(bindingType);
         }
       };
       
       fetchBookDetails();
     }
   }, [open, bookId]);
+  
+  // Calculate current price based on selected options
+  const currentOptions = getOptionsForPageCount(selectedPageCount);
+  const selectedOption = currentOptions.find(opt => opt.binding === selectedBinding);
+  const currentPrice = selectedOption?.price || 24.99;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
+      // Update book record with selected options if they changed
+      if (bookDetails && (
+        selectedPageCount !== bookDetails.pageCount || 
+        selectedBinding !== bookDetails.bindingType
+      )) {
+        await supabase
+          .from('books')
+          .update({
+            selected_page_count: selectedPageCount,
+            selected_binding_type: selectedBinding,
+            selected_price: currentPrice,
+          })
+          .eq('id', bookId);
+      }
+      
       // PDFs are now pre-generated during book creation, so just create the order
       const result = await createPrintOrder(bookId, shippingAddress);
       
@@ -151,18 +185,14 @@ export function OrderPhysicalBookDialog({
           Order Physical Book
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+          <DialogTitle className="text-2xl flex items-center gap-2">
+            <Package className="w-6 h-6" />
             Order Physical Copy
-            <Badge variant="outline" className="text-xs">
-              Test Mode
-            </Badge>
           </DialogTitle>
           <DialogDescription>
-            Order a professionally printed physical copy of "{bookTitle}".
-            <br />
-            <span className="text-xs text-muted-foreground">Note: Currently in test mode. No actual printing will occur.</span>
+            Order a beautiful printed version of <span className="font-semibold text-foreground">"{bookTitle}"</span>
           </DialogDescription>
         </DialogHeader>
         
@@ -206,7 +236,51 @@ export function OrderPhysicalBookDialog({
           </div>
         )}
         
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Customize Your Order Section */}
+        {bookDetails && (
+          <div className="border-t pt-4">
+            <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-primary" />
+              Customize Your Order
+            </h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              Choose your preferred binding option for this order
+            </p>
+            
+            {/* Current Selections Display */}
+            <div className="flex flex-wrap gap-2 mb-4 p-3 bg-muted/50 rounded-lg">
+              <Badge variant="outline" className="flex items-center gap-1">
+                <Book className="w-3 h-3" />
+                {selectedPageCount} pages
+              </Badge>
+              <Badge variant="outline" className="flex items-center gap-1">
+                {selectedBinding === 'premium' ? (
+                  <>
+                    <Sparkles className="w-3 h-3" />
+                    Premium Coil
+                  </>
+                ) : (
+                  'Standard Binding'
+                )}
+              </Badge>
+              <Badge className="font-semibold bg-primary">
+                ${currentPrice.toFixed(2)}
+              </Badge>
+            </div>
+
+            {/* Binding Selector */}
+            <BindingSelector
+              pageCount={selectedPageCount}
+              selectedBinding={selectedBinding}
+              onSelect={setSelectedBinding}
+              standardOption={currentOptions[0]}
+              premiumOption={currentOptions[1]}
+            />
+          </div>
+        )}
+        
+        <form onSubmit={handleSubmit} className="space-y-4 mt-6 border-t pt-4">
+          <h3 className="text-lg font-semibold mb-4">Shipping Information</h3>
           <div>
             <Label htmlFor="name">Full Name</Label>
             <Input
