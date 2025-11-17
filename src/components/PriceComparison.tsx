@@ -11,14 +11,16 @@ export const PriceComparison = () => {
       <Button
         variant="ghost"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between p-4 hover:bg-accent/50 rounded-xl"
+        className="w-full flex items-center justify-between p-3 sm:p-4 hover:bg-accent/50 rounded-xl"
+        aria-expanded={isOpen}
+        aria-label="Compare binding types"
       >
-        <span className="text-sm font-semibold">Compare Binding Types</span>
+        <span className="text-xs sm:text-sm font-semibold">Compare Binding Types</span>
         <motion.div
           animate={{ rotate: isOpen ? 180 : 0 }}
           transition={{ duration: 0.3 }}
         >
-          <ChevronDown className="w-5 h-5" />
+          <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5" />
         </motion.div>
       </Button>
 
