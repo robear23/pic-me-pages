@@ -20,7 +20,7 @@ export const InterestsStep = () => {
   
   const handleNext = () => {
     setInterests(parsedInterests);
-    setStep('generating');
+    setStep('book-options');
   };
 
   return (
@@ -84,7 +84,7 @@ export const InterestsStep = () => {
             className="w-full bg-gradient-to-r from-primary to-[hsl(330_80%_60%)] hover:scale-105 transition-transform duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
             <Sparkles className="w-5 h-5 mr-2" />
-            Generate {characterNames ? `${characterNames}'s` : 'My'} Book
+            Continue to Book Options
           </Button>
 
           {!isComplete && parsedInterests.length < 1 && (
