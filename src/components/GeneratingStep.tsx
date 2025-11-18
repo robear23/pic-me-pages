@@ -3,6 +3,7 @@ import { useBookStore } from '@/store/bookStore';
 import { Sparkles, Check, Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Progress } from '@/components/ui/progress';
+import { Button } from '@/components/ui/button';
 import { generatePrompts, generateImages, generateCover } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
@@ -50,6 +51,7 @@ export const GeneratingStep = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [prompts, setPrompts] = useState<GeneratedPrompt[]>([]);
+  const [errorDetails, setErrorDetails] = useState<string | null>(null);
 
   useEffect(() => {
     const runGeneration = async () => {
@@ -321,18 +323,20 @@ export const GeneratingStep = () => {
       } catch (error) {
         console.error('Generation error:', error);
         const errorMessage = error instanceof Error ? error.message : 'Failed to generate book';
+        const fullError = error instanceof Error ? error.stack || error.message : String(error);
         
         setApiError(errorMessage);
+        setErrorDetails(fullError);
+        
+        // Persistent error toast that requires manual dismissal
         toast({
           title: 'Generation Failed',
           description: errorMessage,
           variant: 'destructive',
+          duration: 30000, // 30 seconds instead of 3
         });
 
-        // Reset after showing error
-        setTimeout(() => {
-          setStep('interests');
-        }, 3000);
+        // DO NOT auto-redirect - let user decide what to do
       }
     };
 
@@ -356,6 +360,23 @@ export const GeneratingStep = () => {
 
   const currentStepIndex = GENERATION_STEPS.findIndex((step) => step === generationStatus);
 
+  const handleRetry = () => {
+    setErrorDetails(null);
+    setApiError(null);
+    setGenerationProgress(0);
+    setGenerationStatus('');
+    // Re-trigger the generation by staying on this step
+    window.location.reload();
+  };
+
+  const handleStartOver = () => {
+    setErrorDetails(null);
+    setApiError(null);
+    setGenerationProgress(0);
+    setGenerationStatus('');
+    setStep('interests');
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -371,62 +392,115 @@ export const GeneratingStep = () => {
           transition={{ duration: 0.5 }}
           className="backdrop-blur-lg bg-glass-bg border border-glass-border rounded-2xl p-12 text-center"
         >
-          {/* Animated Icon */}
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
-            className="inline-block mb-8"
-          >
-            <Sparkles className="w-20 h-20 text-primary" />
-          </motion.div>
+          {/* Error State */}
+          {errorDetails ? (
+            <>
+              <div className="inline-block mb-8">
+                <div className="w-20 h-20 rounded-full bg-destructive/10 flex items-center justify-center">
+                  <span className="text-4xl">⚠️</span>
+                </div>
+              </div>
 
-          {/* Main Text */}
-          <h2 className="font-black text-4xl md:text-5xl mb-4">
-            Creating Your Coloring Book...
-          </h2>
-          <p className="text-lg text-muted-foreground mb-12">
-            Usually takes 1-2 minutes
-          </p>
+              <h2 className="font-black text-4xl md:text-5xl mb-4 text-destructive">
+                Generation Failed
+              </h2>
+              
+              <div className="mb-8 p-4 bg-destructive/10 border border-destructive/30 rounded-lg text-left">
+                <h3 className="font-bold text-lg mb-2">Error Details:</h3>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
+                  {errorDetails}
+                </p>
+              </div>
 
-          {/* Progress Bar */}
-          <div className="mb-8">
-            <Progress value={generationProgress} className="h-3" />
-            <p className="text-sm text-muted-foreground mt-2">{generationProgress}%</p>
-          </div>
+              <div className="space-y-4 mb-6">
+                <h3 className="font-semibold text-lg">What you can try:</h3>
+                <ul className="text-left text-sm text-muted-foreground space-y-2 list-disc list-inside">
+                  <li>Click "Try Again" to retry the generation</li>
+                  <li>Check your internet connection</li>
+                  <li>Ensure your photos are valid image files</li>
+                  <li>Try with fewer interests or pages</li>
+                  <li>If the issue persists, contact support with the error details above</li>
+                </ul>
+              </div>
 
-          {/* Status Steps */}
-          <div className="space-y-4">
-            {GENERATION_STEPS.map((step, index) => {
-              const isComplete = index < currentStepIndex;
-              const isCurrent = index === currentStepIndex;
-
-              return (
-                <motion.div
-                  key={step}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3, delay: index * 0.1 }}
-                  className={`flex items-center justify-between p-4 rounded-lg backdrop-blur-sm transition-all duration-300 ${
-                    isComplete
-                      ? 'bg-secondary/20 border border-secondary/30'
-                      : isCurrent
-                      ? 'bg-primary/10 border border-primary/30'
-                      : 'bg-input/20 border border-glass-border'
-                  }`}
+              <div className="flex gap-4">
+                <Button
+                  onClick={handleRetry}
+                  size="lg"
+                  className="flex-1"
                 >
-                  <span
-                    className={`font-medium ${
-                      isComplete || isCurrent ? 'text-foreground' : 'text-muted-foreground'
-                    }`}
-                  >
-                    {step}
-                  </span>
-                  {isComplete && <Check className="w-5 h-5 text-secondary" />}
-                  {isCurrent && <Loader2 className="w-5 h-5 text-primary animate-spin" />}
-                </motion.div>
-              );
-            })}
-          </div>
+                  Try Again
+                </Button>
+                <Button
+                  onClick={handleStartOver}
+                  variant="secondary"
+                  size="lg"
+                  className="flex-1"
+                >
+                  Start Over
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              {/* Animated Icon */}
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                className="inline-block mb-8"
+              >
+                <Sparkles className="w-20 h-20 text-primary" />
+              </motion.div>
+
+              {/* Main Text */}
+              <h2 className="font-black text-4xl md:text-5xl mb-4">
+                Creating Your Coloring Book...
+              </h2>
+              <p className="text-lg text-muted-foreground mb-12">
+                Usually takes 1-2 minutes
+              </p>
+
+              {/* Progress Bar */}
+              <div className="mb-8">
+                <Progress value={generationProgress} className="h-3" />
+                <p className="text-sm text-muted-foreground mt-2">{generationProgress}%</p>
+              </div>
+
+              {/* Status Steps */}
+              <div className="space-y-4">
+                {GENERATION_STEPS.map((step, index) => {
+                  const isComplete = index < currentStepIndex;
+                  const isCurrent = index === currentStepIndex;
+
+                  return (
+                    <motion.div
+                      key={step}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ duration: 0.3, delay: index * 0.1 }}
+                      className={`flex items-center justify-between p-4 rounded-lg backdrop-blur-sm transition-all duration-300 ${
+                        isComplete
+                          ? 'bg-secondary/20 border border-secondary/30'
+                          : isCurrent
+                          ? 'bg-primary/10 border border-primary/30'
+                          : 'bg-input/20 border border-glass-border'
+                      }`}
+                    >
+                      <span
+                        className={`font-medium ${
+                          isComplete || isCurrent ? 'text-foreground' : 'text-muted-foreground'
+                        }`}
+                      >
+                        {step}
+                      </span>
+                      {isComplete && <Check className="w-5 h-5 text-secondary" />}
+                      {isCurrent && <Loader2 className="w-5 h-5 text-primary animate-spin" />}
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </motion.div>
       </div>
     </motion.div>
