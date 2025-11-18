@@ -39,6 +39,8 @@ export const PaymentStep = () => {
   const [loading, setLoading] = useState(false);
   const [verifyingPayment, setVerifyingPayment] = useState(false);
   const [showBypassDialog, setShowBypassDialog] = useState(false);
+  const [waitingForPayment, setWaitingForPayment] = useState(false);
+  const [stripeCheckoutUrl, setStripeCheckoutUrl] = useState<string | null>(null);
 
   const bookOption = getSelectedBookOption();
 
@@ -124,9 +126,27 @@ export const PaymentStep = () => {
 
       if (error) throw error;
 
-      if (data?.url) {
-        // Redirect to Stripe Checkout
-        window.location.href = data.url;
+      console.log('Opening Stripe checkout in new tab...');
+      
+      // Open Stripe in new tab
+      const stripeWindow = window.open(data.url, '_blank');
+      
+      // Check if popup was blocked
+      if (!stripeWindow || stripeWindow.closed || typeof stripeWindow.closed === 'undefined') {
+        // Popup blocked - show manual link
+        toast({
+          title: 'Popup Blocked',
+          description: 'Please allow popups and click the button below to open Stripe checkout',
+          variant: 'destructive',
+        });
+        setStripeCheckoutUrl(data.url);
+      } else {
+        // Popup opened successfully
+        toast({
+          title: 'Checkout Opened',
+          description: 'Complete your payment in the new tab. This page will update automatically.',
+        });
+        setWaitingForPayment(true);
       }
     } catch (error) {
       console.error('Checkout error:', error);
@@ -290,12 +310,17 @@ export const PaymentStep = () => {
         >
           <Button
             onClick={handleStripeCheckout}
-            disabled={loading}
+            disabled={loading || waitingForPayment}
             size="lg"
             className="w-full text-lg h-14"
           >
             {loading ? (
               <>Processing...</>
+            ) : waitingForPayment ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Waiting for payment...
+              </>
             ) : (
               <>
                 <CreditCard className="mr-2 h-5 w-5" />
@@ -303,6 +328,52 @@ export const PaymentStep = () => {
               </>
             )}
           </Button>
+
+          {/* Waiting for payment message */}
+          {waitingForPayment && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <Alert className="border-blue-500 bg-blue-50 dark:bg-blue-950">
+                <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
+                <AlertDescription className="text-blue-800 dark:text-blue-200">
+                  Complete your payment in the new tab. This page will automatically update when your payment is complete.
+                </AlertDescription>
+              </Alert>
+            </motion.div>
+          )}
+
+          {/* Manual link for popup blocked */}
+          {stripeCheckoutUrl && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <Alert className="border-orange-500 bg-orange-50 dark:bg-orange-950">
+                <AlertTriangle className="h-4 w-4 text-orange-600" />
+                <AlertDescription className="text-orange-800 dark:text-orange-200">
+                  <div className="space-y-2">
+                    <p className="font-semibold">Popup Blocked</p>
+                    <p className="text-sm">
+                      Your browser blocked the checkout popup. Click below to open Stripe checkout:
+                    </p>
+                    <Button
+                      onClick={() => {
+                        window.open(stripeCheckoutUrl, '_blank');
+                        setWaitingForPayment(true);
+                        setStripeCheckoutUrl(null);
+                      }}
+                      variant="outline"
+                      className="w-full mt-2 border-orange-500 hover:bg-orange-100"
+                    >
+                      Open Stripe Checkout
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            </motion.div>
+          )}
 
           {/* Admin Bypass Section */}
           {isAdmin && (
