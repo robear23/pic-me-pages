@@ -9,6 +9,7 @@ interface SaveBookParams {
   characterPhotos: File[];
   generatedPages: Array<{ pageNumber: number; imageUrl: string; prompt: string }>;
   coverImageUrl?: string | null;
+  backCoverImageUrl?: string | null;
   selectedPageCount?: number;
   selectedBinding?: string;
   selectedPrice?: number;
@@ -26,6 +27,7 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       characterPhotos,
       generatedPages,
       coverImageUrl,
+      backCoverImageUrl,
       selectedPageCount,
       selectedBinding,
       selectedPrice,
@@ -85,8 +87,10 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       }
     }
 
-    // 3. Upload cover image if available
+    // 3. Upload cover images if available
     let uploadedCoverUrl: string | null = null;
+    let uploadedBackCoverUrl: string | null = null;
+    
     if (coverImageUrl) {
       try {
         const response = await fetch(coverImageUrl);
@@ -108,7 +112,32 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
           uploadedCoverUrl = coverUrlData.publicUrl;
         }
       } catch (error) {
-        console.error('Error uploading cover:', error);
+        console.error('Error uploading front cover:', error);
+      }
+    }
+
+    if (backCoverImageUrl) {
+      try {
+        const response = await fetch(backCoverImageUrl);
+        const blob = await response.blob();
+        
+        const backCoverFileName = `${userId}/${Date.now()}-back-cover.png`;
+        
+        const { error: backCoverUploadError } = await supabase.storage
+          .from('generated-pages')
+          .upload(backCoverFileName, blob, {
+            contentType: 'image/png',
+          });
+        
+        if (!backCoverUploadError) {
+          const { data: backCoverUrlData } = supabase.storage
+            .from('generated-pages')
+            .getPublicUrl(backCoverFileName);
+          
+          uploadedBackCoverUrl = backCoverUrlData.publicUrl;
+        }
+      } catch (error) {
+        console.error('Error uploading back cover:', error);
       }
     }
 
@@ -192,15 +221,25 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       );
       console.log('Interior PDF generated:', interiorPdfUrl);
 
-      // Generate wrap cover PDF if we have a cover image
-      // Use same image for both front and back for now (will be updated by generate-cover)
-      if (uploadedCoverUrl) {
-        console.log('Generating Lulu-compliant wrap cover PDF...');
+      // Generate wrap cover PDF if we have cover images
+      // Now uses separate front and back cover images
+      if (uploadedCoverUrl && uploadedBackCoverUrl) {
+        console.log('Generating Lulu-compliant wrap cover PDF with separate covers...');
         
         coverPdfUrl = await generateCoverWrapPdf(
           bookId,
           uploadedCoverUrl,
-          uploadedCoverUrl,  // Use same for back cover for now
+          uploadedBackCoverUrl,
+          selectedPodPackageId
+        );
+        console.log('Wrap cover PDF generated:', coverPdfUrl);
+      } else if (uploadedCoverUrl) {
+        console.log('Generating Lulu-compliant wrap cover PDF (using front cover for both sides)...');
+        
+        coverPdfUrl = await generateCoverWrapPdf(
+          bookId,
+          uploadedCoverUrl,
+          uploadedCoverUrl,  // Use front cover for back as fallback
           selectedPodPackageId
         );
         console.log('Wrap cover PDF generated:', coverPdfUrl);
