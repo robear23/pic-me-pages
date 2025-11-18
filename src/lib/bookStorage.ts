@@ -184,20 +184,24 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       interiorPdfUrl = await repairBookPdf(
         bookId,
         generatedPages.map(page => ({ imageUrl: page.imageUrl || '' })),
-        { pageCount: pdfPageCount, padWith: 'blank' }
+        { 
+          pageCount: pdfPageCount, 
+          padWith: 'blank',
+          podPackageId: selectedPodPackageId  // Pass POD package ID for binding/color detection
+        }
       );
       console.log('Interior PDF generated:', interiorPdfUrl);
 
       // Generate wrap cover PDF if we have a cover image
+      // Use same image for both front and back for now (will be updated by generate-cover)
       if (uploadedCoverUrl) {
         console.log('Generating Lulu-compliant wrap cover PDF...');
-        const finalPageCount = pdfPageCount;
-        const evenPageCount = finalPageCount % 2 === 0 ? finalPageCount : finalPageCount + 1;
         
         coverPdfUrl = await generateCoverWrapPdf(
           bookId,
           uploadedCoverUrl,
-          evenPageCount
+          uploadedCoverUrl,  // Use same for back cover for now
+          selectedPodPackageId
         );
         console.log('Wrap cover PDF generated:', coverPdfUrl);
       }

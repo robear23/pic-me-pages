@@ -17,6 +17,7 @@ export type Database = {
       books: {
         Row: {
           art_style: string | null
+          back_cover_image_url: string | null
           character_name: string
           complexity: string | null
           consistent_characters: boolean | null
@@ -38,6 +39,7 @@ export type Database = {
         }
         Insert: {
           art_style?: string | null
+          back_cover_image_url?: string | null
           character_name: string
           complexity?: string | null
           consistent_characters?: boolean | null
@@ -59,6 +61,7 @@ export type Database = {
         }
         Update: {
           art_style?: string | null
+          back_cover_image_url?: string | null
           character_name?: string
           complexity?: string | null
           consistent_characters?: boolean | null

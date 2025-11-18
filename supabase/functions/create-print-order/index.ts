@@ -116,6 +116,13 @@ serve(async (req) => {
     await validatePdfAccessibility(coverUrl, 'cover');
     await validatePdfAccessibility(interiorUrl, 'interior');
 
+    // Import validation from shared config
+    const { getBindingType, validatePageCount } = await import('../_shared/luluConfig.ts');
+
+    // Determine binding type from POD package ID
+    const bindingType = getBindingType(selectedPodPackageId);
+    console.log(`Binding type: ${bindingType}`);
+
     // Get Lulu access token
     const luluAuthResponse = await fetch(`${luluBaseUrl}/auth/realms/glasstree/protocol/openid-connect/token`, {
       method: 'POST',
@@ -135,34 +142,18 @@ serve(async (req) => {
 
     const { access_token } = await luluAuthResponse.json();
 
-    // Calculate page count for Lulu API
-    // Use selected page count from book if available
-    let interiorPageCount = book.selected_page_count || book.pages?.length || 12;
+    // Get page count from book's selected_page_count or calculate from pages array
+    let interiorPageCount = book.selected_page_count || (Array.isArray(book.pages) ? book.pages.length : 12);
     
-    console.log(`Book selected page count: ${book.selected_page_count || 'not set'}, pages array: ${book.pages?.length || 0}`);
-
-    // For paperbacks, ensure minimum based on binding type
-    if (selectedPodPackageId.includes('PB')) {
-      // Standard paperback minimum is 24 pages
-      if (interiorPageCount < 24) {
-        console.log(`Paperback requires minimum 24 pages, adjusting from ${interiorPageCount}`);
-        interiorPageCount = 24;
-      }
-    } else if (selectedPodPackageId.includes('CO')) {
-      // Coil binding - verify minimum requirements (typically 12+ pages)
-      if (interiorPageCount < 12) {
-        console.log(`Coil binding requires minimum 12 pages, adjusting from ${interiorPageCount}`);
-        interiorPageCount = 12;
-      }
+    // Validate and adjust page count based on binding type
+    const validation = validatePageCount(interiorPageCount, bindingType);
+    
+    if (!validation.valid) {
+      console.warn(validation.message);
+      interiorPageCount = validation.adjustedCount;
     }
-
-    // Ensure even page count (Lulu requirement)
-    if (interiorPageCount % 2 !== 0) {
-      console.log(`Adjusting page count from ${interiorPageCount} to ${interiorPageCount + 1} (must be even)`);
-      interiorPageCount += 1;
-    }
-
-    console.log('Final interior page count:', interiorPageCount);
+    
+    console.log(`Final interior page count: ${interiorPageCount} (${bindingType} binding compliant)`);
     console.log('POD Package ID:', selectedPodPackageId);
     
     console.log('Note: Lulu validates files automatically during print job creation');
