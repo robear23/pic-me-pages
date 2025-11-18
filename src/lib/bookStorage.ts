@@ -246,6 +246,9 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       }
     } catch (error) {
       console.error('PDF generation error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown PDF generation error';
+      // Re-throw the error so it bubbles up to GeneratingStep error handler
+      throw new Error(`Failed to generate print-ready PDFs: ${errorMessage}. Please check that your images meet the requirements and try again.`);
     }
 
     // 6. Update book with PDF URLs
