@@ -54,10 +54,10 @@ export const BookOptionsStep = () => {
       return;
     }
 
-    try {
-      setBookOptions(tempPageCount, tempBinding);
-      setStep('generating');
-    } catch (err) {
+      try {
+        setBookOptions(tempPageCount, tempBinding);
+        setStep('payment');
+      } catch (err) {
       setError('Failed to save book options. Please try again.');
       toast({
         title: 'Error',

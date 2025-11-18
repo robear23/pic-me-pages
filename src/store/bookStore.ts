@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { BindingType, PageCount, BookOption } from '@/types/bookOptions';
 import { getBookOption } from '@/types/bookOptions';
 
-export type BookStep = 'hero' | 'upload' | 'settings' | 'interests' | 'book-options' | 'generating' | 'complete' | 'rework-settings';
+export type BookStep = 'hero' | 'upload' | 'settings' | 'interests' | 'book-options' | 'payment' | 'generating' | 'complete' | 'rework-settings';
 
 export interface Character {
   id: string;
@@ -45,8 +45,12 @@ interface BookState {
   selectedBinding: BindingType;
   selectedPrice: number;
   selectedPodPackageId: string;
+  paymentBypassed: boolean;
+  orderId: string | null;
   
   setStep: (step: BookStep) => void;
+  setPaymentBypassed: (bypassed: boolean) => void;
+  setOrderId: (id: string | null) => void;
   addCharacter: () => void;
   removeCharacter: (id: string) => void;
   updateCharacter: (id: string, updates: Partial<Character>) => void;
@@ -99,12 +103,18 @@ const initialState = {
   selectedBinding: 'premium' as BindingType,
   selectedPrice: 39.99,
   selectedPodPackageId: '0850X1100FCPRECO060UW444MXX',
+  paymentBypassed: false,
+  orderId: null,
 };
 
 export const useBookStore = create<BookState>((set, get) => ({
   ...initialState,
   
   setStep: (step) => set({ currentStep: step }),
+  
+  setPaymentBypassed: (bypassed) => set({ paymentBypassed: bypassed }),
+  
+  setOrderId: (id) => set({ orderId: id }),
   
   addCharacter: () =>
     set((state) => {
