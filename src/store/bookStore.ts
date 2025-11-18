@@ -41,6 +41,7 @@ interface BookState {
   maxReworksReached: boolean;
   generatedBookId: string | null;
   coverImageUrl: string | null;
+  backCoverImageUrl: string | null;
   selectedPageCount: PageCount;
   selectedBinding: BindingType;
   selectedPrice: number;
@@ -68,6 +69,7 @@ interface BookState {
   setCurrentApiCall: (call: 'prompts' | 'images' | 'photos' | null) => void;
   setGeneratedBookId: (id: string | null) => void;
   setCoverImageUrl: (url: string | null) => void;
+  setBackCoverImageUrl: (url: string | null) => void;
   setBookOptions: (pageCount: PageCount, binding: BindingType) => void;
   getSelectedBookOption: () => BookOption;
   enterReworkMode: () => void;
@@ -99,6 +101,7 @@ const initialState = {
   maxReworksReached: false,
   generatedBookId: null as string | null,
   coverImageUrl: null as string | null,
+  backCoverImageUrl: null as string | null,
   selectedPageCount: 24 as PageCount,
   selectedBinding: 'premium' as BindingType,
   selectedPrice: 39.99,
@@ -202,6 +205,8 @@ export const useBookStore = create<BookState>((set, get) => ({
   setGeneratedBookId: (id) => set({ generatedBookId: id }),
   
   setCoverImageUrl: (url) => set({ coverImageUrl: url }),
+  
+  setBackCoverImageUrl: (url) => set({ backCoverImageUrl: url }),
   
   setBookOptions: (pageCount, binding) => {
     const option = getBookOption(pageCount, binding);
