@@ -92,7 +92,8 @@ export async function generateCoverWrapPdf(
   bookId: string,
   frontImageUrl: string,
   backImageUrl: string,
-  podPackageId?: string
+  podPackageId?: string,
+  showGuides?: boolean // NEW: Add visual margin guides for testing
 ): Promise<string> {
   try {
     // Get current user for proper path structure
@@ -114,6 +115,21 @@ export async function generateCoverWrapPdf(
     });
 
     const halfWidth = LULU_CONFIG.COVER_WIDTH / 2; // 8.625" each side
+
+    // Convert images to data URLs and add to PDF
+    const backCoverDataUrl = await toDataUrl(backImageUrl);
+    const frontCoverDataUrl = await toDataUrl(frontImageUrl);
+
+    pdf.addImage(backCoverDataUrl, 'PNG', 0, 0, halfWidth, LULU_CONFIG.COVER_HEIGHT);
+    pdf.addImage(frontCoverDataUrl, 'PNG', halfWidth, 0, halfWidth, LULU_CONFIG.COVER_HEIGHT);
+
+    // Add margin guides if requested (for testing)
+    if (showGuides) {
+      drawCoverMarginGuides(pdf);
+    }
+
+    console.log(`✓ Cover wrap generated: ${LULU_CONFIG.COVER_WIDTH}" x ${LULU_CONFIG.COVER_HEIGHT}"`);
+    console.log('  Layout: Back (left) | Front (right) - NO SPINE');
 
     // Convert PDF to blob
     const pdfBlob = pdf.output('blob');
@@ -156,6 +172,65 @@ export async function generateCoverWrapPdf(
   }
 }
 
+// Helper function to draw cover margin guides
+function drawCoverMarginGuides(doc: jsPDF) {
+  const currentDrawColor = doc.getDrawColor();
+  const currentLineWidth = doc.getLineWidth();
+  
+  const halfWidth = LULU_CONFIG.COVER_WIDTH / 2;
+  
+  // Draw outer bleed line (red)
+  doc.setDrawColor(255, 0, 0);
+  doc.setLineWidth(0.01);
+  doc.rect(0, 0, LULU_CONFIG.COVER_WIDTH, LULU_CONFIG.COVER_HEIGHT);
+  
+  // Draw trim lines (blue)
+  doc.setDrawColor(0, 0, 255);
+  doc.rect(
+    LULU_CONFIG.BLEED,
+    LULU_CONFIG.BLEED,
+    LULU_CONFIG.COVER_WIDTH - (LULU_CONFIG.BLEED * 2),
+    LULU_CONFIG.COVER_HEIGHT - (LULU_CONFIG.BLEED * 2)
+  );
+  
+  // Draw center divider between back and front
+  doc.setDrawColor(128, 128, 128);
+  doc.line(halfWidth, 0, halfWidth, LULU_CONFIG.COVER_HEIGHT);
+  
+  // Draw safety margins (green) - 0.25" recommended
+  const safetyMargin = 0.25;
+  doc.setDrawColor(0, 255, 0);
+  // Back cover safety
+  doc.rect(
+    LULU_CONFIG.BLEED + safetyMargin,
+    LULU_CONFIG.BLEED + safetyMargin,
+    halfWidth - LULU_CONFIG.BLEED - (safetyMargin * 2),
+    LULU_CONFIG.COVER_HEIGHT - (LULU_CONFIG.BLEED * 2) - (safetyMargin * 2)
+  );
+  // Front cover safety
+  doc.rect(
+    halfWidth + safetyMargin,
+    LULU_CONFIG.BLEED + safetyMargin,
+    halfWidth - LULU_CONFIG.BLEED - (safetyMargin * 2),
+    LULU_CONFIG.COVER_HEIGHT - (LULU_CONFIG.BLEED * 2) - (safetyMargin * 2)
+  );
+  
+  // Add labels
+  doc.setFontSize(10);
+  doc.setTextColor(255, 255, 255);
+  doc.text('BACK COVER', 1, 0.5);
+  doc.text('FRONT COVER', halfWidth + 1, 0.5);
+  doc.setFontSize(8);
+  doc.setTextColor(255, 0, 0);
+  doc.text('Bleed 0.125"', 0.15, 0.15);
+  doc.setTextColor(0, 255, 0);
+  doc.text('Safety 0.25"', 0.4, 0.9);
+  
+  doc.setDrawColor(currentDrawColor);
+  doc.setLineWidth(currentLineWidth);
+  doc.setTextColor(0);
+}
+
 export async function repairBookPdf(
   bookId: string,
   pages: Array<{ imageUrl: string }>,
@@ -165,6 +240,7 @@ export async function repairBookPdf(
     pageCount?: number;
     podPackageId?: string;
     onProgress?: (current: number, total: number) => void;
+    showGuides?: boolean; // NEW: Add visual margin guides for testing
   }
 ): Promise<string> {
   try {
@@ -261,6 +337,11 @@ export async function repairBookPdf(
           0
         );
 
+        // Add margin guides if requested (for testing)
+        if (options?.showGuides) {
+          drawMarginGuides(pdf, bindingType);
+        }
+
         console.log(`✓ Page ${i + 1} added`);
       } catch (error) {
         console.error(`Failed to add page ${i + 1}:`, error);
@@ -331,4 +412,61 @@ export async function repairBookPdf(
     console.error('Error generating interior PDF:', error);
     throw error;
   }
+}
+
+// Helper function to draw interior margin guides for testing/validation
+function drawMarginGuides(doc: jsPDF, bindingType: 'SADDLE' | 'COIL') {
+  const contentArea = getContentArea(bindingType);
+  
+  // Save current state
+  const currentDrawColor = doc.getDrawColor();
+  const currentLineWidth = doc.getLineWidth();
+  
+  // Draw bleed line (outermost - red)
+  doc.setDrawColor(255, 0, 0);
+  doc.setLineWidth(0.01);
+  doc.rect(0, 0, LULU_CONFIG.PAGE_WIDTH, LULU_CONFIG.PAGE_HEIGHT);
+  
+  // Draw trim line (blue)
+  doc.setDrawColor(0, 0, 255);
+  doc.rect(
+    LULU_CONFIG.BLEED,
+    LULU_CONFIG.BLEED,
+    LULU_CONFIG.TRIM_WIDTH,
+    LULU_CONFIG.TRIM_HEIGHT
+  );
+  
+  // Draw safety margin (green)
+  doc.setDrawColor(0, 255, 0);
+  doc.rect(
+    LULU_CONFIG.CONTENT_LEFT,
+    LULU_CONFIG.CONTENT_TOP,
+    LULU_CONFIG.CONTENT_RIGHT - LULU_CONFIG.CONTENT_LEFT,
+    LULU_CONFIG.CONTENT_BOTTOM - LULU_CONFIG.CONTENT_TOP
+  );
+  
+  // Draw content area with gutter (yellow)
+  doc.setDrawColor(255, 255, 0);
+  doc.rect(
+    contentArea.left,
+    contentArea.top,
+    contentArea.width,
+    contentArea.height
+  );
+  
+  // Add labels
+  doc.setFontSize(8);
+  doc.setTextColor(255, 0, 0);
+  doc.text('Bleed (0.125")', 0.15, 0.1);
+  doc.setTextColor(0, 0, 255);
+  doc.text('Trim Line', 0.15, 0.25);
+  doc.setTextColor(0, 255, 0);
+  doc.text('Safety (0.5")', 0.75, 0.75);
+  doc.setTextColor(255, 255, 0);
+  doc.text(`Content (${bindingType === 'COIL' ? 'w/ gutter' : 'no gutter'})`, contentArea.left + 0.1, contentArea.top + 0.15);
+  
+  // Restore state
+  doc.setDrawColor(currentDrawColor);
+  doc.setLineWidth(currentLineWidth);
+  doc.setTextColor(0);
 }

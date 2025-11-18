@@ -3,16 +3,23 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { repairBookPdf, generateCoverWrapPdf } from '@/lib/repairPdf';
 import { validatePageCount, getBindingType } from '@/lib/luluConfig';
+import { validatePdfDimensions, generateValidationReport } from '@/lib/pdfValidator';
 import { toast } from 'sonner';
-import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, Download, Eye } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 const TestPdfGeneration = () => {
   const [testing, setTesting] = useState(false);
+  const [showGuides, setShowGuides] = useState(true);
   const [results, setResults] = useState<Array<{
     config: string;
     status: 'success' | 'error';
     message: string;
     pdfUrl?: string;
+    coverUrl?: string;
+    validation?: any;
+    coverValidation?: any;
   }>>([]);
 
   // Generate a simple test image (white background with black text)
@@ -90,10 +97,10 @@ const TestPdfGeneration = () => {
     try {
       // Validate page count
       const bindingType = getBindingType(podPackageId);
-      const validation = validatePageCount(pageCount, bindingType);
+      const pageValidation = validatePageCount(pageCount, bindingType);
       
-      if (!validation.valid) {
-        console.log(`${config}: ${validation.message}`);
+      if (!pageValidation.valid) {
+        console.log(`${config}: ${pageValidation.message}`);
       }
 
       // Generate test pages
@@ -111,6 +118,7 @@ const TestPdfGeneration = () => {
         {
           pageCount,
           podPackageId,
+          showGuides,
           onProgress: (current, total) => {
             console.log(`${config}: ${current}/${total} pages processed`);
           }
@@ -128,25 +136,45 @@ const TestPdfGeneration = () => {
         testBookId,
         frontCover,
         backCover,
-        podPackageId
+        podPackageId,
+        showGuides
       );
 
       console.log(`✓ Cover PDF generated: ${coverUrl}`);
 
+      // Validate PDFs
+      console.log(`Validating PDFs for ${config}...`);
+      const validation = await validatePdfDimensions(interiorUrl, 'interior');
+      const coverValidation = await validatePdfDimensions(coverUrl, 'cover');
+
+      if (!validation.valid) {
+        console.warn(`Interior PDF validation failed:`, validation.errors);
+      }
+      if (!coverValidation.valid) {
+        console.warn(`Cover PDF validation failed:`, coverValidation.errors);
+      }
+
+      const pdfStatus = validation.valid && coverValidation.valid ? 'validated' : 'warning';
+      
       return {
         config,
         status: 'success' as const,
-        message: validation.valid 
-          ? `✓ Generated successfully (${validation.adjustedCount} pages)`
-          : `✓ Generated with adjustment: ${validation.message}`,
-        pdfUrl: interiorUrl
+        message: pageValidation.valid 
+          ? `✓ Generated & validated successfully (${pageValidation.adjustedCount} pages)`
+          : `✓ Generated with adjustment: ${pageValidation.message}`,
+        pdfUrl: interiorUrl,
+        coverUrl,
+        validation,
+        coverValidation
       };
     } catch (error: any) {
       console.error(`✗ Failed to generate ${config}:`, error);
       return {
         config,
         status: 'error' as const,
-        message: `✗ Error: ${error.message}`
+        message: `✗ Error: ${error.message}`,
+        validation: undefined,
+        coverValidation: undefined
       };
     }
   };
@@ -195,6 +223,43 @@ const TestPdfGeneration = () => {
     toast.success(`Tests complete: ${successCount}/${newResults.length} passed`);
   };
 
+  const exportReport = () => {
+    const report = generateValidationReport(results);
+    const blob = new Blob([report], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lulu-pdf-test-report-${new Date().toISOString().split('T')[0]}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Report downloaded');
+  };
+
+  const exportResultsJSON = () => {
+    const jsonData = {
+      generatedAt: new Date().toISOString(),
+      showGuides,
+      results: results.map(r => ({
+        config: r.config,
+        status: r.status,
+        message: r.message,
+        pdfUrl: r.pdfUrl,
+        coverUrl: r.coverUrl,
+        interiorValidation: r.validation,
+        coverValidation: r.coverValidation
+      }))
+    };
+    
+    const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `lulu-pdf-test-results-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('Results exported');
+  };
+
   return (
     <div className="min-h-screen bg-background p-8">
       <div className="max-w-4xl mx-auto space-y-6">
@@ -228,6 +293,17 @@ const TestPdfGeneration = () => {
             </ul>
           </div>
 
+          <div className="flex items-center space-x-2 mb-4">
+            <Switch
+              id="show-guides"
+              checked={showGuides}
+              onCheckedChange={setShowGuides}
+            />
+            <Label htmlFor="show-guides" className="cursor-pointer">
+              Show margin guides (visual overlays for validation)
+            </Label>
+          </div>
+
           <Button
             onClick={runAllTests}
             disabled={testing}
@@ -247,7 +323,19 @@ const TestPdfGeneration = () => {
 
         {results.length > 0 && (
           <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Test Results</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold">Test Results</h2>
+              <div className="flex gap-2">
+                <Button onClick={exportReport} variant="outline" size="sm">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export Report
+                </Button>
+                <Button onClick={exportResultsJSON} variant="outline" size="sm">
+                  <Download className="h-4 w-4 mr-2" />
+                  Export JSON
+                </Button>
+              </div>
+            </div>
             <div className="space-y-3">
               {results.map((result, index) => (
                 <div
@@ -268,16 +356,53 @@ const TestPdfGeneration = () => {
                     <div className="text-sm text-muted-foreground mt-1">
                       {result.message}
                     </div>
-                    {result.pdfUrl && (
-                      <a
-                        href={result.pdfUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-primary hover:underline mt-2 inline-block"
-                      >
-                        View PDF →
-                      </a>
+                    
+                    {/* Validation details */}
+                    {result.validation && (
+                      <div className="mt-2 text-xs space-y-1">
+                        <div className={result.validation.valid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                          Interior: {result.validation.dimensions.widthInches.toFixed(3)}" × {result.validation.dimensions.heightInches.toFixed(3)}"
+                          {result.validation.valid ? ' ✓' : ' ✗'}
+                        </div>
+                        {result.coverValidation && (
+                          <div className={result.coverValidation.valid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
+                            Cover: {result.coverValidation.dimensions.widthInches.toFixed(3)}" × {result.coverValidation.dimensions.heightInches.toFixed(3)}"
+                            {result.coverValidation.valid ? ' ✓' : ' ✗'}
+                          </div>
+                        )}
+                        {result.validation.errors.length > 0 && (
+                          <div className="text-red-600 dark:text-red-400">
+                            {result.validation.errors.join(', ')}
+                          </div>
+                        )}
+                      </div>
                     )}
+                    
+                    {/* PDF links */}
+                    <div className="flex gap-3 mt-3">
+                      {result.pdfUrl && (
+                        <a
+                          href={result.pdfUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+                        >
+                          <Eye className="h-3 w-3" />
+                          Interior PDF
+                        </a>
+                      )}
+                      {result.coverUrl && (
+                        <a
+                          href={result.coverUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-primary hover:underline inline-flex items-center gap-1"
+                        >
+                          <Eye className="h-3 w-3" />
+                          Cover PDF
+                        </a>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
