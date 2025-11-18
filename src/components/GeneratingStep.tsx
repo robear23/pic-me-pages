@@ -7,6 +7,7 @@ import { generatePrompts, generateImages, generateCover } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { saveBookToDatabase } from '@/lib/bookStorage';
+import { supabase } from '@/integrations/supabase/client';
 import type { GeneratedPrompt } from '@/lib/api';
 
 const GENERATION_STEPS = [
@@ -33,6 +34,8 @@ export const GeneratingStep = () => {
     isReworkMode,
     selectedPagesForRework,
     generatedPages,
+    paymentBypassed,
+    orderId,
     setGenerationProgress, 
     setGenerationStatus, 
     setStep,
@@ -50,6 +53,18 @@ export const GeneratingStep = () => {
   useEffect(() => {
     const runGeneration = async () => {
       try {
+        // Security check: Verify payment or bypass (skip for rework mode)
+        if (!isReworkMode && !paymentBypassed && !orderId) {
+          console.error('No payment detected - redirecting to payment step');
+          toast({
+            title: 'Payment Required',
+            description: 'Please complete payment before generating your book.',
+            variant: 'destructive',
+          });
+          setStep('payment');
+          return;
+        }
+
         // Step 1: Analyzing photos (0-20%)
         setGenerationStatus(GENERATION_STEPS[0]);
         setGenerationProgress(10);
@@ -250,6 +265,24 @@ export const GeneratingStep = () => {
             if (bookId) {
               console.log('Book saved to database:', bookId);
               setGeneratedBookId(bookId);
+              
+              // Link book to order if we have an orderId
+              if (orderId) {
+                try {
+                  const { error: orderError } = await supabase
+                    .from('orders')
+                    .update({ book_id: bookId })
+                    .eq('id', orderId);
+                  
+                  if (orderError) {
+                    console.error('Failed to link book to order:', orderError);
+                  } else {
+                    console.log('Book linked to order:', orderId);
+                  }
+                } catch (linkError) {
+                  console.error('Error linking book to order:', linkError);
+                }
+              }
             }
           } catch (saveError) {
             console.error('Failed to save book:', saveError);

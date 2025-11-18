@@ -6,6 +6,7 @@ import { UploadStep } from '@/components/UploadStep';
 import { SettingsStep } from '@/components/SettingsStep';
 import { InterestsStep } from '@/components/InterestsStep';
 import { BookOptionsStep } from '@/components/BookOptionsStep';
+import { PaymentStep } from '@/components/PaymentStep';
 import { GeneratingStep } from '@/components/GeneratingStep';
 import { CompleteStep } from '@/components/CompleteStep';
 import { ReworkSettingsStep } from '@/components/ReworkSettingsStep';
@@ -31,6 +32,7 @@ const Index = () => {
         {currentStep === 'settings' && <SettingsStep key="settings" />}
         {currentStep === 'interests' && <InterestsStep key="interests" />}
         {currentStep === 'book-options' && <BookOptionsStep key="book-options" />}
+        {currentStep === 'payment' && <PaymentStep key="payment" />}
         {currentStep === 'generating' && <GeneratingStep key="generating" />}
         {currentStep === 'complete' && <CompleteStep key="complete" />}
         {currentStep === 'rework-settings' && <ReworkSettingsStep key="rework-settings" />}

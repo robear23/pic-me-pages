@@ -11,7 +11,19 @@ import { OrderPhysicalBookDialog } from './OrderPhysicalBookDialog';
 import { useAuth } from '@/contexts/AuthContext';
 
 export const CompleteStep = () => {
-  const { characters, generatedPages, selectedPagesForRework, maxReworksReached, togglePageForRework, enterReworkMode, setStep, reset, generatedBookId, isReworkMode } = useBookStore();
+  const { 
+    characters, 
+    generatedPages, 
+    selectedPagesForRework, 
+    maxReworksReached, 
+    togglePageForRework, 
+    enterReworkMode, 
+    setStep, 
+    reset, 
+    generatedBookId, 
+    isReworkMode,
+    paymentBypassed 
+  } = useBookStore();
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
@@ -169,6 +181,19 @@ export const CompleteStep = () => {
           transition={{ duration: 0.5, delay: 0.1 }}
           className="text-center mb-12"
         >
+          {paymentBypassed && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-4"
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-100 dark:bg-amber-950 border border-amber-500">
+                <span className="text-amber-700 dark:text-amber-300 font-semibold">
+                  🧪 Test Mode - No payment processed
+                </span>
+              </div>
+            </motion.div>
+          )}
           <h2 className="font-black text-5xl md:text-6xl mb-4">
             {isReworkMode ? 'Book Updated! 🎨' : 'Your Book is Ready! 🎉'}
           </h2>
@@ -367,7 +392,7 @@ export const CompleteStep = () => {
               </>
             )}
           </Button>
-          {user && generatedBookId && (
+          {user && generatedBookId && !paymentBypassed && (
             <OrderPhysicalBookDialog 
               bookId={generatedBookId}
               bookTitle={`${characterNames || 'My'}'s Coloring Book`}
