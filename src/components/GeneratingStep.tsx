@@ -43,6 +43,7 @@ export const GeneratingStep = () => {
     setApiError,
     setGeneratedBookId,
     setCoverImageUrl,
+    setBackCoverImageUrl,
     completeRework
   } = useBookStore();
   
@@ -204,18 +205,21 @@ export const GeneratingStep = () => {
         // Step 5: Creating book cover (90-92%)
         setGenerationStatus(GENERATION_STEPS[4]);
         let coverImageUrl: string | null = null;
+        let backCoverImageUrl: string | null = null;
         
         if (!isReworkMode) {
           try {
-            console.log('Generating cover...');
-            const { coverImage } = await generateCover(
+            console.log('Generating front and back covers...');
+            const { frontCover, backCover } = await generateCover(
               characters.map(c => c.name).filter(Boolean).join(' and '),
               selectedInterests,
               charactersWithPhotos
             );
-            coverImageUrl = coverImage;
-            setCoverImageUrl(coverImage);
-            console.log('Cover generated successfully');
+            coverImageUrl = frontCover;
+            backCoverImageUrl = backCover;
+            setCoverImageUrl(frontCover);
+            setBackCoverImageUrl(backCover);
+            console.log('Front and back covers generated successfully');
           } catch (coverError) {
             console.error('Cover generation failed:', coverError);
             // Continue without cover - we'll use a text-only cover
@@ -255,6 +259,7 @@ export const GeneratingStep = () => {
               characterPhotos,
               generatedPages: finalPages,
               coverImageUrl,
+              backCoverImageUrl,
               selectedPageCount,
               selectedBinding,
               selectedPrice,

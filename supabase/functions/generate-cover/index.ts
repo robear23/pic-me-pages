@@ -16,6 +16,11 @@ interface GenerateCoverRequest {
   characters?: Character[];
 }
 
+interface CoverResponse {
+  frontCover: string;
+  backCover: string;
+}
+
 serve(async (req) => {
   console.log(`[HEALTH] generate-cover called at ${new Date().toISOString()}`);
   
@@ -31,15 +36,56 @@ serve(async (req) => {
 
     const { characterName, interests, characters }: GenerateCoverRequest = await req.json();
 
-    console.log('Generating cover for:', characterName, interests);
+    console.log('Generating front and back covers for:', characterName, interests);
 
-    // Create a detailed prompt for the cover
     const interestsText = interests.slice(0, 3).join(', ');
-    const coverPrompt = `Create a vibrant, child-friendly coloring book cover design for "${characterName}'s Coloring Book". The cover should feature decorative elements and imagery related to: ${interestsText}. Style: Photogenic illustrated style with soft, inviting composition and a colorful decorative border frame. The center should have an attractive illustration suitable for a children's coloring book with pleasant, natural tones and gentle depth. Important: Do not include any text or words in the image - this is purely decorative artwork for the cover background.`;
+    const hasPhotos = characters && characters.length > 0 && characters[0].photos && characters[0].photos.length > 0;
+    
+    // Generate front cover with character photo
+    let frontCoverPrompt = '';
+    let frontContentParts: any[] = [];
+    
+    if (hasPhotos && characters && characters[0].photos) {
+      // Use character photo for front cover
+      const characterPhoto = characters[0].photos[0];
+      frontCoverPrompt = `Create a vibrant, colorful children's coloring book front cover design featuring this child.
 
-    console.log('Cover prompt:', coverPrompt);
+DESIGN REQUIREMENTS:
+- Feature the child prominently in the center or slightly off-center
+- Add a decorative, colorful border frame with playful elements related to: ${interestsText}
+- Background should be colorful and inviting with gentle patterns or themes related to the interests
+- Professional children's book cover aesthetic with bright, appealing colors
+- Leave space at top for title text (will be added separately)
+- The child should be the clear focal point
+- Style: Photo-based collage with decorative illustrated elements around the photo
+- DO NOT include any text or words in the image
 
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+IMPORTANT: This is a COVER (not line art) - use full color, make it vibrant and eye-catching for retail display.`;
+
+      frontContentParts = [
+        { type: 'text', text: frontCoverPrompt },
+        { type: 'image_url', image_url: { url: characterPhoto } }
+      ];
+    } else {
+      // Create illustrated front cover without photo
+      frontCoverPrompt = `Create a vibrant, colorful children's coloring book front cover design for "${characterName}'s Coloring Book".
+
+DESIGN REQUIREMENTS:
+- Feature decorative elements and playful imagery related to: ${interestsText}
+- Colorful decorative border frame
+- Central illustration area with inviting, child-friendly artwork
+- Professional children's book cover aesthetic with bright, appealing colors
+- Pleasant, natural composition suitable for ages 3-12
+- DO NOT include any text or words in the image
+
+IMPORTANT: This is a COVER (not line art) - use full color, make it vibrant and eye-catching for retail display.`;
+
+      frontContentParts = [{ type: 'text', text: frontCoverPrompt }];
+    }
+
+    console.log('Generating front cover...');
+    
+    const frontCoverResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${lovableApiKey}`,
@@ -50,30 +96,80 @@ serve(async (req) => {
         messages: [
           {
             role: 'user',
-            content: coverPrompt
+            content: frontContentParts
           }
         ],
         modalities: ['image', 'text']
       }),
     });
 
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error('Lovable AI error:', errorText);
-      throw new Error(`AI generation failed: ${errorText}`);
+    if (!frontCoverResponse.ok) {
+      const errorText = await frontCoverResponse.text();
+      console.error('Front cover AI error:', errorText);
+      throw new Error(`Front cover generation failed: ${errorText}`);
     }
 
-    const aiData = await aiResponse.json();
-    const coverImage = aiData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    const frontCoverData = await frontCoverResponse.json();
+    const frontCover = frontCoverData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
 
-    if (!coverImage) {
-      throw new Error('No cover image generated');
+    if (!frontCover) {
+      throw new Error('No front cover image generated');
     }
 
-    console.log('Cover generated successfully');
+    console.log('Front cover generated, generating back cover...');
+
+    // Generate back cover
+    const backCoverPrompt = `Create a simple, clean back cover design for "${characterName}'s Coloring Book".
+
+DESIGN REQUIREMENTS:
+- Simple, elegant design with plenty of white/light space
+- Decorative border matching the front cover style
+- Subtle decorative elements related to: ${interestsText}
+- Color scheme should complement the front cover
+- Leave clear space in these areas (will be filled with text/barcode later):
+  * Top third: for title and subtitle text
+  * Bottom right corner: for barcode placement
+  * Center area: for book description text
+- Professional children's book back cover aesthetic
+- DO NOT include any text or words in the image
+
+STYLE: Clean, minimal design with decorative accents - this is background artwork for text overlay.`;
+
+    const backCoverResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${lovableApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash-image',
+        messages: [
+          {
+            role: 'user',
+            content: backCoverPrompt
+          }
+        ],
+        modalities: ['image', 'text']
+      }),
+    });
+
+    if (!backCoverResponse.ok) {
+      const errorText = await backCoverResponse.text();
+      console.error('Back cover AI error:', errorText);
+      throw new Error(`Back cover generation failed: ${errorText}`);
+    }
+
+    const backCoverData = await backCoverResponse.json();
+    const backCover = backCoverData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+
+    if (!backCover) {
+      throw new Error('No back cover image generated');
+    }
+
+    console.log('Both covers generated successfully');
 
     return new Response(
-      JSON.stringify({ coverImage }),
+      JSON.stringify({ frontCover, backCover }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         status: 200,

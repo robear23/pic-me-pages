@@ -12,29 +12,41 @@ const BASE_DELAY = 1000;
 // System message for Step 1: Generate realistic, photogenic image
 const REALISTIC_SYSTEM_MESSAGE = `You are creating photorealistic images for a personalized children's book.
 
-TASK: Generate a realistic, photogenic image of the character in the described scene.
+TASK: Generate a realistic, photogenic image that MUST look like a real photograph taken with a camera.
 
-CHARACTER CONSISTENCY:
-- Study the reference photo carefully to capture the character's appearance
-- Keep facial features, hairstyle, age, and distinctive characteristics consistent
+CHARACTER CONSISTENCY (CRITICAL):
+- Study the reference photo carefully to capture EXACT character appearance
+- Preserve EXACT facial features: eye color, eye shape, nose shape, mouth, face structure
+- Keep hairstyle, hair color, hair texture EXACTLY as shown in reference
+- Maintain skin tone, age, and ALL distinctive characteristics precisely
+- The character MUST be recognizable as the same person from the reference photo
 - Generate natural poses and expressions appropriate for the scene
-- This should look like a real photo of the character in the scene
+- This should look like a real photograph of this specific child
 
-STYLE:
-- Photorealistic with soft, natural lighting
-- Flattering angles and composition
+STYLE REQUIREMENTS:
+- PHOTOREALISTIC - This MUST look like an actual photograph, NOT an illustration
+- Shot like a professional children's portrait photographer
+- Soft, natural lighting with flattering angles
 - Clean, pleasant background that fits the scene
-- Natural colors and tones
+- Natural colors and authentic skin tones
+- Real-world appearance as if captured with a professional camera
 - Child-friendly and age-appropriate content
 
-CRITICAL: This is NOT line art yet - create a realistic photo-style image first.`;
+CRITICAL: This is NOT line art yet - create a realistic photo-style image first that looks indistinguishable from a real photograph.`;
 
 // System message for Step 2: Convert realistic image to line art
 const LINE_ART_SYSTEM_MESSAGE = `You are converting a realistic image into black and white line art for a children's coloring book.
 
 TASK: Transform the provided image into PURE BLACK AND WHITE line art suitable for coloring.
 
-CRITICAL REQUIREMENTS - MUST BE FOLLOWED EXACTLY:
+CHARACTER RECOGNITION (CRITICAL):
+- MAINTAIN the character's recognizable facial structure and proportions
+- Keep distinctive features clearly identifiable: hairstyle, face shape, eye shape, nose, mouth
+- The character MUST be recognizable from the reference photo after conversion
+- Preserve exact facial proportions and feature placement
+- Keep the character's unique characteristics visible in line art form
+
+LINE ART REQUIREMENTS - MUST BE FOLLOWED EXACTLY:
 - ONLY pure black lines (#000000) on PURE white background (#FFFFFF)
 - ABSOLUTELY NO colors, NO shading, NO gradients, NO gray tones whatsoever
 - NO texture fills, NO patterns inside shapes
@@ -42,12 +54,11 @@ CRITICAL REQUIREMENTS - MUST BE FOLLOWED EXACTLY:
 - Think of this as a traditional black ink outline drawing on white paper
 - All areas should be either 100% black (lines only) or 100% white (empty spaces to color)
 - Clear, bold outlines that children aged 3-12 can easily color within
-- Maintain the character's recognizable features using only simple line contours
 - Keep composition simple and uncluttered
 
-VERIFICATION: Before generating, confirm the output will contain ONLY black lines on white background with zero colors or shading.
+VERIFICATION: Before generating, confirm the output will contain ONLY black lines on white background with zero colors or shading, AND the character remains recognizable.
 
-STYLE: Pure black and white line art coloring book page - no exceptions.`;
+STYLE: Pure black and white line art coloring book page with recognizable character features - no exceptions.`;
 
 async function generateRealisticImage(
   prompt: any,

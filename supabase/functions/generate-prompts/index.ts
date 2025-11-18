@@ -53,10 +53,12 @@ Each scene should feel unique and alive - the character should be doing somethin
     const systemPrompt = `You are an expert at creating child-friendly coloring page descriptions. Generate ${targetPageCount} unique, detailed prompts for black & white coloring pages featuring ${characterNames} in scenarios related to their interests: ${interests.join(', ')}.
 
 STYLE REQUIREMENTS:
-- Photogenic illustrated style with soft, natural lighting and flattering angles
-- Character Consistency: ${consistentCharacters ? 'CRITICAL - Keep character identity consistent across ALL pages. Recognize the same character throughout.' : 'Varied appearances are OK'}${characterGuidance}
-- Simple outlines, no shading or gradients
-- Black and white line art only
+- PHOTOREALISTIC PHOTOGRAPHY STYLE - Shot like a professional children's portrait photographer
+- Natural, authentic, real-world appearance as if captured with a camera
+- CRITICAL: NOT illustrated, NOT cartoon, NOT artistic rendering - must look like real photographs
+- Character Consistency: ${consistentCharacters ? 'CRITICAL - Keep character identity consistent across ALL pages. Recognize the same character throughout with exact facial features, eye color, hair texture, and skin tone.' : 'Varied appearances are OK'}${characterGuidance}
+- Natural poses and expressions as if captured in a real moment
+- Final output will be converted to simple black and white line art
 - Child-appropriate content
 - Focus on action, setting, and clear character presence
 - Pleasant composition with clean, uncluttered backgrounds

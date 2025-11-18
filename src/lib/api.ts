@@ -106,7 +106,7 @@ export const generateCover = async (
   characterName: string,
   interests: string[],
   characters?: Character[]
-): Promise<{ coverImage: string }> => {
+): Promise<{ frontCover: string; backCover: string }> => {
   return callEdgeFunction('generate-cover', { 
     characterName, 
     interests,
