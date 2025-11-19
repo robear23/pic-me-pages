@@ -183,28 +183,15 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
       let candidate = extractTopLevelJSON(cleanContent) ?? cleanContent;
       console.log('Extracted JSON candidate (first 200 chars):', candidate.substring(0, 200));
       
-      // Try parsing directly first
+      // Try parsing directly - AI returns valid JSON
       let parsed;
       try {
         parsed = JSON.parse(candidate);
-      } catch (firstError) {
-        console.log('First parse failed, attempting sanitization...');
-        
-        // If direct parsing fails, try sanitizing control characters
-        // This is more careful - only replace actual control chars in string contexts
-        candidate = candidate.replace(/[\u0000-\u001F\u007F-\u009F]/g, (match: string) => {
-          const code = match.charCodeAt(0);
-          // Common control characters that should be escaped
-          if (code === 10) return '\\n';  // newline
-          if (code === 13) return '\\r';  // carriage return
-          if (code === 9) return '\\t';   // tab
-          if (code === 8) return '\\b';   // backspace
-          if (code === 12) return '\\f';  // form feed
-          return '';  // Remove other control chars
-        });
-        
-        console.log('Sanitized candidate (first 200 chars):', candidate.substring(0, 200));
-        parsed = JSON.parse(candidate);
+        console.log('Successfully parsed JSON on first attempt');
+      } catch (parseError) {
+        console.error('JSON parse failed:', parseError);
+        console.error('Failed JSON (first 500 chars):', candidate.substring(0, 500));
+        throw new Error('Invalid JSON from AI response');
       }
       
       prompts = parsed.prompts || parsed;
