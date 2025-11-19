@@ -212,16 +212,26 @@ export const GeneratingStep = () => {
         if (!isReworkMode) {
           try {
             console.log('Generating front and back covers...');
-            const { frontCover, backCover } = await generateCover(
-              characters.map(c => c.name).filter(Boolean).join(' and '),
-              selectedInterests,
-              charactersWithPhotos
-            );
-            coverImageUrl = frontCover;
-            backCoverImageUrl = backCover;
-            setCoverImageUrl(frontCover);
-            setBackCoverImageUrl(backCover);
-            console.log('Front and back covers generated successfully');
+            
+            // Select a page to use for the cover (prefer first successful page)
+            const successfulPages = finalPages.filter(p => p.imageUrl);
+            const coverPage = successfulPages[0];
+            
+            if (coverPage?.imageUrl) {
+              const { frontCover, backCover } = await generateCover(
+                characters.map(c => c.name).filter(Boolean).join(' and '),
+                selectedInterests,
+                coverPage.imageUrl,
+                charactersWithPhotos
+              );
+              coverImageUrl = frontCover;
+              backCoverImageUrl = backCover;
+              setCoverImageUrl(frontCover);
+              setBackCoverImageUrl(backCover);
+              console.log('Front and back covers generated successfully using page:', coverPage.pageNumber);
+            } else {
+              console.warn('No successful pages found for cover generation');
+            }
           } catch (coverError) {
             console.error('Cover generation failed:', coverError);
             // Continue without cover - we'll use a text-only cover
