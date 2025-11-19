@@ -25,7 +25,9 @@ export const LULU_CONFIG = {
   
   // Resolution
   IMAGE_DPI: 300,
+  TARGET_DPI: 320,      // Slightly higher than 300 for safety margin
   MAX_DPI: 600,
+  POINTS_PER_INCH: 72,  // PDF standard (72 points = 1 inch)
   
   // Page count requirements
   PAGE_COUNT: {

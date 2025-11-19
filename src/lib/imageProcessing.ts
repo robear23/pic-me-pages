@@ -74,9 +74,10 @@ export async function ensureImageDPI(
     img.src = imageUrl;
   });
   
-  // Target dimensions at 300 DPI (FILL entire content area)
-  const targetWidthPx = Math.round(targetWidthInches * LULU_CONFIG.IMAGE_DPI);
-  const targetHeightPx = Math.round(targetHeightInches * LULU_CONFIG.IMAGE_DPI);
+  // Target dimensions at 320 DPI for safety margin (FILL entire content area)
+  const targetDPI = 320; // Slightly higher than 300 for safety
+  const targetWidthPx = Math.round(targetWidthInches * targetDPI);
+  const targetHeightPx = Math.round(targetHeightInches * targetDPI);
   
   // Calculate aspect ratios
   const originalAspectRatio = img.naturalWidth / img.naturalHeight;
@@ -115,7 +116,8 @@ export async function ensureImageDPI(
     0, 0, targetWidthPx, targetHeightPx           // Destination (fill)
   );
   
-  console.log(`[ensureImageDPI] Scaled ${img.naturalWidth}x${img.naturalHeight} → ${targetWidthPx}x${targetHeightPx} (${targetWidthInches}" x ${targetHeightInches}" @ 300 DPI)`);
+  console.log(`[ensureImageDPI] Scaled ${img.naturalWidth}x${img.naturalHeight} → ${targetWidthPx}x${targetHeightPx} (${targetWidthInches}" x ${targetHeightInches}" @ ${targetDPI} DPI)`);
   
-  return canvas.toDataURL('image/png');
+  // Export as high-quality PNG (quality: 1.0 for no compression)
+  return canvas.toDataURL('image/png', 1.0);
 }
