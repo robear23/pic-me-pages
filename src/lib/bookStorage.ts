@@ -206,7 +206,7 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
             imageUrl: uploadedPageUrls[index] || page.imageUrl || '',
             prompt: page.prompt,
           })),
-          status: 'completed',
+          status: 'processing',
           selected_page_count: selectedPageCount,
           selected_binding_type: selectedBinding,
           selected_price: selectedPrice,
@@ -269,18 +269,27 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       }
     } catch (error) {
       console.error('PDF generation error:', error);
+      
+      // Mark book as failed instead of leaving it in processing
+      await supabase
+        .from('books')
+        .update({ status: 'failed' })
+        .eq('id', bookId);
+      
       const errorMessage = error instanceof Error ? error.message : 'Unknown PDF generation error';
       // Re-throw the error so it bubbles up to GeneratingStep error handler
       throw new Error(`Failed to generate print-ready PDFs: ${errorMessage}. Please check that your images meet the requirements and try again.`);
     }
 
-    // 6. Update book with PDF URLs
+    // 6. Update book with PDF URLs and mark as completed
     const { error: updateError } = await supabase
       .from('books')
       .update({
         cover_url: coverPdfUrl,
         cover_image_url: uploadedCoverUrl,
+        back_cover_image_url: uploadedBackCoverUrl,
         pdf_url: interiorPdfUrl,
+        status: 'completed',
       })
       .eq('id', bookId);
 
