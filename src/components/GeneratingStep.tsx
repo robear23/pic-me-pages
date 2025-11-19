@@ -241,7 +241,12 @@ export const GeneratingStep = () => {
         // Save book to database if user is authenticated
         if (user) {
           try {
-            const existingBookId = useBookStore.getState().generatedBookId;
+            const { generatedBookId: existingBookId, reworkedPageNumbers } = useBookStore.getState();
+            
+            // Calculate cumulative reworked pages
+            const updatedReworkedPages = isReworkMode 
+              ? [...new Set([...reworkedPageNumbers, ...selectedPagesForRework])]
+              : [];
             
             if (isReworkMode && existingBookId) {
               console.log('Rework mode: Updating existing book', existingBookId);
@@ -266,6 +271,7 @@ export const GeneratingStep = () => {
               selectedBinding,
               selectedPrice,
               selectedPodPackageId,
+              reworkedPageNumbers: updatedReworkedPages,
               bookId: isReworkMode ? existingBookId : undefined,
             });
 

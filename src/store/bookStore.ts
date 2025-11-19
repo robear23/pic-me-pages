@@ -39,6 +39,7 @@ interface BookState {
   originalGenerationParams: GenerationParams | null;
   isReworkMode: boolean;
   maxReworksReached: boolean;
+  reworkedPageNumbers: number[];
   generatedBookId: string | null;
   coverImageUrl: string | null;
   backCoverImageUrl: string | null;
@@ -72,6 +73,7 @@ interface BookState {
   setBackCoverImageUrl: (url: string | null) => void;
   setBookOptions: (pageCount: PageCount, binding: BindingType) => void;
   getSelectedBookOption: () => BookOption;
+  setReworkedPageNumbers: (pageNumbers: number[]) => void;
   enterReworkMode: () => void;
   completeRework: () => void;
   reset: () => void;
@@ -99,6 +101,7 @@ const initialState = {
   originalGenerationParams: null as GenerationParams | null,
   isReworkMode: false,
   maxReworksReached: false,
+  reworkedPageNumbers: [] as number[],
   generatedBookId: null as string | null,
   coverImageUrl: null as string | null,
   backCoverImageUrl: null as string | null,
@@ -223,6 +226,8 @@ export const useBookStore = create<BookState>((set, get) => ({
     return getBookOption(state.selectedPageCount, state.selectedBinding);
   },
   
+  setReworkedPageNumbers: (pageNumbers) => set({ reworkedPageNumbers: pageNumbers }),
+  
   enterReworkMode: () => {
     const state = get();
     set({
@@ -237,15 +242,23 @@ export const useBookStore = create<BookState>((set, get) => ({
   
   completeRework: () =>
     set((state) => {
-      // Preserve important state through rework
+      // Add newly reworked pages to the cumulative list
+      const newReworkedPages = [...new Set([...state.reworkedPageNumbers, ...state.selectedPagesForRework])];
+      
+      // Calculate if we've reached the 50% limit
+      const totalPages = state.selectedPageCount;
+      const maxAllowedReworks = Math.floor(totalPages * 0.5);
+      const limitReached = newReworkedPages.length >= maxAllowedReworks;
+      
       return {
         isReworkMode: false,
         selectedPagesForRework: [],
         originalGenerationParams: null,
-        maxReworksReached: true,
+        reworkedPageNumbers: newReworkedPages,
+        maxReworksReached: limitReached,
         currentStep: 'complete',
-        generatedBookId: state.generatedBookId, // Preserve book ID
-        coverImageUrl: state.coverImageUrl, // Preserve cover
+        generatedBookId: state.generatedBookId,
+        coverImageUrl: state.coverImageUrl,
         selectedPageCount: state.selectedPageCount,
         selectedBinding: state.selectedBinding,
         selectedPrice: state.selectedPrice,
