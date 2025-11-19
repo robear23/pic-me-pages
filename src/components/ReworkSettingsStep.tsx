@@ -13,7 +13,6 @@ export const ReworkSettingsStep = () => {
     generatedBookId,
     reworkedPageNumbers,
     selectedPageCount,
-    toggleConsistentCharacters,
     setStep,
   } = useBookStore();
   
@@ -79,21 +78,7 @@ export const ReworkSettingsStep = () => {
             </div>
           </div>
 
-          <div className="mb-8 p-6 rounded-xl bg-input/20 border border-glass-border">
-            <div className="flex items-center justify-between">
-              <div className="flex-1">
-                <h3 className="text-lg font-bold mb-1">Consistent Character Appearance</h3>
-                <p className="text-sm text-muted-foreground">
-                  Keep characters looking the same across all pages
-                </p>
-              </div>
-              <Switch
-                checked={consistentCharacters}
-                onCheckedChange={toggleConsistentCharacters}
-                className="ml-4"
-              />
-            </div>
-          </div>
+          {/* Consistent characters is now always enabled */}
 
           <Button
             onClick={() => setStep('generating')}
