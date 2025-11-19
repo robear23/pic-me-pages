@@ -7,7 +7,10 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  console.log(`[${new Date().toISOString()}] generate-prompts started - Method: ${req.method}`);
+  
   if (req.method === 'OPTIONS') {
+    console.log('CORS preflight request');
     return new Response(null, { headers: corsHeaders });
   }
 
