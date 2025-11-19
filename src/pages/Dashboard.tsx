@@ -13,6 +13,8 @@ import { OrderPhysicalBookDialog } from '@/components/OrderPhysicalBookDialog';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+import { AlertCircle } from 'lucide-react';
 import { repairBookPdf, toDataUrl } from '@/lib/repairPdf';
 import { jsPDF } from 'jspdf';
 
@@ -79,7 +81,7 @@ const Dashboard = () => {
     try {
       const { data, error } = await supabase
         .from('books')
-        .select('id, character_name, interests, pdf_url, cover_url, cover_image_url, status, created_at, user_id')
+        .select('id, character_name, interests, pdf_url, cover_url, cover_image_url, status, created_at, user_id, pages')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -341,7 +343,15 @@ const Dashboard = () => {
       e.stopPropagation();
     }
 
-    if (!confirm('Are you sure you want to delete this book? This action cannot be undone.')) {
+    const book = books.find(b => b.id === bookId);
+    const pageCount = book?.pages?.length || 0;
+    const isIncomplete = pageCount > 0 && pageCount < 12;
+    
+    const message = isIncomplete 
+      ? `This book is incomplete (${pageCount}/12 pages). Are you sure you want to delete it?`
+      : 'Are you sure you want to delete this book? This action cannot be undone.';
+
+    if (!confirm(message)) {
       return;
     }
 
@@ -368,6 +378,20 @@ const Dashboard = () => {
 
   const getBookCoverImage = (book: Book) => {
     return book.cover_image_url || '/placeholder.svg';
+  };
+
+  const findDuplicateBooks = () => {
+    const duplicates: { [key: string]: Book[] } = {};
+    
+    books.forEach(book => {
+      const key = `${book.character_name}-${book.interests.sort().join(',')}`;
+      if (!duplicates[key]) {
+        duplicates[key] = [];
+      }
+      duplicates[key].push(book);
+    });
+    
+    return Object.values(duplicates).filter(group => group.length > 1);
   };
 
   return (
@@ -402,6 +426,20 @@ const Dashboard = () => {
             Create New Book
           </Button>
         </div>
+
+        {!loading && books.length > 0 && (() => {
+          const duplicateGroups = findDuplicateBooks();
+          return duplicateGroups.length > 0 ? (
+            <Alert className="mb-6 bg-amber-50 dark:bg-amber-950/50 border-amber-500/50">
+              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+              <AlertTitle className="text-amber-900 dark:text-amber-200">Duplicate Books Detected</AlertTitle>
+              <AlertDescription className="text-amber-800 dark:text-amber-300">
+                You have {duplicateGroups.length} set(s) of books with identical settings. 
+                Consider keeping only the complete versions.
+              </AlertDescription>
+            </Alert>
+          ) : null;
+        })()}
 
         {loading ? (
           <div className="text-center py-12">
@@ -468,12 +506,24 @@ const Dashboard = () => {
                       />
                     </div>
                     <div className="p-4">
-                      <h3 className="text-lg font-semibold text-foreground mb-1">
-                        {book.character_name}'s Coloring Book
-                      </h3>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-lg font-semibold text-foreground">
+                          {book.character_name}'s Coloring Book
+                        </h3>
+                        {book.pages && (
+                          <Badge variant={book.pages.length === 12 ? "default" : "destructive"}>
+                            {book.pages.length}/12
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-sm text-muted-foreground mb-3">
                         {new Date(book.created_at).toLocaleDateString()}
                       </p>
+                      {book.pages && book.pages.length < 12 && (
+                        <div className="mb-2 p-2 bg-amber-100 dark:bg-amber-950/50 border border-amber-500/50 rounded text-xs text-amber-700 dark:text-amber-300">
+                          ⚠️ This book has missing pages
+                        </div>
+                      )}
                       <div className="flex flex-wrap gap-1 mb-4">
                         {book.interests.slice(0, 3).map((interest, i) => (
                           <span
