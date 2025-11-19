@@ -2,9 +2,15 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useBookStore } from '@/store/bookStore';
 import { Sparkles } from 'lucide-react';
+import { useEffect } from 'react';
 
 export const HeroSection = () => {
   const setStep = useBookStore((state) => state.setStep);
+
+  // Reset store when hero section loads to ensure clean state
+  useEffect(() => {
+    useBookStore.getState().reset();
+  }, []);
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden">
