@@ -62,7 +62,7 @@ export async function convertToGrayscale(imageUrl: string): Promise<string> {
   return canvas.toDataURL('image/png');
 }
 
-// Ensure image is exactly 300 DPI by resizing if necessary while preserving aspect ratio
+// Ensure image fills the entire content area at 300 DPI (crops if needed to prevent letterboxing)
 export async function ensureImageDPI(
   imageUrl: string,
   targetWidthInches: number,
@@ -74,37 +74,48 @@ export async function ensureImageDPI(
     img.src = imageUrl;
   });
   
-  // Calculate original aspect ratio
-  const originalAspectRatio = img.naturalWidth / img.naturalHeight;
-  const targetAspectRatio = targetWidthInches / targetHeightInches;
+  // Target dimensions at 300 DPI (FILL entire content area)
+  const targetWidthPx = Math.round(targetWidthInches * LULU_CONFIG.IMAGE_DPI);
+  const targetHeightPx = Math.round(targetHeightInches * LULU_CONFIG.IMAGE_DPI);
   
-  // Calculate dimensions that fit within target area while preserving aspect ratio
-  let finalWidth, finalHeight;
+  // Calculate aspect ratios
+  const originalAspectRatio = img.naturalWidth / img.naturalHeight;
+  const targetAspectRatio = targetWidthPx / targetHeightPx;
+  
+  // Calculate dimensions to FILL the area (may crop, not letterbox)
+  let sourceWidth, sourceHeight, sourceX, sourceY;
   
   if (originalAspectRatio > targetAspectRatio) {
-    // Image is wider than target - fit to width
-    finalWidth = targetWidthInches * LULU_CONFIG.IMAGE_DPI;
-    finalHeight = finalWidth / originalAspectRatio;
+    // Image is wider - crop sides, fill height
+    sourceHeight = img.naturalHeight;
+    sourceWidth = sourceHeight * targetAspectRatio;
+    sourceX = (img.naturalWidth - sourceWidth) / 2; // Center crop
+    sourceY = 0;
   } else {
-    // Image is taller than target - fit to height
-    finalHeight = targetHeightInches * LULU_CONFIG.IMAGE_DPI;
-    finalWidth = finalHeight * originalAspectRatio;
+    // Image is taller - crop top/bottom, fill width
+    sourceWidth = img.naturalWidth;
+    sourceHeight = sourceWidth / targetAspectRatio;
+    sourceX = 0;
+    sourceY = (img.naturalHeight - sourceHeight) / 2; // Center crop
   }
   
-  // Only resize if necessary (with 1px tolerance)
-  if (Math.abs(img.naturalWidth - finalWidth) < 2 && 
-      Math.abs(img.naturalHeight - finalHeight) < 2) {
-    return imageUrl;
-  }
-  
+  // Create canvas at exact target dimensions
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(finalWidth);
-  canvas.height = Math.round(finalHeight);
+  canvas.width = targetWidthPx;
+  canvas.height = targetHeightPx;
   
   const ctx = canvas.getContext('2d')!;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  
+  // Draw the cropped/scaled image to fill entire canvas
+  ctx.drawImage(
+    img,
+    sourceX, sourceY, sourceWidth, sourceHeight,  // Source (crop if needed)
+    0, 0, targetWidthPx, targetHeightPx           // Destination (fill)
+  );
+  
+  console.log(`[ensureImageDPI] Scaled ${img.naturalWidth}x${img.naturalHeight} → ${targetWidthPx}x${targetHeightPx} (${targetWidthInches}" x ${targetHeightInches}" @ 300 DPI)`);
   
   return canvas.toDataURL('image/png');
 }
