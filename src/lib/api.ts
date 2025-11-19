@@ -38,7 +38,7 @@ const callEdgeFunction = async (functionName: string, body: any) => {
       throw new Error('Rate limit exceeded. Please wait and try again.');
     }
     if (response.status === 402) {
-      throw new Error('AI credits depleted. Please contact support.');
+      throw new Error('AI credits depleted. Please add credits in Settings → Workspace → Usage to continue.');
     }
     
     const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
