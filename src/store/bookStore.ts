@@ -239,15 +239,21 @@ export const useBookStore = create<BookState>((set, get) => ({
   
   enterReworkMode: () => {
     const state = get();
+    console.log('Entering rework mode');
     set({
       isReworkMode: true,
-    originalGenerationParams: {
-      characters: state.characters,
-      consistentCharacters: state.consistentCharacters,
-      interests: state.selectedInterests,
-      complexityLevel: state.complexityLevel,
-      customPrompt: state.customPrompt,
-    },
+      selectedPagesForRework: [],
+      currentStep: 'rework-settings' as BookStep,
+      generationProgress: 0,  // Reset progress
+      generationStatus: '',   // Reset status
+      apiError: null,         // Clear errors
+      originalGenerationParams: {
+        characters: state.characters,
+        consistentCharacters: state.consistentCharacters,
+        interests: state.selectedInterests,
+        complexityLevel: state.complexityLevel,
+        customPrompt: state.customPrompt,
+      },
     });
   },
   
