@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAdmin } from '@/hooks/useAdmin';
+import { useBookStore } from '@/store/bookStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap } from 'lucide-react';
@@ -389,7 +390,14 @@ const Dashboard = () => {
       {/* Content */}
       <div className="container mx-auto px-6 py-12">
         <div className="mb-8">
-          <Button size="lg" onClick={() => navigate('/app')} className="gap-2">
+          <Button 
+            size="lg" 
+            onClick={() => {
+              useBookStore.getState().reset();
+              navigate('/app');
+            }} 
+            className="gap-2"
+          >
             <Plus className="w-5 h-5" />
             Create New Book
           </Button>
@@ -423,7 +431,12 @@ const Dashboard = () => {
             <p className="text-muted-foreground mb-6">
               Create your first personalized coloring book
             </p>
-            <Button onClick={() => navigate('/app')}>
+            <Button 
+              onClick={() => {
+                useBookStore.getState().reset();
+                navigate('/app');
+              }}
+            >
               <Plus className="w-4 h-4 mr-2" />
               Create Your First Book
             </Button>

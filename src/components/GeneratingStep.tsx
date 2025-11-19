@@ -215,7 +215,9 @@ export const GeneratingStep = () => {
         let coverImageUrl: string | null = null;
         let backCoverImageUrl: string | null = null;
         
-        if (!isReworkMode) {
+        // Generate covers if: not in rework mode OR covers don't exist yet (safety check)
+        const { coverImageUrl: existingFrontCover, backCoverImageUrl: existingBackCover } = useBookStore.getState();
+        if (!isReworkMode || !existingFrontCover || !existingBackCover) {
           try {
             console.log('Generating front and back covers...');
             
