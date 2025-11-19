@@ -135,6 +135,53 @@ const Dashboard = () => {
     }
   };
 
+  const findDuplicateBooks = () => {
+    const groups: Record<string, Book[]> = {};
+    
+    books.forEach(book => {
+      const key = `${book.character_name}-${book.interests.join(',')}-${book.status}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(book);
+    });
+
+    return Object.values(groups).filter(group => group.length > 1);
+  };
+
+  const getIncompleteBooks = () => {
+    return books.filter(book => 
+      book.status === 'processing' || 
+      book.status === 'failed' || 
+      !book.pdf_url || 
+      !book.cover_image_url
+    );
+  };
+
+  const handleCleanupIncomplete = async () => {
+    const incompleteBooks = getIncompleteBooks();
+    if (incompleteBooks.length === 0) return;
+
+    const confirmed = window.confirm(
+      `Delete ${incompleteBooks.length} incomplete book(s)? These books are missing PDFs or cover images and cannot be used.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabase
+        .from('books')
+        .delete()
+        .in('id', incompleteBooks.map(b => b.id));
+
+      if (error) throw error;
+
+      toast.success(`Deleted ${incompleteBooks.length} incomplete book(s)`);
+      loadBooks();
+    } catch (error) {
+      console.error('Error deleting incomplete books:', error);
+      toast.error('Failed to delete incomplete books');
+    }
+  };
+
   const loadBookPages = async (bookId: string) => {
     setLoadingPages(true);
     try {
@@ -380,20 +427,6 @@ const Dashboard = () => {
     return book.cover_image_url || '/placeholder.svg';
   };
 
-  const findDuplicateBooks = () => {
-    const duplicates: { [key: string]: Book[] } = {};
-    
-    books.forEach(book => {
-      const key = `${book.character_name}-${book.interests.sort().join(',')}`;
-      if (!duplicates[key]) {
-        duplicates[key] = [];
-      }
-      duplicates[key].push(book);
-    });
-    
-    return Object.values(duplicates).filter(group => group.length > 1);
-  };
-
   return (
     <div className="min-h-screen bg-background relative overflow-hidden">
       {/* Background Gradient */}
@@ -413,7 +446,7 @@ const Dashboard = () => {
 
       {/* Content */}
       <div className="container mx-auto px-6 py-12">
-        <div className="mb-8">
+        <div className="mb-8 flex items-center gap-4">
           <Button 
             size="lg" 
             onClick={() => {
@@ -425,20 +458,48 @@ const Dashboard = () => {
             <Plus className="w-5 h-5" />
             Create New Book
           </Button>
+          
+          {!loading && getIncompleteBooks().length > 0 && (
+            <Button
+              variant="outline"
+              onClick={handleCleanupIncomplete}
+              className="gap-2 border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50"
+            >
+              <Trash2 className="w-4 h-4" />
+              Clean Up {getIncompleteBooks().length} Incomplete
+            </Button>
+          )}
         </div>
 
         {!loading && books.length > 0 && (() => {
+          const incompleteBooks = getIncompleteBooks();
           const duplicateGroups = findDuplicateBooks();
-          return duplicateGroups.length > 0 ? (
-            <Alert className="mb-6 bg-amber-50 dark:bg-amber-950/50 border-amber-500/50">
-              <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-              <AlertTitle className="text-amber-900 dark:text-amber-200">Duplicate Books Detected</AlertTitle>
-              <AlertDescription className="text-amber-800 dark:text-amber-300">
-                You have {duplicateGroups.length} set(s) of books with identical settings. 
-                Consider keeping only the complete versions.
-              </AlertDescription>
-            </Alert>
-          ) : null;
+          
+          return (
+            <>
+              {incompleteBooks.length > 0 && (
+                <Alert className="mb-6 bg-amber-50 dark:bg-amber-950/50 border-amber-500/50">
+                  <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <AlertTitle className="text-amber-900 dark:text-amber-200">Incomplete Books Found</AlertTitle>
+                  <AlertDescription className="text-amber-800 dark:text-amber-300">
+                    You have {incompleteBooks.length} incomplete book(s) that failed during generation or are missing required files. 
+                    These cannot be downloaded or ordered. Use "Clean Up" to remove them.
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              {duplicateGroups.length > 0 && (
+                <Alert className="mb-6 bg-amber-50 dark:bg-amber-950/50 border-amber-500/50">
+                  <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <AlertTitle className="text-amber-900 dark:text-amber-200">Duplicate Books Detected</AlertTitle>
+                  <AlertDescription className="text-amber-800 dark:text-amber-300">
+                    You have {duplicateGroups.length} set(s) of books with identical settings. 
+                    Consider keeping only the complete versions.
+                  </AlertDescription>
+                </Alert>
+              )}
+            </>
+          );
         })()}
 
         {loading ? (
@@ -510,11 +571,23 @@ const Dashboard = () => {
                         <h3 className="text-lg font-semibold text-foreground">
                           {book.character_name}'s Coloring Book
                         </h3>
-                        {book.pages && (
-                          <Badge variant={book.pages.length === 12 ? "default" : "destructive"}>
-                            {book.pages.length}/12
+                        <div className="flex gap-2">
+                          {book.pages && (
+                            <Badge variant={book.pages.length === 12 ? "default" : "destructive"}>
+                              {book.pages.length}/12
+                            </Badge>
+                          )}
+                          <Badge 
+                            variant={
+                              book.status === 'completed' ? 'default' : 
+                              book.status === 'processing' ? 'secondary' : 
+                              'destructive'
+                            } 
+                            className="text-xs"
+                          >
+                            {book.status}
                           </Badge>
-                        )}
+                        </div>
                       </div>
                       <p className="text-sm text-muted-foreground mb-3">
                         {new Date(book.created_at).toLocaleDateString()}
