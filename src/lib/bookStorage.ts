@@ -14,6 +14,7 @@ interface SaveBookParams {
   selectedBinding?: string;
   selectedPrice?: number;
   selectedPodPackageId?: string;
+  reworkedPageNumbers?: number[];
   bookId?: string | null; // Optional: if provided, update existing book instead of creating new
 }
 
@@ -32,6 +33,7 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       selectedBinding,
       selectedPrice,
       selectedPodPackageId,
+      reworkedPageNumbers,
       bookId: existingBookId,
     } = params;
     
@@ -147,17 +149,24 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
     if (isUpdate && existingBookId) {
       // Update existing book
       console.log('Updating existing book:', existingBookId);
+      const updateData: any = {
+        pages: generatedPages.map(page => ({
+          pageNumber: page.pageNumber,
+          imageUrl: page.imageUrl || '',
+          prompt: page.prompt,
+        })),
+        photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
+        updated_at: new Date().toISOString(),
+      };
+      
+      // Add reworked page numbers if provided
+      if (reworkedPageNumbers !== undefined) {
+        updateData.reworked_page_numbers = reworkedPageNumbers;
+      }
+      
       const { error: bookUpdateError } = await supabase
         .from('books')
-        .update({
-          pages: generatedPages.map(page => ({
-            pageNumber: page.pageNumber,
-            imageUrl: page.imageUrl || '',
-            prompt: page.prompt,
-          })),
-          photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq('id', existingBookId);
 
       if (bookUpdateError) {
@@ -189,6 +198,7 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
           selected_binding_type: selectedBinding,
           selected_price: selectedPrice,
           selected_pod_package_id: selectedPodPackageId,
+          reworked_page_numbers: reworkedPageNumbers || [],
         })
         .select()
         .single();

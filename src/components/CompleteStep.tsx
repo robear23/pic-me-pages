@@ -9,26 +9,33 @@ import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { OrderPhysicalBookDialog } from './OrderPhysicalBookDialog';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from '@/hooks/use-toast';
 
 export const CompleteStep = () => {
   const { 
     characters, 
     generatedPages, 
     selectedPagesForRework, 
-    maxReworksReached, 
+    maxReworksReached,
+    reworkedPageNumbers,
+    selectedPageCount,
     togglePageForRework, 
     enterReworkMode, 
     setStep, 
     reset, 
     generatedBookId, 
     isReworkMode,
-    paymentBypassed 
+    paymentBypassed,
+    setGeneratedPages,
+    setReworkedPageNumbers
   } = useBookStore();
   const [selectedImage, setSelectedImage] = useState<number | null>(null);
   const [selectionMode, setSelectionMode] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { toast } = useToast();
   
   const characterNames = characters.map(c => c.name).filter(Boolean).join(' and ');
 
@@ -45,14 +52,70 @@ export const CompleteStep = () => {
   
   const pages = hasRealPages ? pagesToShow : mockPages;
   const failedCount = (generatedPages || []).length - pagesToShow.length;
-  const maxSelectable = Math.floor(pages.length * 0.5);
+  
+  // Calculate max reworks allowed (50% of total pages)
+  const maxAllowedReworks = Math.floor(selectedPageCount * 0.5);
+  // Calculate remaining reworks (subtract already reworked pages)
+  const remainingReworks = maxAllowedReworks - reworkedPageNumbers.length;
+  // Max selectable in current session is the minimum of remaining reworks and 50% of current pages
+  const maxSelectable = Math.min(remainingReworks, Math.floor(pages.length * 0.5));
 
   const handleStartRework = () => {
+    // Check if we've reached the limit before entering rework mode
+    const maxAllowedReworks = Math.floor(selectedPageCount * 0.5);
+    if (reworkedPageNumbers.length >= maxAllowedReworks) {
+      toast({
+        title: 'Rework Limit Reached',
+        description: `You've already reworked ${reworkedPageNumbers.length} of ${maxAllowedReworks} allowed pages (50% limit).`,
+        variant: 'destructive',
+      });
+      return;
+    }
+    
     enterReworkMode();
     setStep('rework-settings');
   };
 
   useEffect(() => {
+    // Load book data from database if we have a book ID
+    const loadBookData = async () => {
+      if (generatedBookId && user) {
+        try {
+          const { data: bookData, error } = await supabase
+            .from('books')
+            .select('pages, reworked_page_numbers')
+            .eq('id', generatedBookId)
+            .single();
+          
+          if (error) {
+            console.error('Error loading book data:', error);
+            return;
+          }
+          
+          if (bookData) {
+            // Update pages if we got fresh data
+            if (bookData.pages) {
+              const pages = (bookData.pages as any[]).map(p => ({
+                pageNumber: p.pageNumber,
+                imageUrl: p.imageUrl,
+                prompt: p.prompt
+              }));
+              setGeneratedPages(pages);
+            }
+            
+            // Update reworked page numbers and recalculate limit
+            if (bookData.reworked_page_numbers) {
+              setReworkedPageNumbers(bookData.reworked_page_numbers);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading book:', error);
+        }
+      }
+    };
+    
+    loadBookData();
+    
     // Trigger confetti
     confetti({
       particleCount: 100,
@@ -66,9 +129,11 @@ export const CompleteStep = () => {
       totalPages: generatedPages?.length || 0,
       pagesWithImages: pagesToShow.length,
       hasRealPages,
-      sampleImagePrefix: pagesToShow[0]?.imageUrl?.substring(0, 50)
+      sampleImagePrefix: pagesToShow[0]?.imageUrl?.substring(0, 50),
+      reworkedPageNumbers,
+      maxReworksReached
     });
-  }, []);
+  }, [generatedBookId, user]);
 
   const handleDownload = async () => {
     setIsDownloading(true);
@@ -269,11 +334,23 @@ export const CompleteStep = () => {
             </motion.div>
           )}
           
+          {!selectionMode && !maxReworksReached && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center mb-6"
+            >
+              <p className="text-sm text-muted-foreground">
+                {reworkedPageNumbers.length} of {maxAllowedReworks} pages reworked • {remainingReworks} reworks remaining
+              </p>
+            </motion.div>
+          )}
+          
           {maxReworksReached && (
             <Alert className="mb-8 border-secondary/30 bg-secondary/5">
               <AlertCircle className="h-4 w-4 text-secondary" />
               <AlertDescription>
-                Rework completed! No further changes allowed. Download your final book.
+                You've used all {maxAllowedReworks} available reworks (50% of {selectedPageCount} pages). Download your final book or order a physical copy.
               </AlertDescription>
             </Alert>
           )}

@@ -11,9 +11,14 @@ export const ReworkSettingsStep = () => {
     selectedPagesForRework,
     originalGenerationParams,
     generatedBookId,
+    reworkedPageNumbers,
+    selectedPageCount,
     toggleConsistentCharacters,
     setStep,
   } = useBookStore();
+  
+  const maxAllowedReworks = Math.floor(selectedPageCount * 0.5);
+  const remainingAfterThis = maxAllowedReworks - (reworkedPageNumbers.length + selectedPagesForRework.length);
 
   return (
     <motion.div
@@ -38,7 +43,11 @@ export const ReworkSettingsStep = () => {
           </div>
           
           <p className="text-lg text-muted-foreground text-center mb-8">
-            Regenerating pages: {selectedPagesForRework.sort((a, b) => a - b).join(', ')}
+            Regenerating {selectedPagesForRework.length} page{selectedPagesForRework.length !== 1 ? 's' : ''}: {selectedPagesForRework.sort((a, b) => a - b).join(', ')}
+            <br />
+            <span className="text-sm">
+              {reworkedPageNumbers.length} already reworked • {remainingAfterThis} reworks remaining after this
+            </span>
           </p>
 
           <Alert className="mb-8 border-amber-500/30 bg-amber-500/5">
