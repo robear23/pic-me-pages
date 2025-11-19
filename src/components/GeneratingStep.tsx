@@ -16,6 +16,7 @@ const GENERATION_STEPS = [
   'Understanding interests',
   'Creating story prompts',
   'Generating coloring pages',
+  'Retrying failed pages (if needed)',
   'Creating book cover',
   'Creating print-ready PDFs',
   'Finalizing your book',
@@ -204,10 +205,88 @@ export const GeneratingStep = () => {
           finalPages = allPages;
         }
         
+        setGenerationProgress(85);
+        
+        // Check for failed pages and retry them automatically
+        const failedPages = finalPages.filter(p => !p.imageUrl);
+        
+        if (failedPages.length > 0) {
+          console.log(`Found ${failedPages.length} failed pages, retrying...`);
+          
+          const MAX_RETRIES = 2;
+          let retryAttempt = 0;
+          let stillFailedPages = failedPages;
+          
+          while (stillFailedPages.length > 0 && retryAttempt < MAX_RETRIES) {
+            retryAttempt++;
+            setGenerationStatus(`${GENERATION_STEPS[4]} (attempt ${retryAttempt}/${MAX_RETRIES})`);
+            
+            // Extract failed prompts to retry
+            const failedPrompts = generatedPrompts.filter(prompt => 
+              stillFailedPages.some(fp => fp.pageNumber === prompt.pageNumber)
+            );
+            
+            console.log(`Retry attempt ${retryAttempt}: Regenerating pages ${failedPrompts.map(p => p.pageNumber).join(', ')}`);
+            
+            try {
+              const retryStartTime = Date.now();
+              
+              // Retry failed pages without batching (all at once)
+              const { pages: retriedPages } = await generateImages(
+                failedPrompts,
+                charactersWithPhotos,
+                consistentCharacters
+              );
+              
+              const retryDuration = ((Date.now() - retryStartTime) / 1000).toFixed(1);
+              console.log(`Retry took ${retryDuration}s`);
+              
+              // Merge retried pages back into finalPages
+              finalPages = finalPages.map(page => {
+                const retried = retriedPages.find(rp => rp.pageNumber === page.pageNumber);
+                return retried?.imageUrl ? retried : page; // Only replace if retry succeeded
+              });
+              
+              // Check which pages still failed
+              stillFailedPages = finalPages.filter(p => !p.imageUrl);
+              
+              if (stillFailedPages.length === 0) {
+                console.log(`✓ All pages generated successfully after ${retryAttempt} retry attempts`);
+                break;
+              } else {
+                console.log(`${stillFailedPages.length} pages still failed: ${stillFailedPages.map(p => p.pageNumber).join(', ')}`);
+              }
+              
+              // Wait before next retry (exponential backoff)
+              if (stillFailedPages.length > 0 && retryAttempt < MAX_RETRIES) {
+                const delayMs = 2000 * Math.pow(2, retryAttempt - 1); // 2s, 4s
+                console.log(`Waiting ${delayMs}ms before next retry...`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+              }
+              
+            } catch (retryError: any) {
+              console.error(`Retry attempt ${retryAttempt} failed:`, retryError);
+              // Continue to next retry attempt or fail
+            }
+          }
+          
+          // After all retries, check if we still have failures
+          const finalFailedCount = finalPages.filter(p => !p.imageUrl).length;
+          
+          if (finalFailedCount > 0) {
+            const failedPageNumbers = finalPages.filter(p => !p.imageUrl).map(p => p.pageNumber).join(', ');
+            throw new Error(
+              `Failed to generate ${finalFailedCount} page(s) after ${MAX_RETRIES} retry attempts. ` +
+              `Pages: ${failedPageNumbers}. ` +
+              `This might be due to temporary AI model issues. Please try again.`
+            );
+          }
+        }
+        
         setGenerationProgress(90);
         
         const successCount = finalPages.filter(p => p.imageUrl).length;
-        console.log(`Generated ${successCount}/${finalPages.length} images`);
+        console.log(`✓ Generated ${successCount}/${finalPages.length} images`);
         setGeneratedPages(finalPages);
 
         // Step 5: Creating book cover (90-92%)
