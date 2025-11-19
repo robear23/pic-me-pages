@@ -97,12 +97,19 @@ export const generateImages = async (
   batchIndex?: number,
   batchSize?: number
 ): Promise<{ pages: GeneratedPage[]; successCount: number; totalCount: number; batchInfo?: any }> => {
+  // Determine if this is a rework call (no batch parameters)
+  const isReworkMode = batchIndex === undefined && batchSize === undefined && prompts.length < 12;
+  
+  console.log(`[API] generateImages called with ${prompts.length} prompts. Page numbers: [${prompts.map(p => p.pageNumber).join(', ')}]`);
+  console.log(`[API] Rework mode: ${isReworkMode}, batchIndex: ${batchIndex}, batchSize: ${batchSize}`);
+  
   return callEdgeFunction('generate-images', { 
     prompts, 
     characters,
     consistentCharacters,
     batchIndex,
-    batchSize
+    batchSize,
+    isReworkMode
   });
 };
 

@@ -97,9 +97,13 @@ async function convertToPureBlackAndWhite(base64Image: string, threshold: number
     // Load image using imagescript
     const image = await Image.decode(binaryData);
     
-    // Validate image dimensions
+    // Validate image dimensions - ensure they're positive and reasonable
+    if (!image.width || !image.height || image.width < 1 || image.height < 1) {
+      throw new Error(`Invalid image dimensions: ${image.width}x${image.height} (must be at least 1x1)`);
+    }
+    
     if (image.width < 10 || image.height < 10) {
-      throw new Error(`Invalid image dimensions: ${image.width}x${image.height} (too small)`);
+      console.warn(`Warning: Very small image dimensions: ${image.width}x${image.height}`);
     }
     
     console.log(`Processing image: ${image.width}x${image.height} pixels`);
@@ -107,26 +111,39 @@ async function convertToPureBlackAndWhite(base64Image: string, threshold: number
     let blackPixels = 0;
     let whitePixels = 0;
     
-    // Process each pixel
+    // Process each pixel with boundary checking
     for (let y = 0; y < image.height; y++) {
       for (let x = 0; x < image.width; x++) {
-        const color = image.getPixelAt(x, y);
+        // Double-check boundaries before accessing pixel
+        if (x < 0 || x >= image.width || y < 0 || y >= image.height) {
+          console.error(`Boundary error: trying to access pixel (${x}, ${y}) in ${image.width}x${image.height} image`);
+          continue;
+        }
         
-        // Extract RGB values (imagescript uses RGBA format)
-        const r = (color >> 24) & 0xFF;
-        const g = (color >> 16) & 0xFF;
-        const b = (color >> 8) & 0xFF;
+        try {
+          const color = image.getPixelAt(x, y);
         
-        // Calculate brightness (simple average method)
-        const brightness = (r + g + b) / 3;
-        
-        // Apply threshold: if brightness > threshold → white, else → black
-        if (brightness > threshold) {
-          image.setPixelAt(x, y, 0xFFFFFFFF); // Pure white with full alpha
+          // Extract RGB values (imagescript uses RGBA format)
+          const r = (color >> 24) & 0xFF;
+          const g = (color >> 16) & 0xFF;
+          const b = (color >> 8) & 0xFF;
+          
+          // Calculate brightness (simple average method)
+          const brightness = (r + g + b) / 3;
+          
+          // Apply threshold: if brightness > threshold → white, else → black
+          if (brightness > threshold) {
+            image.setPixelAt(x, y, 0xFFFFFFFF); // Pure white with full alpha
+            whitePixels++;
+          } else {
+            image.setPixelAt(x, y, 0x000000FF); // Pure black with full alpha
+            blackPixels++;
+          }
+        } catch (pixelError) {
+          console.error(`Error processing pixel at (${x}, ${y}):`, pixelError);
+          // Set to white on error to avoid corrupt data
+          image.setPixelAt(x, y, 0xFFFFFFFF);
           whitePixels++;
-        } else {
-          image.setPixelAt(x, y, 0x000000FF); // Pure black with full alpha
-          blackPixels++;
         }
       }
     }
@@ -348,16 +365,11 @@ async function convertToLineArt(
         } catch (postProcessError) {
           console.error(`Post-processing failed for page ${pageIndex + 1}:`, postProcessError);
           
-          // If this was due to corrupt image data, retry the entire line art generation
-          if (postProcessError instanceof Error && postProcessError.message.includes('dimension')) {
-            console.log(`Image appears corrupt, will retry line art generation on next attempt`);
-            throw postProcessError; // This will trigger retry loop
-          }
-          
-          // Otherwise, use line art without post-processing
-          // This is still better than a realistic photo!
-          console.log(`Falling back to original image due to post-processing error`);
-          return lineArtImage;
+          // CRITICAL: Never return a realistic photo to the user
+          // If post-processing fails, we must retry the entire generation
+          console.error(`Post-processing failed - CANNOT return realistic photo. Will retry.`);
+          const errorMessage = postProcessError instanceof Error ? postProcessError.message : String(postProcessError);
+          throw new Error(`Line art post-processing failed: ${errorMessage}. Retrying generation.`);
         }
         
       } catch (error) {
@@ -388,7 +400,7 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is required');
     }
 
-    const { prompts, characters, consistentCharacters, batchIndex, batchSize = 3 } = await req.json();
+    const { prompts, characters, consistentCharacters, batchIndex, batchSize = 3, isReworkMode = false } = await req.json();
 
     if (!prompts || !Array.isArray(prompts)) {
       throw new Error('Invalid prompts array');
@@ -401,12 +413,19 @@ serve(async (req) => {
       throw new Error('No valid prompts provided');
     }
 
-    // Calculate batch range if batchIndex is provided
+    // Log received prompts for debugging
+    console.log(`Received ${prompts.length} prompts, ${validPrompts.length} valid. Page numbers: [${validPrompts.map(p => p.pageNumber).join(', ')}]`);
+    console.log(`Rework mode: ${isReworkMode}, batchIndex: ${batchIndex}, batchSize: ${batchSize}`);
+
+    // Calculate batch range if batchIndex is provided AND not in rework mode
+    // In rework mode, prompts are already filtered to only selected pages
     let batchInfo = null;
     
-    if (typeof batchIndex === 'number') {
+    if (typeof batchIndex === 'number' && !isReworkMode) {
       const startIdx = batchIndex * batchSize;
       const endIdx = Math.min(startIdx + batchSize, validPrompts.length);
+      
+      console.log(`Batch slicing: startIdx=${startIdx}, endIdx=${endIdx}, array length=${validPrompts.length}`);
       validPrompts = validPrompts.slice(startIdx, endIdx);
       
       const totalBatches = Math.ceil(prompts.filter((p: any) => p && p.prompt && p.pageNumber).length / batchSize);
@@ -418,9 +437,11 @@ serve(async (req) => {
       };
       
       console.log(`Processing batch ${batchIndex + 1}/${totalBatches} (pages ${startIdx + 1}-${endIdx} of original prompt list)`);
+    } else if (isReworkMode) {
+      console.log(`Rework mode: processing ${validPrompts.length} selected pages directly [${validPrompts.map(p => p.pageNumber).join(', ')}]`);
     }
 
-    console.log(`Processing ${validPrompts.length} pages in batches of 1`);
+    console.log(`Final: Processing ${validPrompts.length} pages. Page numbers: [${validPrompts.map(p => p.pageNumber).join(', ')}]`);
 
     const BATCH_SIZE = 1; // Sequential processing to avoid worker limits
     const pages: any[] = [];

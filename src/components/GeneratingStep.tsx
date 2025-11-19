@@ -144,39 +144,46 @@ export const GeneratingStep = () => {
         // If in rework mode, only regenerate selected pages
         let finalPages;
         if (isReworkMode && selectedPagesForRework.length > 0) {
+          // Filter to only the selected pages for rework
           const promptsToRework = generatedPrompts.filter(p => 
             selectedPagesForRework.includes(p.pageNumber)
           );
           
-          // Process rework in batches
-          const BATCH_SIZE = 3;
-          const totalBatches = Math.ceil(promptsToRework.length / BATCH_SIZE);
-          let allReworkedPages: any[] = [];
+          console.log(`REWORK MODE: Regenerating ${promptsToRework.length} pages: [${promptsToRework.map(p => p.pageNumber).join(', ')}]`);
+          console.log(`Selected pages for rework:`, selectedPagesForRework);
           
-          for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-            setGenerationStatus(`${GENERATION_STEPS[3]} (batch ${batchIndex + 1}/${totalBatches})`);
-            console.log(`Processing rework batch ${batchIndex + 1}/${totalBatches}`);
-            
-            const { pages: batchPages } = await generateImages(
-              promptsToRework,
-              charactersWithPhotos,
-              consistentCharacters,
-              batchIndex,
-              BATCH_SIZE
-            );
-            
-            allReworkedPages = [...allReworkedPages, ...batchPages];
-            
-            // Update progress within the 50-90% range
-            const batchProgress = 50 + (40 * (batchIndex + 1) / totalBatches);
-            setGenerationProgress(Math.round(batchProgress));
+          // CRITICAL: In rework mode, send only the filtered prompts WITHOUT batch slicing
+          // The edge function should process ALL prompts in the array since it's already filtered
+          setGenerationStatus(`${GENERATION_STEPS[3]} (${promptsToRework.length} pages)`);
+          
+          const { pages: reworkedPages } = await generateImages(
+            promptsToRework,
+            charactersWithPhotos,
+            consistentCharacters,
+            undefined,  // No batchIndex - process all prompts
+            undefined   // No batchSize - process all prompts
+          );
+          
+          console.log(`Rework complete: received ${reworkedPages.length} pages with page numbers: [${reworkedPages.map(p => p.pageNumber).join(', ')}]`);
+          
+          // Validate we got the correct pages back
+          const receivedPageNumbers = reworkedPages.map(p => p.pageNumber).sort((a, b) => a - b);
+          const expectedPageNumbers = [...selectedPagesForRework].sort((a, b) => a - b);
+          
+          if (JSON.stringify(receivedPageNumbers) !== JSON.stringify(expectedPageNumbers)) {
+            console.error(`Page number mismatch! Expected: [${expectedPageNumbers}], Received: [${receivedPageNumbers}]`);
+            throw new Error(`Rework generated wrong pages. Expected ${expectedPageNumbers.length} pages but got ${receivedPageNumbers.length}.`);
           }
           
-          // Merge with existing pages
+          setGenerationProgress(90);
+          
+          // Merge with existing pages - replace only the reworked ones
           finalPages = generatedPages.map(page => {
-            const reworked = allReworkedPages.find(p => p.pageNumber === page.pageNumber);
+            const reworked = reworkedPages.find(p => p.pageNumber === page.pageNumber);
             return reworked || page;
           });
+          
+          console.log(`Final pages after merge: ${finalPages.length} pages`);
         } else {
           // Process all pages in batches
           const BATCH_SIZE = 3;
