@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useBookStore } from '@/store/bookStore';
-import { RefreshCw, Sparkles } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
@@ -9,7 +9,6 @@ export const ReworkSettingsStep = () => {
   const { 
     consistentCharacters, 
     selectedPagesForRework,
-    originalGenerationParams,
     generatedBookId,
     reworkedPageNumbers,
     selectedPageCount,
@@ -55,30 +54,6 @@ export const ReworkSettingsStep = () => {
               The selected pages will be regenerated and replaced in your current book.
             </AlertDescription>
           </Alert>
-
-          {originalGenerationParams && (
-            <Alert className="mb-8 border-primary/30 bg-primary/5">
-              <AlertDescription>
-                <strong>Original settings:</strong> Photogenic illustrated style
-                {originalGenerationParams.consistentCharacters ? ', with consistent characters' : ''}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <div className="mb-8 p-6 rounded-xl bg-primary/5 border border-primary/20">
-            <div className="flex items-start gap-3">
-              <Sparkles className="w-6 h-6 text-primary mt-1" />
-              <div>
-                <h3 className="text-lg font-bold mb-2">Photogenic Illustrated Style</h3>
-                <p className="text-sm text-muted-foreground">
-                  Your reworked pages will use the same high-quality photogenic illustrated style 
-                  with soft, natural lighting and recognizable characters.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Consistent characters is now always enabled */}
 
           <Button
             onClick={() => setStep('generating')}
