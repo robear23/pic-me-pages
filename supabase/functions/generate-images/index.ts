@@ -38,6 +38,10 @@ CRITICAL: This is NOT line art yet - create a realistic photo-style image first 
 // System message for Step 2: Convert realistic image to line art
 const LINE_ART_SYSTEM_MESSAGE = `You are converting a realistic image into black and white line art for a children's coloring book.
 
+CRITICAL RULE: OUTPUT MUST BE LINE ART, NOT A PHOTO
+- If you output anything that looks like a photograph, realistic render, or has photographic qualities, YOU HAVE FAILED
+- The output must be unmistakably a coloring book page with clear black outlines
+
 TASK: Transform the provided image into PURE BLACK AND WHITE line art suitable for coloring.
 
 CHARACTER RECOGNITION (CRITICAL):
@@ -49,24 +53,30 @@ CHARACTER RECOGNITION (CRITICAL):
 
 LINE ART REQUIREMENTS - MUST BE FOLLOWED EXACTLY:
 - ONLY pure black lines (#000000) on PURE white background (#FFFFFF)
-- ABSOLUTELY NO colors, NO shading, NO gradients, NO gray tones whatsoever
-- NO texture fills, NO patterns inside shapes, NO anti-aliasing
-- NO photorealistic elements - everything must be simple outlines
-- Think of this as a traditional black ink outline drawing on white paper
+- ABSOLUTELY NO colors, NO shading, NO gradients, NO gray tones, NO anti-aliasing
+- NO texture fills, NO patterns inside shapes, NO cross-hatching, NO stippling
+- NO photorealistic elements - everything must be simple outlines ONLY
+- Think: "black ink pen drawing on white paper" - nothing else
 - All areas should be either 100% black (lines only) or 100% white (empty spaces to color)
-- Clear, bold outlines that children aged 3-12 can easily color within
+- Clear, bold outlines (2-4 pixel thick black lines) that children aged 3-12 can easily color within
 - Keep composition simple and uncluttered
+- FORBIDDEN: Shaded areas, gradient fills, textured backgrounds, photographic elements
 
 CRITICAL POST-PROCESSING WARNING:
 - Your output will be automatically processed with a threshold filter
 - Any pixel that is not pure white will be converted to pure black
 - Therefore: Use BOLD, CLEAN outlines with minimal gray transition zones
-- Avoid subtle shading or anti-aliasing - these will become pure black
+- Avoid subtle shading or anti-aliasing - these will become pure black blobs
 - Think in binary: "What should be black lines vs white coloring areas"
 
-VERIFICATION: Before generating, confirm the output will contain ONLY bold black lines on white background with zero colors or shading, AND the character remains recognizable.
+VERIFICATION CHECKLIST (Must pass ALL before generating):
+✓ Output contains ONLY bold black lines on white background?
+✓ ZERO colors or shading of any kind?
+✓ Character remains recognizable from reference?
+✓ Could a child easily color this with crayons?
+✓ Does NOT look like a photograph or realistic render?
 
-STYLE: Pure black and white line art coloring book page with recognizable character features - no exceptions.`;
+STYLE: Pure black and white line art coloring book page with recognizable character features - absolutely no exceptions or compromises.`;
 
 // Post-processing function to ensure pure black and white output
 async function convertToPureBlackAndWhite(base64Image: string, threshold: number = 180): Promise<string> {
@@ -76,11 +86,21 @@ async function convertToPureBlackAndWhite(base64Image: string, threshold: number
     // Extract the base64 data (remove data URL prefix if present)
     const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
     
+    // Validate base64 data exists and has reasonable length
+    if (!base64Data || base64Data.length < 100) {
+      throw new Error('Invalid or empty base64 image data');
+    }
+    
     // Decode base64 to binary
     const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
     
     // Load image using imagescript
     const image = await Image.decode(binaryData);
+    
+    // Validate image dimensions
+    if (image.width < 10 || image.height < 10) {
+      throw new Error(`Invalid image dimensions: ${image.width}x${image.height} (too small)`);
+    }
     
     console.log(`Processing image: ${image.width}x${image.height} pixels`);
     
@@ -113,6 +133,16 @@ async function convertToPureBlackAndWhite(base64Image: string, threshold: number
     
     console.log(`Threshold applied: ${blackPixels} black pixels, ${whitePixels} white pixels`);
     
+    // Validate that we have reasonable distribution (not all black or all white)
+    const totalPixels = blackPixels + whitePixels;
+    const blackRatio = blackPixels / totalPixels;
+    
+    if (blackRatio < 0.01) {
+      console.warn(`Warning: Image is almost entirely white (${(blackRatio * 100).toFixed(2)}% black). May indicate conversion issue.`);
+    } else if (blackRatio > 0.90) {
+      console.warn(`Warning: Image is almost entirely black (${(blackRatio * 100).toFixed(2)}% black). May indicate conversion issue.`);
+    }
+    
     // Encode back to PNG
     const processedImage = await image.encode();
     
@@ -125,9 +155,9 @@ async function convertToPureBlackAndWhite(base64Image: string, threshold: number
     
   } catch (error) {
     console.error('Error in black/white conversion:', error);
-    console.warn('Falling back to original image due to post-processing error');
-    // If post-processing fails, return original image rather than failing the whole generation
-    return base64Image;
+    // Re-throw the error instead of silently falling back
+    // The caller will handle the fallback appropriately
+    throw new Error(`Black/white conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
@@ -306,12 +336,29 @@ async function convertToLineArt(
 
         console.log(`Successfully converted to line art ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
         
+        // Store the line art before post-processing (our fallback)
+        const lineArtImage = imageData;
+        
         // Apply post-processing to ensure pure black and white
         console.log(`Applying black/white threshold post-processing to page ${pageIndex + 1}/${totalPages}`);
-        const pureBlackWhiteImage = await convertToPureBlackAndWhite(imageData, 180);
-        console.log(`Post-processing complete for page ${pageIndex + 1}/${totalPages}`);
-        
-        return pureBlackWhiteImage;
+        try {
+          const pureBlackWhiteImage = await convertToPureBlackAndWhite(imageData, 180);
+          console.log(`Post-processing complete for page ${pageIndex + 1}/${totalPages}`);
+          return pureBlackWhiteImage;
+        } catch (postProcessError) {
+          console.error(`Post-processing failed for page ${pageIndex + 1}:`, postProcessError);
+          
+          // If this was due to corrupt image data, retry the entire line art generation
+          if (postProcessError instanceof Error && postProcessError.message.includes('dimension')) {
+            console.log(`Image appears corrupt, will retry line art generation on next attempt`);
+            throw postProcessError; // This will trigger retry loop
+          }
+          
+          // Otherwise, use line art without post-processing
+          // This is still better than a realistic photo!
+          console.log(`Falling back to original image due to post-processing error`);
+          return lineArtImage;
+        }
         
       } catch (error) {
         console.error(`Step 2 error (attempt ${attempt}, model ${model}):`, error);
