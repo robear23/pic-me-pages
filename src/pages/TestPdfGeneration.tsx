@@ -25,8 +25,8 @@ const TestPdfGeneration = () => {
   // Generate a simple test image (white background with black text)
   const generateTestPage = (pageNumber: number): string => {
     const canvas = document.createElement('canvas');
-    canvas.width = 2550; // 8.5" at 300 DPI
-    canvas.height = 3300; // 11" at 300 DPI
+    canvas.width = 1275; // 8.5" at 150 DPI
+    canvas.height = 1650; // 11" at 150 DPI
     
     const ctx = canvas.getContext('2d')!;
     
@@ -56,13 +56,13 @@ const TestPdfGeneration = () => {
       ctx.stroke();
     }
     
-    return canvas.toDataURL('image/png');
+    return canvas.toDataURL('image/jpeg', 0.7);
   };
 
   const generateTestCover = (title: string): string => {
     const canvas = document.createElement('canvas');
-    canvas.width = 2550; // 8.5" at 300 DPI
-    canvas.height = 3300; // 11" at 300 DPI
+    canvas.width = 1275; // 8.5" at 150 DPI
+    canvas.height = 1650; // 11" at 150 DPI
     
     const ctx = canvas.getContext('2d')!;
     
@@ -84,7 +84,7 @@ const TestPdfGeneration = () => {
     ctx.font = '80px Arial';
     ctx.fillText('Test Cover', canvas.width / 2, canvas.height / 2 + 200);
     
-    return canvas.toDataURL('image/png');
+    return canvas.toDataURL('image/jpeg', 0.7);
   };
 
   const testConfiguration = async (
@@ -112,18 +112,24 @@ const TestPdfGeneration = () => {
       const testBookId = crypto.randomUUID();
       console.log(`Generating interior PDF for ${config}...`);
       
-      const interiorUrl = await repairBookPdf(
-        testBookId,
-        pages,
-        {
-          pageCount,
-          podPackageId,
-          showGuides,
-          onProgress: (current, total) => {
-            console.log(`${config}: ${current}/${total} pages processed`);
+      let interiorUrl: string;
+      try {
+        interiorUrl = await repairBookPdf(
+          testBookId,
+          pages,
+          {
+            pageCount,
+            podPackageId,
+            showGuides,
+            onProgress: (current, total) => {
+              console.log(`${config}: ${current}/${total} pages processed`);
+            }
           }
-        }
-      );
+        );
+      } catch (err: any) {
+        console.error(`Error generating interior PDF for ${config}:`, err);
+        throw new Error(`Failed to generate interior PDF: ${err?.message || String(err)}`);
+      }
 
       console.log(`✓ Interior PDF generated: ${interiorUrl}`);
 
