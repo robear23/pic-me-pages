@@ -433,13 +433,28 @@ export const GeneratingStep = () => {
         const errorMessage = error instanceof Error ? error.message : 'Failed to generate book';
         const fullError = error instanceof Error ? error.stack || error.message : String(error);
         
-        setApiError(errorMessage);
+        // Provide more helpful error messages based on error type
+        let userMessage = errorMessage;
+        let errorTitle = 'Generation Failed';
+        
+        if (errorMessage.includes('Failed to fetch') || errorMessage.includes('Unable to connect')) {
+          errorTitle = 'Connection Issue';
+          userMessage = errorMessage + '\n\nThe generation service may be temporarily unavailable or redeploying. Please wait 30 seconds and try again.';
+        } else if (errorMessage.includes('Rate limit')) {
+          errorTitle = 'Rate Limit Reached';
+          userMessage = 'You have reached the rate limit. Please wait a few minutes before trying again.';
+        } else if (errorMessage.includes('AI credits')) {
+          errorTitle = 'Credits Depleted';
+          userMessage = 'Your AI credits have been depleted. Please add credits to continue generating books.';
+        }
+        
+        setApiError(userMessage);
         setErrorDetails(fullError);
         
         // Persistent error toast that requires manual dismissal
         toast({
-          title: 'Generation Failed',
-          description: errorMessage,
+          title: errorTitle,
+          description: userMessage,
           variant: 'destructive',
           duration: 30000, // 30 seconds instead of 3
         });

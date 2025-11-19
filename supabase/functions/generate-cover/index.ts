@@ -23,9 +23,10 @@ interface CoverResponse {
 }
 
 serve(async (req) => {
-  console.log(`[HEALTH] generate-cover called at ${new Date().toISOString()}`);
+  console.log(`[${new Date().toISOString()}] generate-cover started - Method: ${req.method}`);
   
   if (req.method === 'OPTIONS') {
+    console.log('CORS preflight request');
     return new Response(null, { headers: corsHeaders });
   }
 
