@@ -711,7 +711,7 @@ const Dashboard = () => {
                             </Button>
                             <Button
                               size="sm"
-                              variant="outline"
+                              variant="default"
                               className="w-full"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -726,19 +726,6 @@ const Dashboard = () => {
                               bookId={book.id}
                               bookTitle={`${book.character_name}'s Coloring Book`}
                             />
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="w-full text-white hover:text-white"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleQuickPreview(book);
-                              }}
-                              disabled={isGeneratingPdf === book.id}
-                            >
-                              <Zap className="w-4 h-4 mr-1" />
-                              Quick Preview (No Padding)
-                            </Button>
                           </div>
                         ) : book.status === 'failed' || (book.status === 'processing' && hasAssociatedOrders(book.id)) ? (
                           <Button 
