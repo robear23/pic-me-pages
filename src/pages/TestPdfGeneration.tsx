@@ -109,7 +109,7 @@ const TestPdfGeneration = () => {
       }));
 
       // Generate interior PDF
-      const testBookId = `test-${Date.now()}`;
+      const testBookId = crypto.randomUUID();
       console.log(`Generating interior PDF for ${config}...`);
       
       const interiorUrl = await repairBookPdf(
