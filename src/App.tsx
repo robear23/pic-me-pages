@@ -13,6 +13,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import AdminPanel from "./pages/AdminPanel";
 import TestPdfGeneration from "./pages/TestPdfGeneration";
+import VerifyBooks from "./pages/VerifyBooks";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -54,6 +55,11 @@ const AppRoot = () => (
             <Route path="/test-pdf" element={
               <ProtectedRoute>
                 <TestPdfGeneration />
+              </ProtectedRoute>
+            } />
+            <Route path="/verify-books" element={
+              <ProtectedRoute>
+                <VerifyBooks />
               </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
