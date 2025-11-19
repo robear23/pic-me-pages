@@ -472,7 +472,12 @@ STYLE:
           };
 
         } catch (error: any) {
-          console.error(`Failed to generate page ${i + 1}:`, error);
+          console.error(`Failed to generate page ${i + 1} (page number ${prompt.pageNumber}):`, error);
+          console.error(`Error details:`, {
+            message: error.message,
+            stack: error.stack?.substring(0, 200),
+            prompt: prompt.prompt.substring(0, 100) + '...'
+          });
           
           const isRateLimitError = error.message?.includes('Rate limit') || error.message?.includes('429');
           const isPaymentError = error.message?.includes('credits') || error.message?.includes('402');
@@ -485,7 +490,7 @@ STYLE:
             pageNumber: prompt.pageNumber,
             imageUrl: '',
             prompt: prompt.prompt,
-            error: error.message || 'Failed to generate image'
+            error: `${error.message || 'Unknown error'} (Exhausted retries after ${MAX_RETRIES} attempts)`
           };
         }
       });
