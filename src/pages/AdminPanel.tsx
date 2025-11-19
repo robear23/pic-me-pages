@@ -7,8 +7,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Search, Download } from "lucide-react";
+import { ArrowLeft, Search, Download, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
 import { format } from "date-fns";
+import { toast } from "sonner";
 
 interface Order {
   id: string;
@@ -23,6 +24,8 @@ interface Order {
   updated_at: string;
   books?: {
     character_name: string;
+    pdf_url: string | null;
+    cover_url: string | null;
   };
 }
 
@@ -33,6 +36,8 @@ export default function AdminPanel() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [dateFilter, setDateFilter] = useState<string>("all");
+  const [pdfHealthChecking, setPdfHealthChecking] = useState(false);
+  const [pdfHealthStatus, setPdfHealthStatus] = useState<Record<string, 'available' | 'missing' | 'error'>>({});
 
   useEffect(() => {
     loadOrders();
@@ -47,7 +52,9 @@ export default function AdminPanel() {
         .select(`
           *,
           books (
-            character_name
+            character_name,
+            pdf_url,
+            cover_url
           )
         `)
         .order('created_at', { ascending: false });
@@ -143,6 +150,66 @@ export default function AdminPanel() {
     a.click();
   };
 
+  const checkPdfHealth = async () => {
+    setPdfHealthChecking(true);
+    const statusMap: Record<string, 'available' | 'missing' | 'error'> = {};
+    
+    try {
+      for (const order of orders) {
+        if (!order.books) continue;
+        
+        const { pdf_url, cover_url } = order.books;
+        
+        // Check if URLs exist
+        if (!pdf_url || !cover_url) {
+          statusMap[order.id] = 'missing';
+          continue;
+        }
+        
+        try {
+          // Simple fetch with HEAD to check accessibility without downloading
+          const [pdfResponse, coverResponse] = await Promise.all([
+            fetch(pdf_url, { method: 'HEAD' }),
+            fetch(cover_url, { method: 'HEAD' })
+          ]);
+          
+          if (pdfResponse.ok && coverResponse.ok) {
+            statusMap[order.id] = 'available';
+          } else {
+            statusMap[order.id] = 'error';
+          }
+        } catch (error) {
+          statusMap[order.id] = 'error';
+        }
+      }
+      
+      setPdfHealthStatus(statusMap);
+      toast.success('PDF health check completed');
+    } catch (error) {
+      console.error('Error checking PDF health:', error);
+      toast.error('Failed to complete PDF health check');
+    } finally {
+      setPdfHealthChecking(false);
+    }
+  };
+
+  const getPdfHealthIcon = (orderId: string) => {
+    const status = pdfHealthStatus[orderId];
+    
+    if (!status) {
+      return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
+    }
+    
+    switch (status) {
+      case 'available':
+        return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+      case 'missing':
+        return <XCircle className="h-4 w-4 text-red-500" />;
+      case 'error':
+        return <AlertCircle className="h-4 w-4 text-yellow-500" />;
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
@@ -171,10 +238,29 @@ export default function AdminPanel() {
               <p className="text-muted-foreground">Manage all Lulu orders</p>
             </div>
           </div>
-          <Button onClick={exportToCSV} variant="outline">
-            <Download className="h-4 w-4 mr-2" />
-            Export CSV
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              onClick={checkPdfHealth} 
+              variant="outline"
+              disabled={pdfHealthChecking}
+            >
+              {pdfHealthChecking ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary mr-2" />
+                  Checking...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Check PDF Health
+                </>
+              )}
+            </Button>
+            <Button onClick={exportToCSV} variant="outline">
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+          </div>
         </div>
 
         <Card className="mb-6">
@@ -237,6 +323,7 @@ export default function AdminPanel() {
                     <TableHead>Book</TableHead>
                     <TableHead>Customer</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>PDF Health</TableHead>
                     <TableHead>Price</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Shipping</TableHead>
@@ -245,7 +332,7 @@ export default function AdminPanel() {
                 <TableBody>
                   {filteredOrders.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                      <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                         No orders found
                       </TableCell>
                     </TableRow>
@@ -279,6 +366,9 @@ export default function AdminPanel() {
                           <Badge className={getStatusColor(order.status)}>
                             {order.status}
                           </Badge>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {getPdfHealthIcon(order.id)}
                         </TableCell>
                         <TableCell>${order.price_paid}</TableCell>
                         <TableCell>
