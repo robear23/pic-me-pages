@@ -1,5 +1,6 @@
 import "https://deno.land/x/xhr@0.1.0/mod.ts";
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { Image } from "https://deno.land/x/imagescript@1.2.15/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -49,16 +50,86 @@ CHARACTER RECOGNITION (CRITICAL):
 LINE ART REQUIREMENTS - MUST BE FOLLOWED EXACTLY:
 - ONLY pure black lines (#000000) on PURE white background (#FFFFFF)
 - ABSOLUTELY NO colors, NO shading, NO gradients, NO gray tones whatsoever
-- NO texture fills, NO patterns inside shapes
+- NO texture fills, NO patterns inside shapes, NO anti-aliasing
 - NO photorealistic elements - everything must be simple outlines
 - Think of this as a traditional black ink outline drawing on white paper
 - All areas should be either 100% black (lines only) or 100% white (empty spaces to color)
 - Clear, bold outlines that children aged 3-12 can easily color within
 - Keep composition simple and uncluttered
 
-VERIFICATION: Before generating, confirm the output will contain ONLY black lines on white background with zero colors or shading, AND the character remains recognizable.
+CRITICAL POST-PROCESSING WARNING:
+- Your output will be automatically processed with a threshold filter
+- Any pixel that is not pure white will be converted to pure black
+- Therefore: Use BOLD, CLEAN outlines with minimal gray transition zones
+- Avoid subtle shading or anti-aliasing - these will become pure black
+- Think in binary: "What should be black lines vs white coloring areas"
+
+VERIFICATION: Before generating, confirm the output will contain ONLY bold black lines on white background with zero colors or shading, AND the character remains recognizable.
 
 STYLE: Pure black and white line art coloring book page with recognizable character features - no exceptions.`;
+
+// Post-processing function to ensure pure black and white output
+async function convertToPureBlackAndWhite(base64Image: string, threshold: number = 180): Promise<string> {
+  try {
+    console.log(`Starting black/white threshold conversion (threshold: ${threshold})...`);
+    
+    // Extract the base64 data (remove data URL prefix if present)
+    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
+    
+    // Decode base64 to binary
+    const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+    
+    // Load image using imagescript
+    const image = await Image.decode(binaryData);
+    
+    console.log(`Processing image: ${image.width}x${image.height} pixels`);
+    
+    let blackPixels = 0;
+    let whitePixels = 0;
+    
+    // Process each pixel
+    for (let y = 0; y < image.height; y++) {
+      for (let x = 0; x < image.width; x++) {
+        const color = image.getPixelAt(x, y);
+        
+        // Extract RGB values (imagescript uses RGBA format)
+        const r = (color >> 24) & 0xFF;
+        const g = (color >> 16) & 0xFF;
+        const b = (color >> 8) & 0xFF;
+        
+        // Calculate brightness (simple average method)
+        const brightness = (r + g + b) / 3;
+        
+        // Apply threshold: if brightness > threshold → white, else → black
+        if (brightness > threshold) {
+          image.setPixelAt(x, y, 0xFFFFFFFF); // Pure white with full alpha
+          whitePixels++;
+        } else {
+          image.setPixelAt(x, y, 0x000000FF); // Pure black with full alpha
+          blackPixels++;
+        }
+      }
+    }
+    
+    console.log(`Threshold applied: ${blackPixels} black pixels, ${whitePixels} white pixels`);
+    
+    // Encode back to PNG
+    const processedImage = await image.encode();
+    
+    // Convert to base64 with data URL prefix
+    const base64Result = 'data:image/png;base64,' + btoa(String.fromCharCode(...new Uint8Array(processedImage)));
+    
+    console.log('Black/white threshold conversion complete');
+    
+    return base64Result;
+    
+  } catch (error) {
+    console.error('Error in black/white conversion:', error);
+    console.warn('Falling back to original image due to post-processing error');
+    // If post-processing fails, return original image rather than failing the whole generation
+    return base64Image;
+  }
+}
 
 async function generateRealisticImage(
   prompt: any,
@@ -234,7 +305,13 @@ async function convertToLineArt(
         }
 
         console.log(`Successfully converted to line art ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
-        return imageData;
+        
+        // Apply post-processing to ensure pure black and white
+        console.log(`Applying black/white threshold post-processing to page ${pageIndex + 1}/${totalPages}`);
+        const pureBlackWhiteImage = await convertToPureBlackAndWhite(imageData, 180);
+        console.log(`Post-processing complete for page ${pageIndex + 1}/${totalPages}`);
+        
+        return pureBlackWhiteImage;
         
       } catch (error) {
         console.error(`Step 2 error (attempt ${attempt}, model ${model}):`, error);
