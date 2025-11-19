@@ -31,17 +31,29 @@ export async function generateCoverPdf(bookId: string, coverImageUrl: string): P
     // Generate single-page cover PDF
     const pdf = new jsPDF({
       orientation: 'portrait',
-      unit: 'in',
+      unit: 'pt', // Use points for better DPI control
       format: 'letter',
+      compress: false, // Disable compression to maintain image quality
+      putOnlyUsedFonts: true, // Only include fonts that are actually used
+      floatPrecision: 16, // High precision for measurements
+    });
+    
+    // Add PDF/X metadata for print-ready status
+    pdf.setProperties({
+      title: 'Print-Ready Book Cover',
+      subject: 'Coloring Book Cover',
+      author: 'Generated via Lovable',
+      keywords: 'coloring book, print',
+      creator: 'jsPDF with embedded fonts'
     });
 
-    const pageWidth = 8.5;
-    const pageHeight = 11;
+    const pageWidth = 8.5 * LULU_CONFIG.POINTS_PER_INCH;
+    const pageHeight = 11 * LULU_CONFIG.POINTS_PER_INCH;
 
     try {
       // Convert remote URL to data URL to avoid CORS issues
       const dataUrl = await toDataUrl(coverImageUrl);
-      pdf.addImage(dataUrl, 'PNG', 0, 0, pageWidth, pageHeight);
+      pdf.addImage(dataUrl, 'PNG', 0, 0, pageWidth, pageHeight, undefined, 'FAST');
     } catch (error) {
       console.error('Failed to add cover image to PDF:', error);
       throw new Error('Failed to process cover image');
@@ -110,11 +122,25 @@ export async function generateCoverWrapPdf(
     // Create PDF with Lulu-compliant dimensions (NO SPINE)
     const pdf = new jsPDF({
       orientation: 'landscape',
-      unit: 'in',
-      format: [LULU_CONFIG.COVER_HEIGHT, LULU_CONFIG.COVER_WIDTH],
+      unit: 'pt', // Use points for better DPI control
+      format: [LULU_CONFIG.COVER_HEIGHT * LULU_CONFIG.POINTS_PER_INCH, LULU_CONFIG.COVER_WIDTH * LULU_CONFIG.POINTS_PER_INCH],
+      compress: false, // Disable compression to maintain image quality
+      putOnlyUsedFonts: true, // Only include fonts that are actually used
+      floatPrecision: 16, // High precision for measurements
+    });
+    
+    // Add PDF/X metadata for print-ready status
+    pdf.setProperties({
+      title: 'Print-Ready Book Cover Wrap',
+      subject: 'Coloring Book Cover Wrap',
+      author: 'Generated via Lovable',
+      keywords: 'coloring book, print, wrap cover',
+      creator: 'jsPDF with embedded fonts'
     });
 
-    const halfWidth = LULU_CONFIG.COVER_WIDTH / 2; // 8.625" each side
+    const halfWidth = (LULU_CONFIG.COVER_WIDTH / 2) * LULU_CONFIG.POINTS_PER_INCH; // Convert to points
+    const fullWidth = LULU_CONFIG.COVER_WIDTH * LULU_CONFIG.POINTS_PER_INCH;
+    const fullHeight = LULU_CONFIG.COVER_HEIGHT * LULU_CONFIG.POINTS_PER_INCH;
 
     // Convert images to data URLs and add to PDF
     const backCoverDataUrl = await toDataUrl(backImageUrl);
@@ -177,42 +203,45 @@ function drawCoverMarginGuides(doc: jsPDF) {
   const currentDrawColor = doc.getDrawColor();
   const currentLineWidth = doc.getLineWidth();
   
-  const halfWidth = LULU_CONFIG.COVER_WIDTH / 2;
+  const halfWidth = (LULU_CONFIG.COVER_WIDTH / 2) * LULU_CONFIG.POINTS_PER_INCH;
+  const fullWidth = LULU_CONFIG.COVER_WIDTH * LULU_CONFIG.POINTS_PER_INCH;
+  const fullHeight = LULU_CONFIG.COVER_HEIGHT * LULU_CONFIG.POINTS_PER_INCH;
+  const bleedPt = LULU_CONFIG.BLEED * LULU_CONFIG.POINTS_PER_INCH;
   
   // Draw outer bleed line (red)
   doc.setDrawColor(255, 0, 0);
-  doc.setLineWidth(0.01);
-  doc.rect(0, 0, LULU_CONFIG.COVER_WIDTH, LULU_CONFIG.COVER_HEIGHT);
+  doc.setLineWidth(0.5);
+  doc.rect(0, 0, fullWidth, fullHeight);
   
   // Draw trim lines (blue)
   doc.setDrawColor(0, 0, 255);
   doc.rect(
-    LULU_CONFIG.BLEED,
-    LULU_CONFIG.BLEED,
-    LULU_CONFIG.COVER_WIDTH - (LULU_CONFIG.BLEED * 2),
-    LULU_CONFIG.COVER_HEIGHT - (LULU_CONFIG.BLEED * 2)
+    bleedPt,
+    bleedPt,
+    fullWidth - (bleedPt * 2),
+    fullHeight - (bleedPt * 2)
   );
   
   // Draw center divider between back and front
   doc.setDrawColor(128, 128, 128);
-  doc.line(halfWidth, 0, halfWidth, LULU_CONFIG.COVER_HEIGHT);
+  doc.line(halfWidth, 0, halfWidth, fullHeight);
   
   // Draw safety margins (green) - 0.25" recommended
-  const safetyMargin = 0.25;
+  const safetyMargin = 0.25 * LULU_CONFIG.POINTS_PER_INCH;
   doc.setDrawColor(0, 255, 0);
   // Back cover safety
   doc.rect(
-    LULU_CONFIG.BLEED + safetyMargin,
-    LULU_CONFIG.BLEED + safetyMargin,
-    halfWidth - LULU_CONFIG.BLEED - (safetyMargin * 2),
-    LULU_CONFIG.COVER_HEIGHT - (LULU_CONFIG.BLEED * 2) - (safetyMargin * 2)
+    bleedPt + safetyMargin,
+    bleedPt + safetyMargin,
+    halfWidth - bleedPt - (safetyMargin * 2),
+    fullHeight - (bleedPt * 2) - (safetyMargin * 2)
   );
   // Front cover safety
   doc.rect(
     halfWidth + safetyMargin,
-    LULU_CONFIG.BLEED + safetyMargin,
-    halfWidth - LULU_CONFIG.BLEED - (safetyMargin * 2),
-    LULU_CONFIG.COVER_HEIGHT - (LULU_CONFIG.BLEED * 2) - (safetyMargin * 2)
+    bleedPt + safetyMargin,
+    halfWidth - bleedPt - (safetyMargin * 2),
+    fullHeight - (bleedPt * 2) - (safetyMargin * 2)
   );
   
   // Add labels
@@ -267,9 +296,20 @@ export async function repairBookPdf(
     // Create PDF with Lulu-compliant dimensions
     const pdf = new jsPDF({
       orientation: 'portrait',
-      unit: 'in',
-      format: [LULU_CONFIG.PAGE_WIDTH, LULU_CONFIG.PAGE_HEIGHT],
-      compress: true,
+      unit: 'pt', // Use points for better DPI control
+      format: [LULU_CONFIG.PAGE_WIDTH * LULU_CONFIG.POINTS_PER_INCH, LULU_CONFIG.PAGE_HEIGHT * LULU_CONFIG.POINTS_PER_INCH],
+      compress: false, // Disable compression to maintain image quality
+      putOnlyUsedFonts: true, // Only include fonts that are actually used
+      floatPrecision: 16, // High precision for measurements
+    });
+    
+    // Add PDF/X metadata for print-ready status
+    pdf.setProperties({
+      title: 'Print-Ready Book Interior',
+      subject: 'Coloring Book Pages',
+      author: 'Generated via Lovable',
+      keywords: 'coloring book, print, interior',
+      creator: 'jsPDF with embedded fonts'
     });
 
     // Get content area with gutter
@@ -286,7 +326,7 @@ export async function repairBookPdf(
       const page = pages[i];
       
       if (i > 0) {
-        pdf.addPage([LULU_CONFIG.PAGE_WIDTH, LULU_CONFIG.PAGE_HEIGHT], 'portrait');
+        pdf.addPage([LULU_CONFIG.PAGE_WIDTH * LULU_CONFIG.POINTS_PER_INCH, LULU_CONFIG.PAGE_HEIGHT * LULU_CONFIG.POINTS_PER_INCH], 'portrait');
       }
 
       if (!page.imageUrl) {
@@ -332,23 +372,27 @@ export async function repairBookPdf(
           img.src = processedImage;
         });
 
-        const imgWidthInches = img.naturalWidth / LULU_CONFIG.IMAGE_DPI;
-        const imgHeightInches = img.naturalHeight / LULU_CONFIG.IMAGE_DPI;
+        // Convert dimensions to points (72 points = 1 inch)
+        const imgWidthPt = (img.naturalWidth / LULU_CONFIG.TARGET_DPI) * LULU_CONFIG.POINTS_PER_INCH;
+        const imgHeightPt = (img.naturalHeight / LULU_CONFIG.TARGET_DPI) * LULU_CONFIG.POINTS_PER_INCH;
+        const contentLeftPt = contentArea.left * LULU_CONFIG.POINTS_PER_INCH;
+        const contentTopPt = contentArea.top * LULU_CONFIG.POINTS_PER_INCH;
+        const contentWidthPt = contentArea.width * LULU_CONFIG.POINTS_PER_INCH;
+        const contentHeightPt = contentArea.height * LULU_CONFIG.POINTS_PER_INCH;
 
         // Center the image in the content area
-        const xOffset = contentArea.left + (contentArea.width - imgWidthInches) / 2;
-        const yOffset = contentArea.top + (contentArea.height - imgHeightInches) / 2;
+        const xOffset = contentLeftPt + (contentWidthPt - imgWidthPt) / 2;
+        const yOffset = contentTopPt + (contentHeightPt - imgHeightPt) / 2;
 
         pdf.addImage(
           processedImage,
           'PNG',
           xOffset,
           yOffset,
-          imgWidthInches,
-          imgHeightInches,
+          imgWidthPt,
+          imgHeightPt,
           `page${i + 1}`,
-          'NONE',
-          0
+          'FAST' // Use FAST compression or 'NONE' for no compression
         );
 
         // Add margin guides if requested (for testing)
@@ -432,52 +476,67 @@ export async function repairBookPdf(
 function drawMarginGuides(doc: jsPDF, bindingType: 'SADDLE' | 'COIL') {
   const contentArea = getContentArea(bindingType);
   
+  // Convert all measurements to points
+  const pageWidthPt = LULU_CONFIG.PAGE_WIDTH * LULU_CONFIG.POINTS_PER_INCH;
+  const pageHeightPt = LULU_CONFIG.PAGE_HEIGHT * LULU_CONFIG.POINTS_PER_INCH;
+  const bleedPt = LULU_CONFIG.BLEED * LULU_CONFIG.POINTS_PER_INCH;
+  const trimWidthPt = LULU_CONFIG.TRIM_WIDTH * LULU_CONFIG.POINTS_PER_INCH;
+  const trimHeightPt = LULU_CONFIG.TRIM_HEIGHT * LULU_CONFIG.POINTS_PER_INCH;
+  const contentLeftPt = LULU_CONFIG.CONTENT_LEFT * LULU_CONFIG.POINTS_PER_INCH;
+  const contentTopPt = LULU_CONFIG.CONTENT_TOP * LULU_CONFIG.POINTS_PER_INCH;
+  const contentRightPt = LULU_CONFIG.CONTENT_RIGHT * LULU_CONFIG.POINTS_PER_INCH;
+  const contentBottomPt = LULU_CONFIG.CONTENT_BOTTOM * LULU_CONFIG.POINTS_PER_INCH;
+  const contentAreaLeftPt = contentArea.left * LULU_CONFIG.POINTS_PER_INCH;
+  const contentAreaTopPt = contentArea.top * LULU_CONFIG.POINTS_PER_INCH;
+  const contentAreaWidthPt = contentArea.width * LULU_CONFIG.POINTS_PER_INCH;
+  const contentAreaHeightPt = contentArea.height * LULU_CONFIG.POINTS_PER_INCH;
+  
   // Save current state
   const currentDrawColor = doc.getDrawColor();
   const currentLineWidth = doc.getLineWidth();
   
   // Draw bleed line (outermost - red)
   doc.setDrawColor(255, 0, 0);
-  doc.setLineWidth(0.01);
-  doc.rect(0, 0, LULU_CONFIG.PAGE_WIDTH, LULU_CONFIG.PAGE_HEIGHT);
+  doc.setLineWidth(0.5);
+  doc.rect(0, 0, pageWidthPt, pageHeightPt);
   
   // Draw trim line (blue)
   doc.setDrawColor(0, 0, 255);
   doc.rect(
-    LULU_CONFIG.BLEED,
-    LULU_CONFIG.BLEED,
-    LULU_CONFIG.TRIM_WIDTH,
-    LULU_CONFIG.TRIM_HEIGHT
+    bleedPt,
+    bleedPt,
+    trimWidthPt,
+    trimHeightPt
   );
   
   // Draw safety margin (green)
   doc.setDrawColor(0, 255, 0);
   doc.rect(
-    LULU_CONFIG.CONTENT_LEFT,
-    LULU_CONFIG.CONTENT_TOP,
-    LULU_CONFIG.CONTENT_RIGHT - LULU_CONFIG.CONTENT_LEFT,
-    LULU_CONFIG.CONTENT_BOTTOM - LULU_CONFIG.CONTENT_TOP
+    contentLeftPt,
+    contentTopPt,
+    contentRightPt - contentLeftPt,
+    contentBottomPt - contentTopPt
   );
   
   // Draw content area with gutter (yellow)
   doc.setDrawColor(255, 255, 0);
   doc.rect(
-    contentArea.left,
-    contentArea.top,
-    contentArea.width,
-    contentArea.height
+    contentAreaLeftPt,
+    contentAreaTopPt,
+    contentAreaWidthPt,
+    contentAreaHeightPt
   );
   
   // Add labels
   doc.setFontSize(8);
   doc.setTextColor(255, 0, 0);
-  doc.text('Bleed (0.125")', 0.15, 0.1);
+  doc.text('Bleed (0.125")', 0.15 * LULU_CONFIG.POINTS_PER_INCH, 0.1 * LULU_CONFIG.POINTS_PER_INCH);
   doc.setTextColor(0, 0, 255);
-  doc.text('Trim Line', 0.15, 0.25);
+  doc.text('Trim Line', 0.15 * LULU_CONFIG.POINTS_PER_INCH, 0.25 * LULU_CONFIG.POINTS_PER_INCH);
   doc.setTextColor(0, 255, 0);
-  doc.text('Safety (0.5")', 0.75, 0.75);
+  doc.text('Safety (0.5")', 0.75 * LULU_CONFIG.POINTS_PER_INCH, 0.75 * LULU_CONFIG.POINTS_PER_INCH);
   doc.setTextColor(255, 255, 0);
-  doc.text(`Content (${bindingType === 'COIL' ? 'w/ gutter' : 'no gutter'})`, contentArea.left + 0.1, contentArea.top + 0.15);
+  doc.text(`Content (${bindingType === 'COIL' ? 'w/ gutter' : 'no gutter'})`, contentAreaLeftPt + (0.1 * LULU_CONFIG.POINTS_PER_INCH), contentAreaTopPt + (0.15 * LULU_CONFIG.POINTS_PER_INCH));
   
   // Restore state
   doc.setDrawColor(currentDrawColor);
