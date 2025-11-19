@@ -63,10 +63,14 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       photoUrls.push(urlData.publicUrl);
     }
 
-    // 2. Upload generated page images to storage
+    // 2. Upload generated page images to storage and get URLs
+    const uploadedPageUrls: string[] = [];
     for (let i = 0; i < generatedPages.length; i++) {
       const page = generatedPages[i];
-      if (!page.imageUrl) continue;
+      if (!page.imageUrl) {
+        uploadedPageUrls.push('');
+        continue;
+      }
 
       try {
         // Convert base64 to blob
@@ -83,9 +87,18 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
 
         if (uploadError) {
           console.error('Page upload error:', uploadError);
+          uploadedPageUrls.push('');
+        } else {
+          // Get the public URL for the uploaded image
+          const { data: urlData } = supabase.storage
+            .from('generated-pages')
+            .getPublicUrl(fileName);
+          
+          uploadedPageUrls.push(urlData.publicUrl);
         }
       } catch (error) {
         console.error('Error processing page image:', error);
+        uploadedPageUrls.push('');
       }
     }
 
@@ -150,9 +163,9 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       // Update existing book
       console.log('Updating existing book:', existingBookId);
       const updateData: any = {
-        pages: generatedPages.map(page => ({
+        pages: generatedPages.map((page, index) => ({
           pageNumber: page.pageNumber,
-          imageUrl: page.imageUrl || '',
+          imageUrl: uploadedPageUrls[index] || page.imageUrl || '',
           prompt: page.prompt,
         })),
         photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
@@ -188,9 +201,9 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
           art_style: 'photogenic',
           consistent_characters: consistentCharacters,
           photo_urls: photoUrls,
-          pages: generatedPages.map(page => ({
+          pages: generatedPages.map((page, index) => ({
             pageNumber: page.pageNumber,
-            imageUrl: page.imageUrl || '',
+            imageUrl: uploadedPageUrls[index] || page.imageUrl || '',
             prompt: page.prompt,
           })),
           status: 'completed',
@@ -222,7 +235,7 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       console.log(`Generating Lulu-compliant interior PDF with ${pdfPageCount} pages...`);
       interiorPdfUrl = await repairBookPdf(
         bookId,
-        generatedPages.map(page => ({ imageUrl: page.imageUrl || '' })),
+        generatedPages.map((page, index) => ({ imageUrl: uploadedPageUrls[index] || page.imageUrl || '' })),
         { 
           pageCount: pdfPageCount, 
           padWith: 'blank',

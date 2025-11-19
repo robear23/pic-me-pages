@@ -135,20 +135,46 @@ const Dashboard = () => {
   const loadBookPages = async (bookId: string) => {
     setLoadingPages(true);
     try {
-      const { data, error } = await supabase
+      // Set a timeout to prevent hanging on large pages data
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Loading pages timed out after 10 seconds')), 10000)
+      );
+      
+      const fetchPromise = supabase
         .from('books')
         .select('pages')
         .eq('id', bookId)
         .single();
       
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
+      
       if (error) throw error;
       
       const pages = data?.pages;
+      
+      // Validate that pages contain URLs, not base64 data
+      if (Array.isArray(pages) && pages.length > 0) {
+        const firstPage = pages[0];
+        if (firstPage?.imageUrl?.startsWith('data:image')) {
+          toast.error('This book has corrupted data. Please delete and regenerate it.');
+          setSelectedBookPages([]);
+          setSelectedBook(null);
+          return;
+        }
+      }
+      
       setSelectedBookPages(Array.isArray(pages) ? pages : []);
     } catch (error: any) {
       console.error('[Dashboard] Failed to load book pages:', error);
-      toast.error('Failed to load book pages');
+      
+      if (error.message?.includes('timed out')) {
+        toast.error('Book pages are too large to load. Please delete and regenerate this book.');
+      } else {
+        toast.error('Failed to load book pages');
+      }
+      
       setSelectedBookPages([]);
+      setSelectedBook(null);
     } finally {
       setLoadingPages(false);
     }
