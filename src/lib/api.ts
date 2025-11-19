@@ -105,11 +105,13 @@ export const createPrintOrder = async (
 export const generateCover = async (
   characterName: string,
   interests: string[],
+  pageImageUrl: string,
   characters?: Character[]
 ): Promise<{ frontCover: string; backCover: string }> => {
   return callEdgeFunction('generate-cover', { 
     characterName, 
     interests,
+    pageImageUrl,
     characters
   });
 };
