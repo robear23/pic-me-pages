@@ -528,7 +528,7 @@ const Dashboard = () => {
                         {book.interests.slice(0, 3).map((interest, i) => (
                           <span
                             key={i}
-                            className="text-xs px-2 py-1 bg-primary/20 text-primary-foreground rounded-full"
+                            className="text-xs px-2 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full"
                           >
                             {interest}
                           </span>
@@ -589,7 +589,7 @@ const Dashboard = () => {
                         <Button
                           size="sm"
                           variant="outline"
-                          className="w-full text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          className="w-full text-destructive hover:bg-destructive hover:text-destructive-foreground border-destructive/50"
                           onClick={(e) => handleDeleteBook(book.id, e)}
                           disabled={deletingBookId === book.id}
                         >
