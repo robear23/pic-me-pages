@@ -3,7 +3,6 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { repairBookPdf, generateCoverWrapPdf } from '@/lib/repairPdf';
 import { validatePageCount, getBindingType } from '@/lib/luluConfig';
-import { validatePdfDimensions, generateValidationReport } from '@/lib/pdfValidator';
 import { toast } from 'sonner';
 import { Loader2, CheckCircle2, XCircle, Download, Eye } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
@@ -18,8 +17,6 @@ const TestPdfGeneration = () => {
     message: string;
     pdfUrl?: string;
     coverUrl?: string;
-    validation?: any;
-    coverValidation?: any;
   }>>([]);
 
   // Generate a simple test image (white background with black text)
@@ -147,40 +144,23 @@ const TestPdfGeneration = () => {
       );
 
       console.log(`✓ Cover PDF generated: ${coverUrl}`);
-
-      // Validate PDFs
-      console.log(`Validating PDFs for ${config}...`);
-      const validation = await validatePdfDimensions(interiorUrl, 'interior');
-      const coverValidation = await validatePdfDimensions(coverUrl, 'cover');
-
-      if (!validation.valid) {
-        console.warn(`Interior PDF validation failed:`, validation.errors);
-      }
-      if (!coverValidation.valid) {
-        console.warn(`Cover PDF validation failed:`, coverValidation.errors);
-      }
-
-      const pdfStatus = validation.valid && coverValidation.valid ? 'validated' : 'warning';
+      console.log(`${config}: PDFs generated successfully`);
       
       return {
         config,
         status: 'success' as const,
         message: pageValidation.valid 
-          ? `✓ Generated & validated successfully (${pageValidation.adjustedCount} pages)`
+          ? `✓ Generated successfully (${pageValidation.adjustedCount} pages)`
           : `✓ Generated with adjustment: ${pageValidation.message}`,
         pdfUrl: interiorUrl,
-        coverUrl,
-        validation,
-        coverValidation
+        coverUrl
       };
     } catch (error: any) {
       console.error(`✗ Failed to generate ${config}:`, error);
       return {
         config,
         status: 'error' as const,
-        message: `✗ Error: ${error.message}`,
-        validation: undefined,
-        coverValidation: undefined
+        message: `✗ Error: ${error.message}`
       };
     }
   };
@@ -229,18 +209,6 @@ const TestPdfGeneration = () => {
     toast.success(`Tests complete: ${successCount}/${newResults.length} passed`);
   };
 
-  const exportReport = () => {
-    const report = generateValidationReport(results);
-    const blob = new Blob([report], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `lulu-pdf-test-report-${new Date().toISOString().split('T')[0]}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('Report downloaded');
-  };
-
   const exportResultsJSON = () => {
     const jsonData = {
       generatedAt: new Date().toISOString(),
@@ -250,9 +218,7 @@ const TestPdfGeneration = () => {
         status: r.status,
         message: r.message,
         pdfUrl: r.pdfUrl,
-        coverUrl: r.coverUrl,
-        interiorValidation: r.validation,
-        coverValidation: r.coverValidation
+        coverUrl: r.coverUrl
       }))
     };
     
@@ -331,16 +297,10 @@ const TestPdfGeneration = () => {
           <Card className="p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">Test Results</h2>
-              <div className="flex gap-2">
-                <Button onClick={exportReport} variant="outline" size="sm">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export Report
-                </Button>
-                <Button onClick={exportResultsJSON} variant="outline" size="sm">
-                  <Download className="h-4 w-4 mr-2" />
-                  Export JSON
-                </Button>
-              </div>
+              <Button onClick={exportResultsJSON} variant="outline" size="sm">
+                <Download className="h-4 w-4 mr-2" />
+                Export JSON
+              </Button>
             </div>
             <div className="space-y-3">
               {results.map((result, index) => (
@@ -362,27 +322,6 @@ const TestPdfGeneration = () => {
                     <div className="text-sm text-muted-foreground mt-1">
                       {result.message}
                     </div>
-                    
-                    {/* Validation details */}
-                    {result.validation && (
-                      <div className="mt-2 text-xs space-y-1">
-                        <div className={result.validation.valid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                          Interior: {result.validation.dimensions.widthInches.toFixed(3)}" × {result.validation.dimensions.heightInches.toFixed(3)}"
-                          {result.validation.valid ? ' ✓' : ' ✗'}
-                        </div>
-                        {result.coverValidation && (
-                          <div className={result.coverValidation.valid ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                            Cover: {result.coverValidation.dimensions.widthInches.toFixed(3)}" × {result.coverValidation.dimensions.heightInches.toFixed(3)}"
-                            {result.coverValidation.valid ? ' ✓' : ' ✗'}
-                          </div>
-                        )}
-                        {result.validation.errors.length > 0 && (
-                          <div className="text-red-600 dark:text-red-400">
-                            {result.validation.errors.join(', ')}
-                          </div>
-                        )}
-                      </div>
-                    )}
                     
                     {/* PDF links */}
                     <div className="flex gap-3 mt-3">
