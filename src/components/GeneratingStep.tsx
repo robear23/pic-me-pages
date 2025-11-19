@@ -56,6 +56,14 @@ export const GeneratingStep = () => {
   useEffect(() => {
     const runGeneration = async () => {
       try {
+        // Log state for debugging
+        const { generatedBookId: existingBookId } = useBookStore.getState();
+        console.log('Generation starting:', { 
+          isReworkMode, 
+          existingBookId, 
+          selectedPagesForRework 
+        });
+        
         // Security check: Verify payment or bypass (skip for rework mode)
         if (!isReworkMode && !paymentBypassed && !orderId) {
           console.error('No payment detected - redirecting to payment step');
@@ -168,8 +176,6 @@ export const GeneratingStep = () => {
             const reworked = allReworkedPages.find(p => p.pageNumber === page.pageNumber);
             return reworked || page;
           });
-          
-          completeRework();
         } else {
           // Process all pages in batches
           const BATCH_SIZE = 3;
@@ -282,12 +288,17 @@ export const GeneratingStep = () => {
               selectedPrice,
               selectedPodPackageId,
               reworkedPageNumbers: updatedReworkedPages,
-              bookId: isReworkMode ? existingBookId : undefined,
+              bookId: isReworkMode && existingBookId ? existingBookId : null,
             });
 
             if (bookId) {
               console.log('Book saved to database:', bookId);
               setGeneratedBookId(bookId);
+              
+              // Complete rework after successful save to ensure state is properly managed
+              if (isReworkMode) {
+                completeRework();
+              }
               
               // Link book to order if we have an orderId
               if (orderId) {
@@ -381,8 +392,12 @@ export const GeneratingStep = () => {
     setApiError(null);
     setGenerationProgress(0);
     setGenerationStatus('');
+    
+    // Clear the generated book ID to start fresh
+    setGeneratedBookId(null);
+    
     // Re-trigger the generation by staying on this step
-    window.location.reload();
+    setStep('generating');
   };
 
   const handleStartOver = () => {
