@@ -62,34 +62,49 @@ export async function convertToGrayscale(imageUrl: string): Promise<string> {
   return canvas.toDataURL('image/png');
 }
 
-// Ensure image is exactly 300 DPI by resizing if necessary
+// Ensure image is exactly 300 DPI by resizing if necessary while preserving aspect ratio
 export async function ensureImageDPI(
   imageUrl: string,
   targetWidthInches: number,
   targetHeightInches: number
 ): Promise<string> {
-  const targetWidth = targetWidthInches * LULU_CONFIG.IMAGE_DPI;
-  const targetHeight = targetHeightInches * LULU_CONFIG.IMAGE_DPI;
-  
   const img = new Image();
   await new Promise((resolve) => {
     img.onload = resolve;
     img.src = imageUrl;
   });
   
-  // Only resize if necessary
-  if (img.naturalWidth === targetWidth && img.naturalHeight === targetHeight) {
+  // Calculate original aspect ratio
+  const originalAspectRatio = img.naturalWidth / img.naturalHeight;
+  const targetAspectRatio = targetWidthInches / targetHeightInches;
+  
+  // Calculate dimensions that fit within target area while preserving aspect ratio
+  let finalWidth, finalHeight;
+  
+  if (originalAspectRatio > targetAspectRatio) {
+    // Image is wider than target - fit to width
+    finalWidth = targetWidthInches * LULU_CONFIG.IMAGE_DPI;
+    finalHeight = finalWidth / originalAspectRatio;
+  } else {
+    // Image is taller than target - fit to height
+    finalHeight = targetHeightInches * LULU_CONFIG.IMAGE_DPI;
+    finalWidth = finalHeight * originalAspectRatio;
+  }
+  
+  // Only resize if necessary (with 1px tolerance)
+  if (Math.abs(img.naturalWidth - finalWidth) < 2 && 
+      Math.abs(img.naturalHeight - finalHeight) < 2) {
     return imageUrl;
   }
   
   const canvas = document.createElement('canvas');
-  canvas.width = targetWidth;
-  canvas.height = targetHeight;
+  canvas.width = Math.round(finalWidth);
+  canvas.height = Math.round(finalHeight);
   
   const ctx = canvas.getContext('2d')!;
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
   
   return canvas.toDataURL('image/png');
 }

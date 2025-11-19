@@ -325,13 +325,27 @@ export async function repairBookPdf(
         );
 
         // Add image with proper placement respecting margins
+        // Calculate actual image dimensions after DPI processing
+        const img = new Image();
+        await new Promise((resolve) => {
+          img.onload = resolve;
+          img.src = processedImage;
+        });
+
+        const imgWidthInches = img.naturalWidth / LULU_CONFIG.IMAGE_DPI;
+        const imgHeightInches = img.naturalHeight / LULU_CONFIG.IMAGE_DPI;
+
+        // Center the image in the content area
+        const xOffset = contentArea.left + (contentArea.width - imgWidthInches) / 2;
+        const yOffset = contentArea.top + (contentArea.height - imgHeightInches) / 2;
+
         pdf.addImage(
           processedImage,
           'PNG',
-          contentArea.left,
-          contentArea.top,
-          contentArea.width,
-          contentArea.height,
+          xOffset,
+          yOffset,
+          imgWidthInches,
+          imgHeightInches,
           `page${i + 1}`,
           'NONE',
           0
