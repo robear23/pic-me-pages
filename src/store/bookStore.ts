@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import type { BindingType, PageCount, BookOption } from '@/types/bookOptions';
 import { getBookOption } from '@/types/bookOptions';
 
-export type BookStep = 'hero' | 'upload' | 'settings' | 'interests' | 'book-options' | 'payment' | 'generating' | 'complete' | 'rework-settings';
+export type BookStep = 'hero' | 'upload' | 'complexity' | 'interests' | 'book-options' | 'payment' | 'generating' | 'complete' | 'rework-settings';
+export type ComplexityLevel = 'simple' | 'medium' | 'detailed';
 
 export interface Character {
   id: string;
@@ -21,12 +22,16 @@ export interface GenerationParams {
   characters: Character[];
   consistentCharacters: boolean;
   interests: string[];
+  complexityLevel: ComplexityLevel;
+  customPrompt?: string;
 }
 
 interface BookState {
   currentStep: BookStep;
   characters: Character[];
   consistentCharacters: boolean;
+  complexityLevel: ComplexityLevel;
+  customPrompt: string;
   selectedInterests: string[];
   generatedPages: GeneratedPage[];
   generationProgress: number;
@@ -57,7 +62,8 @@ interface BookState {
   removeCharacter: (id: string) => void;
   updateCharacter: (id: string, updates: Partial<Character>) => void;
   setCharacterPhoto: (characterId: string, photoIndex: number, file: File | null) => void;
-  toggleConsistentCharacters: () => void;
+  setComplexityLevel: (level: ComplexityLevel) => void;
+  setCustomPrompt: (prompt: string) => void;
   toggleInterest: (interest: string) => void;
   setInterests: (interests: string[]) => void;
   togglePageForRework: (pageNumber: number) => void;
@@ -89,6 +95,8 @@ const initialState = {
   currentStep: 'hero' as BookStep,
   characters: [createDefaultCharacter()],
   consistentCharacters: true,
+  complexityLevel: 'medium' as ComplexityLevel,
+  customPrompt: '',
   selectedInterests: [] as string[],
   generatedPages: [] as GeneratedPage[],
   generationProgress: 0,
@@ -155,8 +163,9 @@ export const useBookStore = create<BookState>((set, get) => ({
       }),
     })),
   
-  toggleConsistentCharacters: () =>
-    set((state) => ({ consistentCharacters: !state.consistentCharacters })),
+  setComplexityLevel: (level) => set({ complexityLevel: level }),
+  
+  setCustomPrompt: (prompt) => set({ customPrompt: prompt }),
   
   toggleInterest: (interest) =>
     set((state) => {
@@ -232,11 +241,13 @@ export const useBookStore = create<BookState>((set, get) => ({
     const state = get();
     set({
       isReworkMode: true,
-      originalGenerationParams: {
-        characters: state.characters,
-        consistentCharacters: state.consistentCharacters,
-        interests: state.selectedInterests,
-      },
+    originalGenerationParams: {
+      characters: state.characters,
+      consistentCharacters: state.consistentCharacters,
+      interests: state.selectedInterests,
+      complexityLevel: state.complexityLevel,
+      customPrompt: state.customPrompt,
+    },
     });
   },
   

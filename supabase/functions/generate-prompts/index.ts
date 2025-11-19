@@ -12,7 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const { characters, interests, consistentCharacters, targetPageCount = 12 } = await req.json();
+    const { characters, interests, consistentCharacters, targetPageCount = 12, complexityLevel = 'medium', customPrompt = '' } = await req.json();
     
     if (!characters || !Array.isArray(characters) || characters.length === 0) {
       return new Response(
@@ -50,20 +50,36 @@ serve(async (req) => {
 Each scene should feel unique and alive - the character should be doing something different in each page.`
       : '';
 
-    const systemPrompt = `You are an expert at creating child-friendly coloring page descriptions. Generate ${targetPageCount} unique, detailed prompts for black & white coloring pages featuring ${characterNames} in scenarios related to their interests: ${interests.join(', ')}.
+    // Complexity level guidance
+    const complexityLevelMap: Record<string, string> = {
+      simple: 'COMPLEXITY: Large shapes, bold outlines, minimal detail suitable for ages 3-5. Keep designs very simple with clear, recognizable forms.',
+      medium: 'COMPLEXITY: Balanced detail with moderate complexity for ages 5-6. Include some patterns and details but keep them manageable.',
+      detailed: 'COMPLEXITY: Intricate patterns and fine details for ages 7-8 and adults. Include complex textures, backgrounds, and detailed elements.'
+    };
+    const complexityGuidance = complexityLevelMap[complexityLevel] || complexityLevelMap.medium;
+
+    // Use custom prompt if provided, otherwise use interests
+    const contentGuidance = customPrompt.trim()
+      ? `Create scenes based on this custom theme/story: ${customPrompt}`
+      : `Generate scenes related to these interests: ${interests.join(', ')}. ${interests.length === 1 ? 'Create diverse scenarios all related to this interest.' : 'Distribute scenes evenly across the interests.'}`;
+
+    const systemPrompt = `You are an expert at creating child-friendly coloring page descriptions. Generate ${targetPageCount} unique, detailed prompts for black & white coloring pages featuring ${characterNames}.
 
 STYLE REQUIREMENTS:
 - PHOTOREALISTIC PHOTOGRAPHY STYLE - Shot like a professional children's portrait photographer
 - Natural, authentic, real-world appearance as if captured with a camera
 - CRITICAL: NOT illustrated, NOT cartoon, NOT artistic rendering - must look like real photographs
-- Character Consistency: ${consistentCharacters ? 'CRITICAL - Keep character identity consistent across ALL pages. Recognize the same character throughout with exact facial features, eye color, hair texture, and skin tone.' : 'Varied appearances are OK'}${characterGuidance}
+- Character Consistency: CRITICAL - Keep character identity consistent across ALL pages. Recognize the same character throughout with exact facial features, eye color, hair texture, and skin tone.${characterGuidance}
 - Natural poses and expressions as if captured in a real moment
 - Final output will be converted to simple black and white line art
 - Child-appropriate content
 - Focus on action, setting, and clear character presence
 - Pleasant composition with clean, uncluttered backgrounds
 
-${interests.length === 1 ? 'Create diverse scenarios all related to: ' + interests[0] : 'Distribute scenes evenly across the selected interests.'}
+${complexityGuidance}
+
+CONTENT GUIDANCE:
+${contentGuidance}
 
 Return a JSON array of exactly ${targetPageCount} prompts, each with:
 {

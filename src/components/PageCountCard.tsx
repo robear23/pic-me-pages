@@ -88,31 +88,7 @@ export const PageCountCard = ({
         </p>
       </div>
 
-      {/* Mockup Image Placeholder */}
-      <div className="mb-4 sm:mb-6 rounded-lg overflow-hidden bg-muted/50 aspect-[4/3] flex items-center justify-center">
-        <img
-          src={`/examples/complexity-${pageCount === 12 ? 'simple' : pageCount === 24 ? 'medium' : 'detailed'}.png`}
-          alt={`${pageCount}-page book preview`}
-          className="w-full h-full object-cover transition-opacity duration-300"
-          loading="lazy"
-          onError={(e) => {
-            // Fallback if image doesn't exist
-            e.currentTarget.style.display = 'none';
-            const parent = e.currentTarget.parentElement;
-            if (parent) {
-              parent.innerHTML = `
-                <div class="text-muted-foreground text-center p-4">
-                  <svg class="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-2 opacity-50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
-                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
-                  </svg>
-                  <p class="text-xs sm:text-sm">${pageCount} Pages</p>
-                </div>
-              `;
-            }
-          }}
-        />
-      </div>
+      {/* Removed image section per requirements */}
 
       {/* Binding Selector */}
       <BindingSelector

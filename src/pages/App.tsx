@@ -3,7 +3,7 @@ import { useBookStore } from '@/store/bookStore';
 import { HeroSection } from '@/components/HeroSection';
 import { ProgressBar } from '@/components/ProgressBar';
 import { UploadStep } from '@/components/UploadStep';
-import { SettingsStep } from '@/components/SettingsStep';
+import { ComplexityStep } from '@/components/ComplexityStep';
 import { InterestsStep } from '@/components/InterestsStep';
 import { BookOptionsStep } from '@/components/BookOptionsStep';
 import { PaymentStep } from '@/components/PaymentStep';
@@ -29,7 +29,7 @@ const Index = () => {
       <AnimatePresence mode="wait">
         {currentStep === 'hero' && <HeroSection key="hero" />}
         {currentStep === 'upload' && <UploadStep key="upload" />}
-        {currentStep === 'settings' && <SettingsStep key="settings" />}
+        {currentStep === 'complexity' && <ComplexityStep key="complexity" />}
         {currentStep === 'interests' && <InterestsStep key="interests" />}
         {currentStep === 'book-options' && <BookOptionsStep key="book-options" />}
         {currentStep === 'payment' && <PaymentStep key="payment" />}

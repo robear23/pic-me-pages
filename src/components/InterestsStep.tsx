@@ -3,11 +3,24 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useBookStore } from '@/store/bookStore';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Badge } from './ui/badge';
+
+const suggestionExamples = [
+  "Theme - space travel",
+  "Place characters in story of Aladdin",
+  "Underwater adventure",
+  "Superhero origin story",
+  "Magical forest quest",
+  "Time travel through history",
+];
 
 export const InterestsStep = () => {
-  const { characters, selectedInterests, setInterests, setStep } = useBookStore();
+  const { characters, selectedInterests, customPrompt, setInterests, setCustomPrompt, setStep } = useBookStore();
   const [interestsText, setInterestsText] = useState(selectedInterests.join(', '));
+  const [promptText, setPromptText] = useState(customPrompt);
+  const navigate = useNavigate();
 
   // Parse comma-separated interests
   const parsedInterests = interestsText
@@ -15,12 +28,25 @@ export const InterestsStep = () => {
     .map(i => i.trim())
     .filter(i => i.length > 0);
   
-  const isComplete = parsedInterests.length >= 1;
-  const characterNames = characters.map(c => c.name).filter(Boolean).join(', ');
+  // Valid if either interests OR custom prompt provided
+  const isComplete = parsedInterests.length >= 1 || promptText.trim().length > 0;
   
   const handleNext = () => {
     setInterests(parsedInterests);
+    setCustomPrompt(promptText);
     setStep('book-options');
+  };
+
+  const handleBack = () => {
+    setStep('complexity');
+  };
+
+  const handleReturnToDashboard = () => {
+    navigate('/dashboard');
+  };
+
+  const handleSuggestionClick = (suggestion: string) => {
+    setPromptText(suggestion);
   };
 
   return (
@@ -32,6 +58,26 @@ export const InterestsStep = () => {
       className="min-h-screen flex items-center justify-center px-6 pt-24 pb-12"
     >
       <div className="max-w-4xl w-full">
+        {/* Navigation */}
+        <div className="flex justify-between items-center mb-6">
+          <Button
+            onClick={handleBack}
+            variant="ghost"
+            size="sm"
+            className="gap-2"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Button>
+          <Button
+            onClick={handleReturnToDashboard}
+            variant="ghost"
+            size="sm"
+          >
+            Return to Dashboard
+          </Button>
+        </div>
+
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -39,39 +85,50 @@ export const InterestsStep = () => {
           className="backdrop-blur-lg bg-glass-bg border border-glass-border rounded-2xl p-8 md:p-12"
         >
           <h2 className="font-black text-4xl md:text-5xl mb-4 text-center">
-            What Do They Love?
+            Interests, Themes & Story
           </h2>
-          <p className="text-lg text-muted-foreground text-center mb-2">
-            Enter 1 or more interests to personalize the coloring book
-          </p>
-          <p className="text-sm text-muted-foreground text-center mb-8">
-            ✨ No limit! Add as many interests as you'd like
+          <p className="text-lg text-muted-foreground text-center mb-8">
+            Add quick interests or describe a custom theme/story for your coloring book
           </p>
 
-          {/* Interests Input */}
+          {/* Quick Interests Input */}
           <div className="space-y-4 mb-8">
+            <label className="text-sm font-semibold">Quick Interests (Optional)</label>
             <Textarea
               value={interestsText}
               onChange={(e) => setInterestsText(e.target.value)}
-              placeholder="e.g., dinosaurs, space exploration, ocean animals, painting, soccer, music, unicorns, robots, baking..."
-              className="min-h-[150px] text-base backdrop-blur-sm bg-input/50 border-glass-border resize-none"
+              placeholder="e.g., dinosaurs, space exploration, ocean animals, painting, soccer..."
+              className="min-h-[100px] text-base backdrop-blur-sm bg-input/50 border-glass-border resize-none"
+            />
+            <p className="text-xs text-muted-foreground">
+              Separate interests with commas • {parsedInterests.length} interest{parsedInterests.length !== 1 ? 's' : ''}
+            </p>
+          </div>
+
+          {/* Custom Prompt Section */}
+          <div className="space-y-4 mb-8">
+            <label className="text-sm font-semibold">Custom Story or Theme (Optional)</label>
+            <Textarea
+              value={promptText}
+              onChange={(e) => setPromptText(e.target.value)}
+              placeholder="Describe a theme or story for your coloring book. Example: 'Space adventure where characters explore different planets' or 'Characters as pirates searching for treasure'"
+              className="min-h-[120px] text-base backdrop-blur-sm bg-input/50 border-glass-border resize-none"
             />
             
-            {/* Counter */}
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">
-                Separate interests with commas
-              </p>
-              <div
-                className={`px-4 py-1.5 rounded-full backdrop-blur-sm border text-sm transition-all duration-300 ${
-                  isComplete
-                    ? 'bg-secondary/20 border-secondary text-secondary-foreground'
-                    : 'bg-primary/10 border-primary/30 text-foreground'
-                }`}
-              >
-                <span className="font-bold">
-                  {parsedInterests.length} interest{parsedInterests.length !== 1 ? 's' : ''}
-                </span>
+            {/* Suggestion Examples */}
+            <div>
+              <p className="text-xs text-muted-foreground mb-3">Try these examples:</p>
+              <div className="flex flex-wrap gap-2">
+                {suggestionExamples.map((suggestion) => (
+                  <Badge
+                    key={suggestion}
+                    variant="secondary"
+                    className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                    onClick={() => handleSuggestionClick(suggestion)}
+                  >
+                    {suggestion}
+                  </Badge>
+                ))}
               </div>
             </div>
           </div>
@@ -87,9 +144,9 @@ export const InterestsStep = () => {
             Continue to Book Options
           </Button>
 
-          {!isComplete && parsedInterests.length < 1 && (
+          {!isComplete && (
             <p className="text-sm text-muted-foreground text-center mt-4">
-              Please enter at least 1 interest
+              Please provide either interests or a custom story/theme
             </p>
           )}
         </motion.div>
