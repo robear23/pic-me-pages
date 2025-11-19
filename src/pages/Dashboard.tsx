@@ -26,6 +26,7 @@ interface Book {
   pdf_url: string | null;
   cover_url: string | null;
   cover_image_url?: string | null;
+  back_cover_image_url?: string | null;
   status: string;
   created_at: string;
   user_id: string;
@@ -372,6 +373,82 @@ const Dashboard = () => {
     }
   };
 
+  const handleDownloadCoverPDF = async (book: Book) => {
+    if (!book.cover_url) {
+      toast.error('Cover PDF not available');
+      return;
+    }
+    
+    setDownloadingBookId(book.id);
+    try {
+      toast.info('Preparing cover download...');
+      
+      const response = await fetch(book.cover_url);
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch cover PDF');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${book.character_name}-cover.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Cover PDF downloaded successfully!');
+    } catch (error: any) {
+      console.error('Error downloading cover PDF:', error);
+      toast.error('Failed to download cover PDF');
+    } finally {
+      setDownloadingBookId(null);
+    }
+  };
+
+  const handleRetryGeneration = async (book: Book) => {
+    if (!confirm(`Retry generating PDFs for "${book.character_name}'s Coloring Book"? This will attempt to complete the book generation.`)) {
+      return;
+    }
+    
+    setIsGeneratingPdf(book.id);
+    try {
+      toast.info('Retrying book generation...');
+      
+      if (!book.pages || book.pages.length === 0) {
+        throw new Error('Cannot retry: Book has no page data');
+      }
+      
+      const pdfUrl = await handleGeneratePdf(book, false);
+      
+      if (pdfUrl) {
+        const { error: updateError } = await supabase
+          .from('books')
+          .update({ status: 'completed' })
+          .eq('id', book.id);
+        
+        if (updateError) {
+          console.error('Error updating book status:', updateError);
+        }
+        
+        toast.success('Book generation completed successfully!');
+        await loadBooks();
+      }
+    } catch (error: any) {
+      console.error('Error retrying generation:', error);
+      toast.error(`Retry failed: ${error.message}`);
+    } finally {
+      setIsGeneratingPdf(null);
+      setPdfProgress(null);
+    }
+  };
+
+  const hasAssociatedOrders = (bookId: string): boolean => {
+    return orders[bookId] && orders[bookId].length > 0;
+  };
+
   const handleOrderFromModal = async (book: Book) => {
     if (!book.pdf_url) {
       toast.info("Preparing book for printing...");
@@ -617,46 +694,69 @@ const Dashboard = () => {
                             <Progress value={(pdfProgress.current / pdfProgress.total) * 100} />
                           </div>
                         )}
-                        <div className="flex gap-2">
-                          {book.status === 'completed' ? (
-                            <>
-                              <Button
-                                size="sm"
-                                variant="default"
-                                className="flex-1"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDownloadOrGenerate(book);
-                                }}
-                                disabled={isGeneratingPdf === book.id || downloadingBookId === book.id}
-                              >
-                                <Download className="w-4 h-4 mr-1" />
-                                {downloadingBookId === book.id ? 'Downloading...' : isGeneratingPdf === book.id ? 'Generating...' : 'Download PDF'}
-                              </Button>
-                              <OrderPhysicalBookDialog 
-                                bookId={book.id}
-                                bookTitle={`${book.character_name}'s Coloring Book`}
-                              />
-                            </>
-                          ) : (
-                            <Button size="sm" variant="outline" className="w-full" disabled>
-                              Processing...
+                        {book.status === 'completed' ? (
+                          <div className="space-y-2">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="w-full"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadOrGenerate(book);
+                              }}
+                              disabled={isGeneratingPdf === book.id || downloadingBookId === book.id}
+                            >
+                              <Download className="w-4 h-4 mr-1" />
+                              {downloadingBookId === book.id ? 'Downloading...' : isGeneratingPdf === book.id ? 'Generating...' : 'Download PDF'}
                             </Button>
-                          )}
-                        </div>
-                        {book.status === 'completed' && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="w-full"
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadCoverPDF(book);
+                              }}
+                              disabled={!book.cover_url || downloadingBookId === book.id}
+                            >
+                              <FileText className="w-4 h-4 mr-1" />
+                              {downloadingBookId === book.id ? 'Downloading...' : 'Download Cover PDF'}
+                            </Button>
+                            <OrderPhysicalBookDialog 
+                              bookId={book.id}
+                              bookTitle={`${book.character_name}'s Coloring Book`}
+                            />
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full text-white hover:text-white"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleQuickPreview(book);
+                              }}
+                              disabled={isGeneratingPdf === book.id}
+                            >
+                              <Zap className="w-4 h-4 mr-1" />
+                              Quick Preview (No Padding)
+                            </Button>
+                          </div>
+                        ) : book.status === 'failed' || (book.status === 'processing' && hasAssociatedOrders(book.id)) ? (
+                          <Button 
+                            size="sm" 
+                            variant="outline" 
+                            className="w-full border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50"
                             onClick={(e) => {
                               e.stopPropagation();
-                              handleQuickPreview(book);
+                              handleRetryGeneration(book);
                             }}
                             disabled={isGeneratingPdf === book.id}
                           >
                             <Zap className="w-4 h-4 mr-1" />
-                            Quick Preview (No Padding)
+                            {isGeneratingPdf === book.id ? 'Retrying...' : 'Retry Generation'}
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="outline" className="w-full" disabled>
+                            Processing...
                           </Button>
                         )}
                         <Button
