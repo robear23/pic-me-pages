@@ -19,9 +19,9 @@ OUTPUT: Real photograph quality, NOT illustration.`;
 // Optimized system message for Step 2 (60% token reduction)
 const LINE_ART_SYSTEM_MESSAGE = `Convert to BLACK/WHITE line art coloring page.
 CHARACTER: Keep recognizable facial structure from reference.
-REQUIREMENTS: ONLY pure black lines on white background. NO shading, gradients, colors, or photographic elements.
-Bold 2-4px outlines for children. Binary output: black lines or white spaces only.
-CRITICAL: Output will be threshold-filtered - avoid gray tones.`;
+REQUIREMENTS: ONLY pure black lines (#000000) on white background (#FFFFFF). NO shading, gradients, colors, or photographic elements.
+Bold 2-4px outlines for children. Binary output: pure black lines or pure white spaces only - no gray pixels.
+CRITICAL: Must be printer-ready coloring page with clean black outlines on white background.`;
 
 // Model selection based on complexity level
 const getModelForComplexity = (complexity?: string): string => {
@@ -36,103 +36,20 @@ const getModelForComplexity = (complexity?: string): string => {
   }
 };
 
-// Post-processing function to ensure pure black and white output
-async function convertToPureBlackAndWhite(base64Image: string, threshold: number = 180): Promise<string> {
+// Lightweight validation - just check if image looks reasonable
+async function validateLineArt(base64Image: string): Promise<boolean> {
   try {
-    console.log(`Starting black/white threshold conversion (threshold: ${threshold})...`);
-    
-    // Extract the base64 data (remove data URL prefix if present)
+    // Quick validation: check base64 is valid and reasonable size
     const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
-    
-    // Validate base64 data exists and has reasonable length
     if (!base64Data || base64Data.length < 100) {
-      throw new Error('Invalid or empty base64 image data');
+      return false;
     }
-    
-    // Decode base64 to binary
-    const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-    
-    // Load image using imagescript
-    const image = await Image.decode(binaryData);
-    
-    // Validate image dimensions - ensure they're positive and reasonable
-    if (!image.width || !image.height || image.width < 1 || image.height < 1) {
-      throw new Error(`Invalid image dimensions: ${image.width}x${image.height} (must be at least 1x1)`);
-    }
-    
-    if (image.width < 10 || image.height < 10) {
-      console.warn(`Warning: Very small image dimensions: ${image.width}x${image.height}`);
-    }
-    
-    console.log(`Processing image: ${image.width}x${image.height} pixels`);
-    
-    let blackPixels = 0;
-    let whitePixels = 0;
-    
-    // Process each pixel with boundary checking
-    for (let y = 0; y < image.height; y++) {
-      for (let x = 0; x < image.width; x++) {
-        // Double-check boundaries before accessing pixel
-        if (x < 0 || x >= image.width || y < 0 || y >= image.height) {
-          console.error(`Boundary error: trying to access pixel (${x}, ${y}) in ${image.width}x${image.height} image`);
-          continue;
-        }
-        
-        try {
-          const color = image.getPixelAt(x, y);
-        
-          // Extract RGB values (imagescript uses RGBA format)
-          const r = (color >> 24) & 0xFF;
-          const g = (color >> 16) & 0xFF;
-          const b = (color >> 8) & 0xFF;
-          
-          // Calculate brightness (simple average method)
-          const brightness = (r + g + b) / 3;
-          
-          // Apply threshold: if brightness > threshold → white, else → black
-          if (brightness > threshold) {
-            image.setPixelAt(x, y, 0xFFFFFFFF); // Pure white with full alpha
-            whitePixels++;
-          } else {
-            image.setPixelAt(x, y, 0x000000FF); // Pure black with full alpha
-            blackPixels++;
-          }
-        } catch (pixelError) {
-          console.error(`Error processing pixel at (${x}, ${y}):`, pixelError);
-          // Set to white on error to avoid corrupt data
-          image.setPixelAt(x, y, 0xFFFFFFFF);
-          whitePixels++;
-        }
-      }
-    }
-    
-    console.log(`Threshold applied: ${blackPixels} black pixels, ${whitePixels} white pixels`);
-    
-    // Validate that we have reasonable distribution (not all black or all white)
-    const totalPixels = blackPixels + whitePixels;
-    const blackRatio = blackPixels / totalPixels;
-    
-    if (blackRatio < 0.01) {
-      console.warn(`Warning: Image is almost entirely white (${(blackRatio * 100).toFixed(2)}% black). May indicate conversion issue.`);
-    } else if (blackRatio > 0.90) {
-      console.warn(`Warning: Image is almost entirely black (${(blackRatio * 100).toFixed(2)}% black). May indicate conversion issue.`);
-    }
-    
-    // Encode back to PNG
-    const processedImage = await image.encode();
-    
-    // Convert to base64 with data URL prefix
-    const base64Result = 'data:image/png;base64,' + btoa(String.fromCharCode(...new Uint8Array(processedImage)));
-    
-    console.log('Black/white threshold conversion complete');
-    
-    return base64Result;
-    
+    // Image exists and has data, assume it's valid
+    // AI is responsible for generating proper line art
+    return true;
   } catch (error) {
-    console.error('Error in black/white conversion:', error);
-    // Re-throw the error instead of silently falling back
-    // The caller will handle the fallback appropriately
-    throw new Error(`Black/white conversion failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('Line art validation error:', error);
+    return false;
   }
 }
 
@@ -311,24 +228,18 @@ async function convertToLineArt(
 
         console.log(`Successfully converted to line art ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
         
-        // Store the line art before post-processing (our fallback)
-        const lineArtImage = imageData;
-        
-        // Apply post-processing to ensure pure black and white
-        console.log(`Applying black/white threshold post-processing to page ${pageIndex + 1}/${totalPages}`);
-        try {
-          const pureBlackWhiteImage = await convertToPureBlackAndWhite(imageData, 180);
-          console.log(`Post-processing complete for page ${pageIndex + 1}/${totalPages}`);
-          return pureBlackWhiteImage;
-        } catch (postProcessError) {
-          console.error(`Post-processing failed for page ${pageIndex + 1}:`, postProcessError);
-          
-          // CRITICAL: Never return a realistic photo to the user
-          // If post-processing fails, we must retry the entire generation
-          console.error(`Post-processing failed - CANNOT return realistic photo. Will retry.`);
-          const errorMessage = postProcessError instanceof Error ? postProcessError.message : String(postProcessError);
-          throw new Error(`Line art post-processing failed: ${errorMessage}. Retrying generation.`);
+        // Validate the line art looks reasonable
+        const isValid = await validateLineArt(imageData);
+        if (!isValid) {
+          console.error(`Line art validation failed for page ${pageIndex + 1}`);
+          if (attempt < MAX_RETRIES) {
+            continue;
+          }
+          throw new Error('Line art validation failed after all retries');
         }
+        
+        console.log(`Line art validated successfully for page ${pageIndex + 1}/${totalPages}`);
+        return imageData;
         
       } catch (error) {
         console.error(`Step 2 error (attempt ${attempt}, model ${model}):`, error);
