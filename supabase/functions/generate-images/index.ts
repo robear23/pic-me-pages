@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MAX_RETRIES = 2; // Reduced for faster generation with relaxed validation
+const MAX_RETRIES = 1; // Reduced to 1 for faster processing and prevent timeouts
 const BASE_DELAY = 1000;
 const FUNCTION_TIMEOUT = 140000; // 140 seconds (10s before hard limit)
 
@@ -88,13 +88,11 @@ async function validateLineArt(base64Image: string): Promise<{
     let nearGrayPixels = 0;
     const threshold = 30;
     
-    // Sample every 50th pixel for faster validation (balanced approach)
-    const step = 50;
-    for (let y = 0; y < image.height; y += step) {
-      for (let x = 0; x < image.width; x += step) {
-        // Ensure we're within bounds with safety margin
-        if (x >= image.width - 1 || y >= image.height - 1 || x < 0 || y < 0) continue;
-        
+    // Sample every 100th pixel for faster validation (optimized for performance)
+    const step = 100;
+    // Start at 1 to avoid ImageScript boundary issues (1-indexed coordinates)
+    for (let y = 1; y < image.height - 1; y += step) {
+      for (let x = 1; x < image.width - 1; x += step) {
         try {
           totalPixels++;
           const color = image.getPixelAt(x, y);
@@ -134,14 +132,14 @@ async function validateLineArt(base64Image: string): Promise<{
       return { valid: false, grayPixelPercentage: grayPercentage, hasPhotographicElements: true };
     }
     
-    // Stricter thresholds - balance between quality and speed
-    const hasShading = grayPercentage > 8; // Allows compression artifacts but rejects shading
-    const hasPhotographicElements = nearGrayPercentage > 4; // Rejects mid-tone grays
+    // Relaxed thresholds to prevent excessive retries and timeouts
+    const hasShading = grayPercentage > 15; // More lenient for compression artifacts
+    const hasPhotographicElements = nearGrayPercentage > 8; // More tolerant of mid-tone grays
     const isValid = !hasShading && !hasPhotographicElements;
     
     console.log(`[VALIDATION DETAIL] Line art page:
-  - Gray pixels: ${grayPercentage.toFixed(2)}% (threshold: 8%)
-  - Mid-tone gray: ${nearGrayPercentage.toFixed(2)}% (threshold: 4%)
+  - Gray pixels: ${grayPercentage.toFixed(2)}% (threshold: 15%)
+  - Mid-tone gray: ${nearGrayPercentage.toFixed(2)}% (threshold: 8%)
   - Black/White: ${blackPercentage.toFixed(2)}%
   - Result: ${isValid ? '✓ PASS' : '✗ FAIL'}`);
     
@@ -503,7 +501,7 @@ async function convertToLineArt(
         const validation = await validateLineArt(imageData);
         if (!validation.valid) {
           const issues: string[] = [];
-          if (validation.grayPixelPercentage > 8) {
+          if (validation.grayPixelPercentage > 15) {
             issues.push(`${validation.grayPixelPercentage.toFixed(1)}% gray pixels`);
           }
           if (validation.hasPhotographicElements) {
@@ -552,7 +550,7 @@ serve(async (req) => {
       throw new Error('GOOGLE_API_KEY is required');
     }
 
-    const { prompts, characters, consistentCharacters, batchIndex, batchSize = 3, isReworkMode = false, complexity } = await req.json();
+    const { prompts, characters, consistentCharacters, batchIndex, batchSize = 2, isReworkMode = false, complexity } = await req.json();
 
     if (!prompts || !Array.isArray(prompts)) {
       throw new Error('Invalid prompts array');
@@ -596,7 +594,7 @@ serve(async (req) => {
     console.log(`Final: Processing ${validPrompts.length} pages. Page numbers: [${validPrompts.map(p => p.pageNumber).join(', ')}]`);
     console.log(`Complexity level: ${complexity || 'default (medium)'}`);
 
-    const BATCH_SIZE = 3; // Parallel processing for efficiency
+    const BATCH_SIZE = 2; // Reduced to prevent CPU timeouts
     const pages: any[] = [];
     let successCount = 0;
     const startTime = Date.now();
