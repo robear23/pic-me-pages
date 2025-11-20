@@ -132,15 +132,23 @@ async function validateLineArt(base64Image: string): Promise<{
       return { valid: false, grayPixelPercentage: grayPercentage, hasPhotographicElements: true };
     }
     
-    // Relaxed thresholds to prevent excessive retries and timeouts
-    const hasShading = grayPercentage > 15; // More lenient for compression artifacts
-    const hasPhotographicElements = nearGrayPercentage > 8; // More tolerant of mid-tone grays
-    const isValid = !hasShading && !hasPhotographicElements;
+    // Significantly relaxed thresholds - accept light shading and gradients suitable for coloring
+    const GRAY_THRESHOLD = 30; // Increased from 15% - allows light shading
+    const MID_GRAY_THRESHOLD = 18; // Increased from 8% - allows softer gradients
+    
+    const hasExcessiveGray = grayPercentage > GRAY_THRESHOLD;
+    const hasExcessiveMidTones = nearGrayPercentage > MID_GRAY_THRESHOLD;
+    // Only fail on photographic elements if also very gray (>40%)
+    const hasPhotographicElements = nearGrayPercentage > MID_GRAY_THRESHOLD;
+    const isPhotoLike = hasPhotographicElements && grayPercentage > 40;
+    
+    const isValid = !hasExcessiveGray && !hasExcessiveMidTones && !isPhotoLike;
     
     console.log(`[VALIDATION DETAIL] Line art page:
-  - Gray pixels: ${grayPercentage.toFixed(2)}% (threshold: 15%)
-  - Mid-tone gray: ${nearGrayPercentage.toFixed(2)}% (threshold: 8%)
+  - Gray pixels: ${grayPercentage.toFixed(2)}% (threshold: ${GRAY_THRESHOLD}%)
+  - Mid-tone gray: ${nearGrayPercentage.toFixed(2)}% (threshold: ${MID_GRAY_THRESHOLD}%)
   - Black/White: ${blackPercentage.toFixed(2)}%
+  - Photo-like: ${isPhotoLike ? 'Yes' : 'No'}
   - Result: ${isValid ? '✓ PASS' : '✗ FAIL'}`);
     
     return { 
@@ -499,27 +507,37 @@ async function convertToLineArt(
         
         // Validate the line art with pixel-level analysis
         const validation = await validateLineArt(imageData);
+        
+        // Classify validation failures: severe vs moderate
+        const isSevereFailure = validation.grayPixelPercentage > 60 || 
+                                (validation.hasPhotographicElements && validation.grayPixelPercentage > 40);
+        
         if (!validation.valid) {
           const issues: string[] = [];
-          if (validation.grayPixelPercentage > 15) {
+          if (validation.grayPixelPercentage > 30) {
             issues.push(`${validation.grayPixelPercentage.toFixed(1)}% gray pixels`);
           }
-          if (validation.hasPhotographicElements) {
-            issues.push('photographic elements detected');
+          if (validation.hasPhotographicElements && validation.grayPixelPercentage > 40) {
+            issues.push('too photographic');
           }
           
-          console.error(`Line art validation failed for page ${pageIndex + 1}: ${issues.join(', ')}`);
-          
-          if (attempt < MAX_RETRIES) {
-            console.log(`Retrying line art conversion (attempt ${attempt + 1}/${MAX_RETRIES}) to fix: ${issues.join(', ')}...`);
-            continue;
+          // For severe failures, retry or throw
+          if (isSevereFailure) {
+            console.error(`SEVERE validation failure for page ${pageIndex + 1}: ${issues.join(', ')}`);
+            
+            if (attempt < MAX_RETRIES) {
+              console.log(`Retrying line art conversion (attempt ${attempt + 1}/${MAX_RETRIES})...`);
+              continue;
+            }
+            
+            throw new Error(`VALIDATION_FAILED: Image is too photographic (${validation.grayPixelPercentage.toFixed(1)}% gray). Use brighter photos with higher contrast.`);
           }
           
-          // CRITICAL CHANGE: Don't proceed with bad images
-          throw new Error(`Line art conversion failed after ${MAX_RETRIES} attempts: ${issues.join(', ')}. This page cannot be processed.`);
+          // For moderate failures, accept with warning
+          console.log(`[WARNING] Line art has ${validation.grayPixelPercentage.toFixed(1)}% gray pixels – accepted with warning`);
         }
 
-        console.log(`✓ Line art validated successfully for page ${pageIndex + 1}/${totalPages} (${validation.grayPixelPercentage.toFixed(2)}% gray pixels)`);
+        console.log(`✓ Line art validated for page ${pageIndex + 1}/${totalPages} (${validation.grayPixelPercentage.toFixed(2)}% gray pixels)`);
         return imageData;
         
       } catch (error) {
