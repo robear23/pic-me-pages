@@ -203,7 +203,7 @@ export const GeneratingStep = () => {
               complexityLevel || 'medium',
               (percent, status) => {
                 setGenerationProgress(Math.round(50 + (percent * 0.4))); // 50-90%
-                setGenerationStatus(status);
+                setGenerationStatus(GENERATION_STEPS[3]); // Always "Generating coloring pages"
                 updateQueueStatus();
               }
             );
@@ -254,7 +254,7 @@ export const GeneratingStep = () => {
               complexityLevel || 'medium',
               (percent, status) => {
                 setGenerationProgress(Math.round(50 + (percent * 0.4))); // 50-90%
-                setGenerationStatus(status);
+                setGenerationStatus(GENERATION_STEPS[3]); // Always "Generating coloring pages"
                 updateQueueStatus();
               }
             );
@@ -293,7 +293,8 @@ export const GeneratingStep = () => {
           
           while (stillFailedPages.length > 0 && retryAttempt < MAX_RETRIES) {
             retryAttempt++;
-            setGenerationStatus(`${GENERATION_STEPS[4]} (attempt ${retryAttempt}/${MAX_RETRIES})`);
+            setGenerationStatus(GENERATION_STEPS[4]); // "Retrying failed pages (if needed)" - exact match
+            console.log(`Retry attempt ${retryAttempt}/${MAX_RETRIES} for failed pages`);
             
             // Extract failed prompts to retry
             const failedPrompts = generatedPrompts.filter(prompt => 
@@ -383,7 +384,7 @@ export const GeneratingStep = () => {
         setGeneratedPages(finalPages);
 
         // Step 5: Creating book cover (90-92%)
-        setGenerationStatus(GENERATION_STEPS[4]);
+        setGenerationStatus(GENERATION_STEPS[5]); // "Creating book cover"
         let coverImageUrl: string | null = null;
         let backCoverImageUrl: string | null = null;
         
@@ -421,11 +422,11 @@ export const GeneratingStep = () => {
         setGenerationProgress(92);
 
         // Step 6: Creating print-ready PDFs (92-96%)
-        setGenerationStatus(GENERATION_STEPS[5]);
+        setGenerationStatus(GENERATION_STEPS[6]); // "Creating print-ready PDFs"
         setGenerationProgress(94);
 
         // Step 7: Finalizing (96-100%)
-        setGenerationStatus(GENERATION_STEPS[6]);
+        setGenerationStatus(GENERATION_STEPS[7]); // "Finalizing your book"
         setGenerationProgress(97);
         
         // Save book to database if user is authenticated
@@ -718,6 +719,18 @@ export const GeneratingStep = () => {
               <h2 className="font-black text-4xl md:text-5xl mb-4">
                 Creating Your Coloring Book...
               </h2>
+              
+              {/* AI Limitations & Rework Info */}
+              <Alert className="mb-6 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 text-left">
+                <AlertDescription className="text-blue-800 dark:text-blue-200">
+                  <p className="font-semibold mb-2">📝 About Your Book</p>
+                  <ul className="text-sm space-y-1 list-disc list-inside">
+                    <li>AI may occasionally generate imperfect images</li>
+                    <li>You can regenerate up to <strong>50% of pages</strong> after generation</li>
+                    <li>Review your book carefully and use the rework feature if needed</li>
+                  </ul>
+                </AlertDescription>
+              </Alert>
               <p className="text-lg text-muted-foreground mb-2">
                 {queueStatus.queueLength > 1 
                   ? `Position #${queueStatus.queueLength} in queue • Usually takes 4 minutes per book`
@@ -772,8 +785,8 @@ export const GeneratingStep = () => {
                         isComplete
                           ? 'bg-secondary/20 border border-secondary/30'
                           : isCurrent
-                          ? 'bg-primary/10 border border-primary/30'
-                          : 'bg-input/20 border border-glass-border'
+                          ? 'bg-primary/10 border-2 border-primary/50 shadow-lg shadow-primary/20'
+                          : 'bg-muted/5 border border-muted/20'
                       }`}
                     >
                       <span
