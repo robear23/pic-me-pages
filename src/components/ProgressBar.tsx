@@ -21,7 +21,7 @@ export const ProgressBar = ({ currentStep }: ProgressBarProps) => {
   const currentIndex = steps.findIndex((s) => s.id === currentStep);
 
   return (
-    <div className="fixed top-0 left-0 right-0 z-50 backdrop-blur-lg bg-background/50 border-b border-glass-border">
+    <div className="fixed top-16 left-0 right-0 z-40 backdrop-blur-lg bg-background/50 border-b border-glass-border">
       <div className="max-w-4xl mx-auto px-6 py-4">
         <div className="flex items-center justify-between">
           {steps.map((step, index) => {
