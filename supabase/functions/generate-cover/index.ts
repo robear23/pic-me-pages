@@ -43,23 +43,15 @@ serve(async (req) => {
 
     const interestsText = interests.slice(0, 3).join(', ');
     
-    // STEP 1: Color in the black & white coloring page
-    console.log('Step 1: Coloring the page...');
+    // OPTIMIZED: Combine coloring + border in ONE call (saves 33% on cover costs)
+    console.log('Step 1: Generating front cover (colored + bordered)...');
     
-    const colorPrompt = `Take this black and white coloring page line art and fill it in with vibrant, professional colors.
+    const frontCoverPrompt = `Transform this coloring page into a vibrant book cover with border.
+COLOR: Fill with rich colors matching theme: ${interestsText}. Professional, age-appropriate.
+BORDER: Add playful decorative border (10-15% width) with theme elements. Eye-catching, child-friendly. NO text.
+OUTPUT: Complete front cover ready for print.`;
 
-COLORING REQUIREMENTS:
-- Fill in all areas with beautiful, rich colors
-- Use colors that complement the theme of: ${interestsText}
-- Make it look professionally colored - vibrant but not garish
-- Keep the line art visible and crisp
-- Use color harmony and good contrast
-- Age-appropriate color choices for children aged 3-12
-- Maintain all details from the original line art
-
-IMPORTANT: This should look like a beautifully completed coloring page, ready for a book cover.`;
-
-    const colorResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const frontResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${lovableApiKey}`,
@@ -71,7 +63,7 @@ IMPORTANT: This should look like a beautifully completed coloring page, ready fo
           {
             role: 'user',
             content: [
-              { type: 'text', text: colorPrompt },
+              { type: 'text', text: frontCoverPrompt },
               { type: 'image_url', image_url: { url: pageImageUrl } }
             ]
           }
@@ -80,85 +72,26 @@ IMPORTANT: This should look like a beautifully completed coloring page, ready fo
       }),
     });
 
-    if (!colorResponse.ok) {
-      const errorText = await colorResponse.text();
-      console.error('Color step AI error:', errorText);
-      throw new Error(`Coloring failed: ${errorText}`);
+    if (!frontResponse.ok) {
+      const errorText = await frontResponse.text();
+      console.error('Front cover AI error:', errorText);
+      throw new Error(`Front cover generation failed: ${errorText}`);
     }
 
-    const colorData = await colorResponse.json();
-    const coloredImage = colorData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-
-    if (!coloredImage) {
-      throw new Error('No colored image generated');
-    }
-
-    console.log('Colored image generated, adding border...');
-
-    // STEP 2: Add decorative border around the colored image
-    const borderPrompt = `Add a decorative, colorful border frame around this image.
-
-BORDER REQUIREMENTS:
-- Vibrant, playful border with elements related to: ${interestsText}
-- Border should complement the colors in the image
-- Professional children's book cover aesthetic
-- Border should frame the image nicely without overwhelming it
-- Include whimsical, interest-related decorative elements
-- Eye-catching and suitable for retail display
-- NO text, words, or blank spaces for text
-- Border should be approximately 10-15% of the total image width on each side
-
-STYLE: Fun, colorful, child-friendly border that makes this perfect for a book cover.`;
-
-    const borderResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-image',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: borderPrompt },
-              { type: 'image_url', image_url: { url: coloredImage } }
-            ]
-          }
-        ],
-        modalities: ['image', 'text']
-      }),
-    });
-
-    if (!borderResponse.ok) {
-      const errorText = await borderResponse.text();
-      console.error('Border step AI error:', errorText);
-      throw new Error(`Border generation failed: ${errorText}`);
-    }
-
-    const borderData = await borderResponse.json();
-    const frontCover = borderData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    const frontData = await frontResponse.json();
+    const frontCover = frontData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
 
     if (!frontCover) {
-      throw new Error('No front cover image generated');
+      throw new Error('No front cover generated');
     }
 
-    console.log('Front cover generated, generating back cover...');
+    console.log('Front cover completed');
 
-    // Generate back cover with simple decorative pattern
-    const backCoverPrompt = `Create a simple, clean back cover design with a decorative border.
-
-DESIGN REQUIREMENTS:
-- Simple decorative border frame matching the style of the front cover
-- Subtle patterns or elements related to: ${interestsText}
-- Plenty of white/light space in the center for text
-- Color scheme should complement the front cover colors
-- Professional children's book back cover aesthetic
-- Leave clear space for text and barcode
-- NO text or words in the image
-
-STYLE: Clean, minimal design with decorative border - background artwork for text overlay.`;
+    // STEP 2: Generate complementary back cover
+    console.log('Step 2: Generating back cover...');
+    
+    const backCoverPrompt = `Create back cover for children's book. Theme: ${interestsText}.
+Simple elegant design, complementary colors, matching border style. Space for text (NO actual text). Clean, professional, age-appropriate.`;
 
     const backCoverResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
