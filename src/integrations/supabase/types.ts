@@ -184,6 +184,44 @@ export type Database = {
           },
         ]
       }
+      retry_credits: {
+        Row: {
+          book_id: string | null
+          created_by: string | null
+          granted_at: string | null
+          id: string
+          reason: string
+          used_at: string | null
+          user_id: string
+        }
+        Insert: {
+          book_id?: string | null
+          created_by?: string | null
+          granted_at?: string | null
+          id?: string
+          reason: string
+          used_at?: string | null
+          user_id: string
+        }
+        Update: {
+          book_id?: string | null
+          created_by?: string | null
+          granted_at?: string | null
+          id?: string
+          reason?: string
+          used_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retry_credits_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string | null

@@ -160,8 +160,16 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
     let bookId: string;
     
     if (isUpdate && existingBookId) {
-      // Update existing book
+      // Update existing book - preserve covers if not regenerated
       console.log('Updating existing book:', existingBookId);
+      
+      // Fetch existing book to preserve covers if new ones weren't generated
+      const { data: existingBook } = await supabase
+        .from('books')
+        .select('cover_image_url, back_cover_image_url')
+        .eq('id', existingBookId)
+        .single();
+      
       const updateData: any = {
         pages: generatedPages.map((page, index) => ({
           pageNumber: page.pageNumber,
@@ -171,6 +179,14 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
         photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
         updated_at: new Date().toISOString(),
       };
+      
+      // Only update covers if new ones were provided, otherwise preserve existing
+      if (uploadedCoverUrl) {
+        updateData.cover_image_url = uploadedCoverUrl;
+      }
+      if (uploadedBackCoverUrl) {
+        updateData.back_cover_image_url = uploadedBackCoverUrl;
+      }
       
       // Add reworked page numbers if provided
       if (reworkedPageNumbers !== undefined) {
@@ -189,6 +205,14 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       
       bookId = existingBookId;
       console.log('Updated book with ID:', bookId);
+      
+      // Use existing covers if new ones weren't provided
+      if (!uploadedCoverUrl && existingBook?.cover_image_url) {
+        uploadedCoverUrl = existingBook.cover_image_url;
+      }
+      if (!uploadedBackCoverUrl && existingBook?.back_cover_image_url) {
+        uploadedBackCoverUrl = existingBook.back_cover_image_url;
+      }
     } else {
       // Create new book
       const { data: bookData, error: bookInsertError } = await supabase
@@ -281,7 +305,18 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       throw new Error(`Failed to generate print-ready PDFs: ${errorMessage}. Please check that your images meet the requirements and try again.`);
     }
 
-    // 6. Update book with PDF URLs and mark as completed
+    // 6. Update book with PDF URLs and determine status
+    // Check if we have all required assets
+    const hasAllAssets = interiorPdfUrl && uploadedCoverUrl && uploadedBackCoverUrl && (coverPdfUrl || uploadedCoverUrl);
+    const bookStatus = hasAllAssets ? 'completed' : 'partial';
+    
+    console.log(`Book ${bookId} status: ${bookStatus}`, {
+      hasInteriorPdf: !!interiorPdfUrl,
+      hasFrontCover: !!uploadedCoverUrl,
+      hasBackCover: !!uploadedBackCoverUrl,
+      hasCoverPdf: !!coverPdfUrl,
+    });
+    
     const { error: updateError } = await supabase
       .from('books')
       .update({
@@ -289,12 +324,28 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
         cover_image_url: uploadedCoverUrl,
         back_cover_image_url: uploadedBackCoverUrl,
         pdf_url: interiorPdfUrl,
-        status: 'completed',
+        status: bookStatus,
       })
       .eq('id', bookId);
 
     if (updateError) {
       console.error('Book update error:', updateError);
+    }
+    
+    // Grant retry credit if book is partial due to missing covers
+    if (bookStatus === 'partial') {
+      console.log('Book is partial, granting retry credit');
+      try {
+        await supabase
+          .from('retry_credits')
+          .insert({
+            user_id: userId,
+            book_id: bookId,
+            reason: 'Missing covers - system error during generation',
+          });
+      } catch (creditError) {
+        console.error('Failed to grant retry credit:', creditError);
+      }
     }
 
     return bookId;

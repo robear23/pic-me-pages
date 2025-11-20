@@ -484,34 +484,63 @@ export const GeneratingStep = () => {
         let coverImageUrl: string | null = null;
         let backCoverImageUrl: string | null = null;
         
-        // Generate covers if: not in rework mode OR covers don't exist yet (safety check)
+        // Generate covers with retry logic
         const { coverImageUrl: existingFrontCover, backCoverImageUrl: existingBackCover } = useBookStore.getState();
-        if (!isReworkMode || !existingFrontCover || !existingBackCover) {
-          try {
-            console.log('Generating front and back covers...');
-            
-            // Select a page to use for the cover (prefer first successful page)
-            const successfulPages = finalPages.filter(p => p.imageUrl);
-            const coverPage = successfulPages[0];
-            
-            if (coverPage?.imageUrl) {
-              const { frontCover, backCover } = await generateCover(
-                characters.map(c => c.name).filter(Boolean).join(' and '),
-                selectedInterests,
-                coverPage.imageUrl,
-                charactersWithPhotos
-              );
-              coverImageUrl = frontCover;
-              backCoverImageUrl = backCover;
-              setCoverImageUrl(frontCover);
-              setBackCoverImageUrl(backCover);
-              console.log('Front and back covers generated successfully using page:', coverPage.pageNumber);
-            } else {
-              console.warn('No successful pages found for cover generation');
+        const shouldGenerateCovers = !isReworkMode || !existingFrontCover || !existingBackCover;
+        
+        if (shouldGenerateCovers) {
+          let coverAttempts = 0;
+          const maxCoverAttempts = 3;
+          
+          while (coverAttempts < maxCoverAttempts && !coverImageUrl) {
+            try {
+              coverAttempts++;
+              console.log(`Cover generation attempt ${coverAttempts}/${maxCoverAttempts}`);
+              
+              const successfulPages = finalPages.filter(p => p.imageUrl);
+              const coverPage = successfulPages[0];
+              
+              if (coverPage?.imageUrl) {
+                const { frontCover, backCover } = await generateCover(
+                  characters.map(c => c.name).filter(Boolean).join(' and '),
+                  selectedInterests,
+                  coverPage.imageUrl,
+                  charactersWithPhotos
+                );
+                coverImageUrl = frontCover;
+                backCoverImageUrl = backCover;
+                setCoverImageUrl(frontCover);
+                setBackCoverImageUrl(backCover);
+                console.log('Front and back covers generated successfully');
+                break;
+              }
+            } catch (coverError) {
+              console.error(`Cover generation attempt ${coverAttempts} failed:`, coverError);
+              
+              if (coverAttempts < maxCoverAttempts) {
+                await new Promise(resolve => setTimeout(resolve, 1000 * coverAttempts));
+              } else {
+                console.error('All cover generation attempts failed - book will be marked as partial');
+              }
             }
-          } catch (coverError) {
-            console.error('Cover generation failed:', coverError);
-            // Continue without cover - we'll use a text-only cover
+          }
+        } else if (isReworkMode && existingBookId) {
+          // Preserve existing covers in rework mode
+          console.log('Rework mode: Preserving existing covers');
+          try {
+            const { data: existingBook } = await supabase
+              .from('books')
+              .select('cover_image_url, back_cover_image_url')
+              .eq('id', existingBookId)
+              .single();
+            
+            if (existingBook) {
+              coverImageUrl = existingBook.cover_image_url;
+              backCoverImageUrl = existingBook.back_cover_image_url;
+              console.log('Existing covers preserved');
+            }
+          } catch (fetchError) {
+            console.error('Failed to fetch existing covers:', fetchError);
           }
         }
         

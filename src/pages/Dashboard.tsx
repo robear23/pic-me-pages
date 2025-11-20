@@ -41,12 +41,21 @@ interface Order {
   price_paid: number;
 }
 
+interface RetryCredit {
+  id: string;
+  book_id: string | null;
+  reason: string;
+  granted_at: string;
+  used_at: string | null;
+}
+
 const Dashboard = () => {
   const { user } = useAuth();
   const { isAdmin } = useAdmin();
   const navigate = useNavigate();
   const [books, setBooks] = useState<Book[]>([]);
   const [orders, setOrders] = useState<Record<string, Order[]>>({});
+  const [retryCredits, setRetryCredits] = useState<RetryCredit[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -64,6 +73,7 @@ const Dashboard = () => {
       console.log('[Dashboard] User authenticated, loading books...', user.id);
       loadBooks();
       fetchOrders();
+      loadRetryCredits();
     } else {
       console.log('[Dashboard] No user found');
     }
@@ -106,6 +116,24 @@ const Dashboard = () => {
   const handleRetry = () => {
     console.log('[Dashboard] Manual retry triggered');
     setRetryCount(prev => prev + 1);
+  };
+
+  const loadRetryCredits = async () => {
+    if (!user) return;
+    
+    try {
+      const { data, error } = await supabase
+        .from('retry_credits')
+        .select('*')
+        .eq('user_id', user.id)
+        .is('used_at', null)
+        .order('granted_at', { ascending: false });
+      
+      if (error) throw error;
+      setRetryCredits(data || []);
+    } catch (error) {
+      console.error('Failed to load retry credits:', error);
+    }
   };
 
   const fetchOrders = async () => {
@@ -151,7 +179,8 @@ const Dashboard = () => {
   const getIncompleteBooks = () => {
     return books.filter(book => 
       book.status === 'processing' || 
-      book.status === 'failed' || 
+      book.status === 'failed' ||
+      book.status === 'partial' ||
       !book.pdf_url || 
       !book.cover_image_url
     );
@@ -161,13 +190,30 @@ const Dashboard = () => {
     const incompleteBooks = getIncompleteBooks();
     if (incompleteBooks.length === 0) return;
 
-    const confirmed = window.confirm(
-      `Delete ${incompleteBooks.length} incomplete book(s)? These books are missing PDFs or cover images and cannot be used.`
+    const systemFailures = incompleteBooks.filter(book => 
+      book.status === 'partial' || (book.status === 'failed' && !book.pdf_url)
     );
 
+    const message = systemFailures.length > 0
+      ? `Delete ${incompleteBooks.length} incomplete book(s)? ${systemFailures.length} appear to be system failures and will grant you retry credits.`
+      : `Delete ${incompleteBooks.length} incomplete book(s)? These books are missing PDFs or cover images and cannot be used.`;
+
+    const confirmed = window.confirm(message);
     if (!confirmed) return;
 
     try {
+      // Grant retry credits for system failures
+      if (systemFailures.length > 0 && user) {
+        const creditInserts = systemFailures.map(book => ({
+          user_id: user.id,
+          book_id: book.id,
+          reason: `System failure during generation - ${book.status} status`,
+        }));
+
+        await supabase.from('retry_credits').insert(creditInserts);
+      }
+
+      // Delete the incomplete books
       const { error } = await supabase
         .from('books')
         .delete()
@@ -175,8 +221,13 @@ const Dashboard = () => {
 
       if (error) throw error;
 
-      toast.success(`Deleted ${incompleteBooks.length} incomplete book(s)`);
+      const creditsMessage = systemFailures.length > 0 
+        ? ` Granted ${systemFailures.length} retry credit(s).`
+        : '';
+      
+      toast.success(`Deleted ${incompleteBooks.length} incomplete book(s).${creditsMessage}`);
       loadBooks();
+      loadRetryCredits();
     } catch (error) {
       console.error('Error deleting incomplete books:', error);
       toast.error('Failed to delete incomplete books');
@@ -523,7 +574,7 @@ const Dashboard = () => {
 
       {/* Content */}
       <div className="container mx-auto px-6 py-12">
-        <div className="mb-8 flex items-center gap-4">
+        <div className="mb-8 flex items-center gap-4 flex-wrap">
           <Button 
             size="lg" 
             onClick={() => {
@@ -535,6 +586,13 @@ const Dashboard = () => {
             <Plus className="w-5 h-5" />
             Create New Book
           </Button>
+          
+          {!loading && retryCredits.length > 0 && (
+            <Badge variant="secondary" className="text-sm gap-2 py-2 px-4">
+              <Zap className="w-4 h-4 text-yellow-500" />
+              {retryCredits.length} Free {retryCredits.length === 1 ? 'Retry' : 'Retries'} Available
+            </Badge>
+          )}
           
           {!loading && getIncompleteBooks().length > 0 && (
             <Button
@@ -657,12 +715,13 @@ const Dashboard = () => {
                           <Badge 
                             variant={
                               book.status === 'completed' ? 'default' : 
+                              book.status === 'partial' ? 'secondary' :
                               book.status === 'processing' ? 'secondary' : 
                               'destructive'
                             } 
                             className="text-xs"
                           >
-                            {book.status}
+                            {book.status === 'partial' ? 'Partial' : book.status}
                           </Badge>
                         </div>
                       </div>
