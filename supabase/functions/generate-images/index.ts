@@ -7,22 +7,45 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MAX_RETRIES = 1; // Reduced from 2 to save costs
+const MAX_RETRIES = 3; // Allow more retries for quality control
 const BASE_DELAY = 1000;
 const FUNCTION_TIMEOUT = 140000; // 140 seconds (10s before hard limit)
 
-// Optimized system message for Step 1 (50% token reduction)
-const REALISTIC_SYSTEM_MESSAGE = `Generate photorealistic image matching reference photo exactly.
-CHARACTER: Preserve exact facial features, hair, skin tone, age. Must be recognizable.
-STYLE: Professional portrait, natural lighting, clean background, child-friendly.
-OUTPUT: Real photograph quality, NOT illustration.`;
+// Enhanced system message for Step 1 - Photorealistic requirement
+const REALISTIC_SYSTEM_MESSAGE = `CRITICAL: Generate a REAL PHOTOGRAPH - NOT an illustration, drawing, cartoon, or artistic rendering.
 
-// Optimized system message for Step 2 (60% token reduction)
-const LINE_ART_SYSTEM_MESSAGE = `Convert to BLACK/WHITE line art coloring page.
-CHARACTER: Keep recognizable facial structure from reference.
-REQUIREMENTS: ONLY pure black lines (#000000) on white background (#FFFFFF). NO shading, gradients, colors, or photographic elements.
-Bold 2-4px outlines for children. Binary output: pure black lines or pure white spaces only - no gray pixels.
-CRITICAL: Must be printer-ready coloring page with clean black outlines on white background.`;
+CHARACTER REQUIREMENTS:
+- Match reference photo EXACTLY: facial features, hair color/style, skin tone, eye color, age
+- Must look like the SAME PERSON in a real photograph
+- Professional portrait quality with natural lighting
+
+STYLE REQUIREMENTS:
+- Real camera photograph with natural imperfections (subtle skin texture, hair details)
+- Natural lighting and soft shadows
+- Clean, simple background (solid color or simple setting)
+- Child-friendly and appropriate scene
+
+OUTPUT: High-quality REAL PHOTOGRAPH that looks like it was taken with a camera. NOT: cartoon, illustration, digital art, anime, sketch, or any artistic style.`;
+
+// Enhanced system message for Step 2 - Line art conversion
+const LINE_ART_SYSTEM_MESSAGE = `CRITICAL: Convert the INPUT IMAGE ONLY to pure black and white line art. Do NOT regenerate the scene.
+
+CONVERSION REQUIREMENTS:
+- ONLY use pure black (#000000) lines on pure white (#FFFFFF) background
+- ABSOLUTELY NO gray tones, shading, shadows, gradients, or photographic elements
+- NO filled black areas - use hatching patterns for texture
+- Bold 2-4px outlines suitable for children to color
+
+CHARACTER: Preserve recognizable facial features from the input image
+STYLE: Clean professional coloring book style with simple outlines
+
+CRITICAL RULES:
+1. Convert the PROVIDED IMAGE - do NOT create a new image from the text description
+2. Binary output only: each pixel must be either pure black OR pure white
+3. NO partial conversions - remove ALL photographic elements completely
+4. Must be printer-ready with crisp black lines on white background
+
+OUTPUT: Clean black and white line drawing ready for children to color with crayons.`;
 
 // Use Google's Gemini API directly - cheapest model with image generation
 const getModelForComplexity = (complexity?: string): string => {
@@ -30,20 +53,140 @@ const getModelForComplexity = (complexity?: string): string => {
   return 'gemini-2.5-flash-image'; // Remove "google/" prefix for direct API
 };
 
-// Lightweight validation - just check if image looks reasonable
-async function validateLineArt(base64Image: string): Promise<boolean> {
+// Pixel-level validation for line art - detects shading and photo elements
+async function validateLineArt(base64Image: string): Promise<{ 
+  valid: boolean; 
+  grayPixelPercentage: number;
+  hasPhotographicElements: boolean;
+}> {
   try {
-    // Quick validation: check base64 is valid and reasonable size
     const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
     if (!base64Data || base64Data.length < 100) {
-      return false;
+      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true };
     }
-    // Image exists and has data, assume it's valid
-    // AI is responsible for generating proper line art
-    return true;
+
+    // Decode and analyze pixels
+    const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+    const image = await Image.decode(buffer);
+    
+    let totalPixels = 0;
+    let grayPixels = 0;
+    let nearGrayPixels = 0; // For detecting partial conversions
+    const threshold = 30; // Tolerance for near-black/near-white
+    
+    // Sample every 5th pixel for accuracy
+    for (let y = 0; y < image.height; y += 5) {
+      for (let x = 0; x < image.width; x += 5) {
+        totalPixels++;
+        const color = image.getPixelAt(x, y);
+        
+        const r = (color >> 24) & 0xFF;
+        const g = (color >> 16) & 0xFF;
+        const b = (color >> 8) & 0xFF;
+        
+        const isBlack = r <= threshold && g <= threshold && b <= threshold;
+        const isWhite = r >= (255 - threshold) && g >= (255 - threshold) && b >= (255 - threshold);
+        
+        if (!isBlack && !isWhite) {
+          grayPixels++;
+          
+          // Detect "near-gray" pixels that indicate partial photo elements
+          const avg = (r + g + b) / 3;
+          if (avg > 60 && avg < 195) {
+            nearGrayPixels++;
+          }
+        }
+      }
+    }
+    
+    const grayPercentage = (grayPixels / totalPixels) * 100;
+    const nearGrayPercentage = (nearGrayPixels / totalPixels) * 100;
+    
+    // Strict thresholds
+    const hasShading = grayPercentage > 5; // Max 5% gray allowed
+    const hasPhotographicElements = nearGrayPercentage > 2; // Max 2% mid-tone gray
+    
+    const isValid = !hasShading && !hasPhotographicElements;
+    
+    console.log(`Line art validation: ${grayPercentage.toFixed(2)}% gray, ${nearGrayPercentage.toFixed(2)}% photo-like pixels`);
+    
+    return { 
+      valid: isValid, 
+      grayPixelPercentage: grayPercentage,
+      hasPhotographicElements: hasPhotographicElements
+    };
+    
   } catch (error) {
     console.error('Line art validation error:', error);
-    return false;
+    return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true };
+  }
+}
+
+// Photorealistic validation - detects cartoon/illustrated images
+async function validateRealisticImage(base64Image: string): Promise<{
+  valid: boolean;
+  isCartoonLike: boolean;
+  colorVariance: number;
+}> {
+  try {
+    const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
+    const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+    const image = await Image.decode(buffer);
+    
+    let totalPixels = 0;
+    let highVarianceRegions = 0;
+    let flatColorRegions = 0;
+    
+    // Sample in 10x10 pixel blocks
+    for (let y = 0; y < image.height - 10; y += 10) {
+      for (let x = 0; x < image.width - 10; x += 10) {
+        totalPixels++;
+        
+        // Calculate variance in this block
+        const colors: number[] = [];
+        for (let dy = 0; dy < 10; dy++) {
+          for (let dx = 0; dx < 10; dx++) {
+            const color = image.getPixelAt(x + dx, y + dy);
+            const r = (color >> 24) & 0xFF;
+            const g = (color >> 16) & 0xFF;
+            const b = (color >> 8) & 0xFF;
+            colors.push((r + g + b) / 3);
+          }
+        }
+        
+        // Calculate standard deviation
+        const avg = colors.reduce((a, b) => a + b, 0) / colors.length;
+        const variance = colors.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / colors.length;
+        const stdDev = Math.sqrt(variance);
+        
+        // Photorealistic images have natural variance (noise, texture, gradients)
+        // Cartoons have flat color regions
+        if (stdDev > 15) {
+          highVarianceRegions++;
+        } else if (stdDev < 5) {
+          flatColorRegions++;
+        }
+      }
+    }
+    
+    const highVariancePercentage = (highVarianceRegions / totalPixels) * 100;
+    const flatColorPercentage = (flatColorRegions / totalPixels) * 100;
+    
+    // Photorealistic images should have >30% high variance and <20% flat colors
+    const isRealistic = highVariancePercentage > 30 && flatColorPercentage < 20;
+    const isCartoonLike = flatColorPercentage > 40 || highVariancePercentage < 20;
+    
+    console.log(`Realistic validation: ${highVariancePercentage.toFixed(1)}% textured, ${flatColorPercentage.toFixed(1)}% flat colors`);
+    
+    return {
+      valid: isRealistic,
+      isCartoonLike: isCartoonLike,
+      colorVariance: highVariancePercentage
+    };
+    
+  } catch (error) {
+    console.error('Realistic validation error:', error);
+    return { valid: false, isCartoonLike: true, colorVariance: 0 };
   }
 }
 
@@ -171,6 +314,21 @@ async function generateRealisticImage(
         const imageData = `data:${step1MimeType};base64,${imagePart.inlineData.data}`;
 
         console.log(`Successfully generated realistic image ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
+        
+        // Validate the realistic image BEFORE returning
+        const realisticValidation = await validateRealisticImage(imageData);
+        if (!realisticValidation.valid) {
+          console.error(`Realistic image validation failed for page ${pageIndex + 1}: ${realisticValidation.isCartoonLike ? 'CARTOON-LIKE' : 'LOW TEXTURE'} (${realisticValidation.colorVariance.toFixed(1)}% variance)`);
+          
+          if (attempt < MAX_RETRIES) {
+            console.log(`Retrying realistic image generation (attempt ${attempt + 1}/${MAX_RETRIES}) - previous image was ${realisticValidation.isCartoonLike ? 'too cartoony' : 'not photorealistic enough'}...`);
+            continue; // Retry the generation
+          }
+          
+          console.warn(`⚠️ Final attempt still not fully photorealistic, proceeding anyway`);
+        }
+
+        console.log(`✓ Realistic image validated successfully for page ${pageIndex + 1}/${totalPages}`);
         return imageData;
         
       } catch (error) {
@@ -216,7 +374,7 @@ async function convertToLineArt(
             body: JSON.stringify({
               contents: [{
                 parts: [
-                  { text: LINE_ART_SYSTEM_MESSAGE + `\n\nConvert this realistic image to black and white line art for a children's coloring book. The scene is: ${prompt.prompt}` },
+                  { text: LINE_ART_SYSTEM_MESSAGE + `\n\nConvert THIS PROVIDED IMAGE to clean black and white line art. Focus on converting the image you see, not recreating the scene.` },
                   {
                     inlineData: {
                       mimeType: inputMimeType,
@@ -291,17 +449,24 @@ async function convertToLineArt(
 
         console.log(`Successfully converted to line art ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
         
-        // Validate the line art looks reasonable
-        const isValid = await validateLineArt(imageData);
-        if (!isValid) {
-          console.error(`Line art validation failed for page ${pageIndex + 1}`);
+        // Validate the line art with pixel-level analysis
+        const validation = await validateLineArt(imageData);
+        if (!validation.valid) {
+          const issues: string[] = [];
+          if (validation.grayPixelPercentage > 5) issues.push(`${validation.grayPixelPercentage.toFixed(1)}% gray pixels`);
+          if (validation.hasPhotographicElements) issues.push('photographic elements detected');
+          
+          console.error(`Line art validation failed for page ${pageIndex + 1}: ${issues.join(', ')}`);
+          
           if (attempt < MAX_RETRIES) {
+            console.log(`Retrying line art conversion (attempt ${attempt + 1}/${MAX_RETRIES}) to fix: ${issues.join(', ')}...`);
             continue;
           }
-          throw new Error('Line art validation failed after all retries');
+          
+          console.warn(`⚠️ Final attempt still has issues: ${issues.join(', ')}, proceeding anyway`);
         }
-        
-        console.log(`Line art validated successfully for page ${pageIndex + 1}/${totalPages}`);
+
+        console.log(`✓ Line art validated successfully for page ${pageIndex + 1}/${totalPages} (${validation.grayPixelPercentage.toFixed(2)}% gray pixels)`);
         return imageData;
         
       } catch (error) {
