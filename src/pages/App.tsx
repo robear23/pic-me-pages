@@ -10,6 +10,7 @@ import { PaymentStep } from '@/components/PaymentStep';
 import { GeneratingStep } from '@/components/GeneratingStep';
 import { CompleteStep } from '@/components/CompleteStep';
 import { ReworkSettingsStep } from '@/components/ReworkSettingsStep';
+import { Navigation } from '@/components/Navigation';
 
 const Index = () => {
   const currentStep = useBookStore((state) => state.currentStep);
@@ -24,6 +25,7 @@ const Index = () => {
         }}
       />
 
+      <Navigation />
       <ProgressBar currentStep={currentStep} />
 
       <AnimatePresence mode="wait">
