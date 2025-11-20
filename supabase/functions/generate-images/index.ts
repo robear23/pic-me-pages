@@ -327,9 +327,9 @@ serve(async (req) => {
   try {
     console.log('[HEALTH] generate-images called at', new Date().toISOString());
     
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is required');
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+    if (!GOOGLE_API_KEY) {
+      throw new Error('GOOGLE_API_KEY is required');
     }
 
     const { prompts, characters, consistentCharacters, batchIndex, batchSize = 3, isReworkMode = false, complexity } = await req.json();
@@ -459,7 +459,7 @@ STYLE:
           const realisticImageBase64 = await generateRealisticImage(
             prompt,
             contentParts,
-            LOVABLE_API_KEY,
+          GOOGLE_API_KEY,
             i,
             validPrompts.length,
             complexity
@@ -469,7 +469,7 @@ STYLE:
           const lineArtImageBase64 = await convertToLineArt(
             realisticImageBase64,
             prompt,
-            LOVABLE_API_KEY,
+            GOOGLE_API_KEY,
             i,
             validPrompts.length,
             complexity
