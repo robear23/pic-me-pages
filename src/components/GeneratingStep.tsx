@@ -281,20 +281,49 @@ export const GeneratingStep = () => {
         
         setGenerationProgress(85);
         
-        // Check for failed pages and retry them automatically
+        // Classify and handle failed pages intelligently
         const failedPages = finalPages.filter(p => !p.imageUrl);
         
         if (failedPages.length > 0) {
-          console.log(`Found ${failedPages.length} failed pages, retrying...`);
+          console.log(`Found ${failedPages.length} failed pages, analyzing errors...`);
           
-          const MAX_RETRIES = 1; // Reduced from 2 to save costs
+          // Classify errors: validation/content vs transient infra issues
+          const classifyError = (page: any) => {
+            const error = page.error || '';
+            if (error.includes('VALIDATION_FAILED') || 
+                error.includes('gray pixels') || 
+                error.includes('too photographic') ||
+                error.includes('Line art conversion failed')) {
+              return 'validation'; // Content issue - won't fix with retry
+            }
+            if (error.includes('WORKER_LIMIT') || 
+                error.includes('429') || 
+                error.includes('Rate limit')) {
+              return 'infra'; // Transient - retry may help
+            }
+            if (error.includes('Timeout') || error.includes('timeout')) {
+              return 'timeout'; // Transient - retry may help
+            }
+            return 'unknown'; // Retry cautiously
+          };
+          
+          const validationFailures = failedPages.filter(p => classifyError(p) === 'validation');
+          const retryableFailures = failedPages.filter(p => {
+            const type = classifyError(p);
+            return type === 'infra' || type === 'timeout' || type === 'unknown';
+          });
+          
+          console.log(`Error classification: ${validationFailures.length} validation, ${retryableFailures.length} retryable`);
+          
+          // Only retry transient failures
+          const MAX_RETRIES = 1;
           let retryAttempt = 0;
-          let stillFailedPages = failedPages;
+          let stillFailedPages = retryableFailures;
           
           while (stillFailedPages.length > 0 && retryAttempt < MAX_RETRIES) {
             retryAttempt++;
-            setGenerationStatus(GENERATION_STEPS[4]); // "Retrying failed pages (if needed)" - exact match
-            console.log(`Retry attempt ${retryAttempt}/${MAX_RETRIES} for failed pages`);
+            setGenerationStatus(GENERATION_STEPS[4]); // "Retrying failed pages (if needed)"
+            console.log(`Retry attempt ${retryAttempt}/${MAX_RETRIES} for ${stillFailedPages.length} transient failures`);
             
             // Extract failed prompts to retry
             const failedPrompts = generatedPrompts.filter(prompt => 
@@ -368,16 +397,39 @@ export const GeneratingStep = () => {
             }
           }
           
-          // After all retries, check if we still have failures
-          const finalFailedCount = finalPages.filter(p => !p.imageUrl).length;
+          // Re-classify remaining failures after all retries
+          const allRemainingFailures = finalPages.filter(p => !p.imageUrl);
+          const permanentValidationFailures = allRemainingFailures.filter(p => classifyError(p) === 'validation');
+          const otherFailures = allRemainingFailures.filter(p => classifyError(p) !== 'validation');
           
-          if (finalFailedCount > 0) {
-            const failedPageNumbers = finalPages.filter(p => !p.imageUrl).map(p => p.pageNumber).join(', ');
-            throw new Error(
-              `Failed to generate ${finalFailedCount} page(s) after ${MAX_RETRIES} retry attempts. ` +
-              `Pages: ${failedPageNumbers}. ` +
-              `This might be due to temporary AI model issues. Please try again.`
-            );
+          console.log(`After retries: ${permanentValidationFailures.length} validation failures, ${otherFailures.length} other failures`);
+          
+          // Build specific error message
+          if (allRemainingFailures.length > 0) {
+            const failedPageNumbers = allRemainingFailures.map(p => p.pageNumber).sort((a, b) => a - b);
+            let errorMsg = '';
+            
+            if (permanentValidationFailures.length > 0) {
+              const validationPages = permanentValidationFailures.map(p => p.pageNumber).sort((a, b) => a - b).join(', ');
+              errorMsg = `CONTENT_ISSUE: Pages ${validationPages} couldn't be converted to clean line art - they appear too photographic or have excessive shading.\n\n` +
+                        `To fix this:\n` +
+                        `• Use brighter, higher-contrast photos with fewer shadows\n` +
+                        `• Avoid close-up or studio-style shots\n` +
+                        `• Try simpler poses with clear lighting\n` +
+                        `• Then use the Rework feature to regenerate just these pages`;
+            }
+            
+            if (otherFailures.length > 0 && otherFailures.length < allRemainingFailures.length) {
+              const infraPages = otherFailures.map(p => p.pageNumber).sort((a, b) => a - b).join(', ');
+              errorMsg += (errorMsg ? '\n\n' : '') + 
+                         `INFRA_ISSUE: Pages ${infraPages} failed due to temporary system issues. Please try again in a few minutes.`;
+            } else if (otherFailures.length === allRemainingFailures.length) {
+              errorMsg = `Failed to generate pages ${failedPageNumbers.join(', ')} after ${MAX_RETRIES} retry attempts. This appears to be a temporary system issue - please try again in a few minutes.`;
+            }
+            
+            console.error(errorMsg);
+            setErrorDetails(errorMsg);
+            throw new Error(errorMsg);
           }
         }
         
@@ -526,13 +578,13 @@ export const GeneratingStep = () => {
 
         setTimeout(() => setStep('complete'), 500);
 
-      } catch (error) {
+      } catch (error: any) {
         console.error('Generation error:', error);
-        const errorMessage = error instanceof Error ? error.message : 'Failed to generate book';
-        const fullError = error instanceof Error ? error.stack || error.message : String(error);
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.error(`Generation failed after ${elapsed}s:`, error.message);
         
         // Handle cancellation separately
-        if (errorMessage.includes('cancelled by user')) {
+        if (error.message?.includes('cancelled by user')) {
           setGenerationStatus('Generation cancelled');
           toast({
             title: 'Generation Cancelled',
@@ -541,36 +593,34 @@ export const GeneratingStep = () => {
           return;
         }
         
-        // Provide more helpful error messages based on error type
-        let userMessage = errorMessage;
+        // Use detailed error message if available
+        const errorMsg = errorDetails || error.message || 'Generation failed';
+        setApiError(errorMsg);
+        setGenerationStatus('Error occurred');
+        hasRunRef.current = false; // Allow retry
+        
+        // Provide helpful error messages based on error type
+        let userMessage = errorMsg;
         let errorTitle = 'Generation Failed';
         
-        if (errorMessage.includes('Failed to fetch') || errorMessage.includes('Unable to connect')) {
+        if (error.message?.includes('Failed to fetch') || error.message?.includes('Unable to connect')) {
           errorTitle = 'Connection Issue';
-          userMessage = errorMessage + '\n\nThe generation service may be temporarily unavailable or redeploying. Please wait 30 seconds and try again.';
-        } else if (errorMessage.includes('Rate limit')) {
+          userMessage = error.message + '\n\nThe generation service may be temporarily unavailable or redeploying. Please wait 30 seconds and try again.';
+        } else if (error.message?.includes('Rate limit')) {
           errorTitle = 'Rate Limit Reached';
           userMessage = 'Google AI is temporarily rate limiting requests. Please wait 1-2 minutes before trying again. Your progress has been saved.';
-        } else if (errorMessage.includes('AI credits')) {
+        } else if (error.message?.includes('AI credits')) {
           errorTitle = 'Credits Depleted';
           userMessage = 'Your AI credits have been depleted. Please add credits to continue generating books.';
         }
         
-        setApiError(userMessage);
-        setErrorDetails(fullError);
-        
-        // Persistent error toast that requires manual dismissal
+        // Persistent error toast
         toast({
           title: errorTitle,
           description: userMessage,
           variant: 'destructive',
-          duration: 10000, // 10 seconds
+          duration: 10000,
         });
-
-        // Reset hasRunRef so user can retry
-        hasRunRef.current = false;
-        
-        // DO NOT auto-redirect - let user decide what to do
       }
     };
 
