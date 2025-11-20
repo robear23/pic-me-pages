@@ -97,7 +97,15 @@ export const generateImages = async (
   batchIndex?: number,
   batchSize?: number,
   complexity?: string
-): Promise<{ pages: GeneratedPage[]; successCount: number; totalCount: number; batchInfo?: any }> => {
+): Promise<{ 
+  pages: GeneratedPage[]; 
+  successCount: number; 
+  totalCount: number; 
+  batchInfo?: any;
+  partialResult?: boolean;
+  timeoutWarning?: boolean;
+  executionTime?: number;
+}> => {
   // Determine if this is a rework call (no batch parameters)
   const isReworkMode = batchIndex === undefined && batchSize === undefined && prompts.length < 12;
   

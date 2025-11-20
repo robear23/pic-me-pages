@@ -9,6 +9,7 @@ const corsHeaders = {
 
 const MAX_RETRIES = 1; // Reduced from 2 to save costs
 const BASE_DELAY = 1000;
+const FUNCTION_TIMEOUT = 140000; // 140 seconds (10s before hard limit)
 
 // Optimized system message for Step 1 (50% token reduction)
 const REALISTIC_SYSTEM_MESSAGE = `Generate photorealistic image matching reference photo exactly.
@@ -58,9 +59,11 @@ async function generateRealisticImage(
   contentParts: any[],
   LOVABLE_API_KEY: string,
   pageIndex: number,
-  totalPages: number
+  totalPages: number,
+  complexity?: string
 ): Promise<string> {
-  const MODELS = ['google/gemini-2.5-flash-image', 'google/gemini-2.5-flash-image-preview'];
+  const selectedModel = getModelForComplexity(complexity);
+  const MODELS = [selectedModel]; // Use only the selected model
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     for (const model of MODELS) {
@@ -108,17 +111,23 @@ async function generateRealisticImage(
           throw new Error('AI credits depleted. Please contact support.');
         }
 
+        if (imageResponse.status === 504) {
+          console.error(`Gateway timeout on attempt ${attempt} with model ${model}`);
+          throw new Error('Request timeout. Please try again.');
+        }
+
         if (!imageResponse.ok) {
           const errorText = await imageResponse.text();
           console.error(`Step 1 API error (${imageResponse.status}): ${errorText}`);
           
-          if (attempt < MAX_RETRIES) {
+          // Only retry on transient errors
+          if (attempt < MAX_RETRIES && (imageResponse.status === 429 || imageResponse.status === 402 || imageResponse.status === 504)) {
             const delay = BASE_DELAY * Math.pow(2, attempt - 1);
             console.log(`Waiting ${delay}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, delay));
             continue;
           }
-          throw new Error(`Step 1 failed after ${MAX_RETRIES} attempts`);
+          throw new Error(`Step 1 failed: ${errorText}`);
         }
 
         const data = await imageResponse.json();
@@ -152,9 +161,11 @@ async function convertToLineArt(
   prompt: any,
   LOVABLE_API_KEY: string,
   pageIndex: number,
-  totalPages: number
+  totalPages: number,
+  complexity?: string
 ): Promise<string> {
-  const MODELS = ['google/gemini-2.5-flash-image', 'google/gemini-2.5-flash-image-preview'];
+  const selectedModel = getModelForComplexity(complexity);
+  const MODELS = [selectedModel]; // Use only the selected model
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     for (const model of MODELS) {
@@ -202,17 +213,23 @@ async function convertToLineArt(
           throw new Error('AI credits depleted. Please contact support.');
         }
 
+        if (imageResponse.status === 504) {
+          console.error(`Gateway timeout on attempt ${attempt} with model ${model}`);
+          throw new Error('Request timeout. Please try again.');
+        }
+
         if (!imageResponse.ok) {
           const errorText = await imageResponse.text();
           console.error(`Step 2 API error (${imageResponse.status}): ${errorText}`);
           
-          if (attempt < MAX_RETRIES) {
+          // Only retry on transient errors
+          if (attempt < MAX_RETRIES && (imageResponse.status === 429 || imageResponse.status === 402 || imageResponse.status === 504)) {
             const delay = BASE_DELAY * Math.pow(2, attempt - 1);
             console.log(`Waiting ${delay}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, delay));
             continue;
           }
-          throw new Error(`Step 2 failed after ${MAX_RETRIES} attempts`);
+          throw new Error(`Step 2 failed: ${errorText}`);
         }
 
         const data = await imageResponse.json();
@@ -269,7 +286,7 @@ serve(async (req) => {
       throw new Error('LOVABLE_API_KEY is required');
     }
 
-    const { prompts, characters, consistentCharacters, batchIndex, batchSize = 3, isReworkMode = false } = await req.json();
+    const { prompts, characters, consistentCharacters, batchIndex, batchSize = 3, isReworkMode = false, complexity } = await req.json();
 
     if (!prompts || !Array.isArray(prompts)) {
       throw new Error('Invalid prompts array');
@@ -311,13 +328,20 @@ serve(async (req) => {
     }
 
     console.log(`Final: Processing ${validPrompts.length} pages. Page numbers: [${validPrompts.map(p => p.pageNumber).join(', ')}]`);
+    console.log(`Complexity level: ${complexity || 'default (medium)'}`);
 
-    const BATCH_SIZE = 1; // Sequential processing to avoid worker limits
+    const BATCH_SIZE = 3; // Parallel processing for efficiency
     const pages: any[] = [];
     let successCount = 0;
+    const startTime = Date.now();
 
     // Process in batches
     for (let batchStart = 0; batchStart < validPrompts.length; batchStart += BATCH_SIZE) {
+      // Check for timeout before processing each batch
+      if (Date.now() - startTime > FUNCTION_TIMEOUT) {
+        console.warn(`Approaching timeout limit (${FUNCTION_TIMEOUT}ms), returning partial results`);
+        break;
+      }
       const batchEnd = Math.min(batchStart + BATCH_SIZE, validPrompts.length);
       const batch = validPrompts.slice(batchStart, batchEnd);
       
@@ -391,7 +415,8 @@ STYLE:
             contentParts,
             LOVABLE_API_KEY,
             i,
-            validPrompts.length
+            validPrompts.length,
+            complexity
           );
 
           // Step 2: Convert to line art
@@ -400,7 +425,8 @@ STYLE:
             prompt,
             LOVABLE_API_KEY,
             i,
-            validPrompts.length
+            validPrompts.length,
+            complexity
           );
 
           successCount++;
@@ -442,13 +468,27 @@ STYLE:
     }
 
     console.log(`Generated ${successCount}/${validPrompts.length} images successfully`);
+    
+    const executionTime = Date.now() - startTime;
+    const partialResult = pages.length < validPrompts.length;
+    const timeoutWarning = executionTime > FUNCTION_TIMEOUT;
+
+    if (partialResult) {
+      console.warn(`Partial results: ${pages.length}/${validPrompts.length} pages processed`);
+    }
+    if (timeoutWarning) {
+      console.warn(`Timeout warning: execution took ${executionTime}ms (limit: ${FUNCTION_TIMEOUT}ms)`);
+    }
 
     return new Response(
       JSON.stringify({ 
         pages,
         successCount,
         totalCount: validPrompts.length,
-        batchInfo
+        batchInfo,
+        partialResult,
+        timeoutWarning,
+        executionTime
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
