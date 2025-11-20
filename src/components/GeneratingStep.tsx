@@ -306,18 +306,22 @@ export const GeneratingStep = () => {
             try {
               const retryStartTime = Date.now();
               
-              let retriedPages;
+              let retriedPages: typeof finalPages = [];
               try {
-                // Retry failed pages without batching (all at once)
-                const result = await generateImages(
-                  failedPrompts,
-                  charactersWithPhotos,
-                  consistentCharacters,
-                  undefined,
-                  undefined,
-                  complexityLevel
-                );
-                retriedPages = result.pages;
+                // Retry failed pages one by one to keep edge function load low
+                for (const prompt of failedPrompts) {
+                  const singleResult = await generateImages(
+                    [prompt],
+                    charactersWithPhotos,
+                    consistentCharacters,
+                    undefined,
+                    undefined,
+                    complexityLevel
+                  );
+                  if (singleResult.pages && singleResult.pages[0]) {
+                    retriedPages.push(singleResult.pages[0]);
+                  }
+                }
               } catch (retryError: any) {
                 if (retryError.message?.includes('Rate limit')) {
                   toast({
