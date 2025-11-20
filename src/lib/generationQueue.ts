@@ -20,15 +20,27 @@ interface DailyUsage {
 class BookGenerationQueue {
   private queue: BookJob[] = [];
   private isProcessing = false;
+  private currentJobId: string | null = null;
+  private shouldCancel = false;
   
   // Configuration
   private readonly DELAY_MS = 6000; // 6 seconds = 10 RPM (free tier)
   private readonly DAILY_LIMIT = 500;
   private readonly CALLS_PER_BOOK = 28; // Approximate
   private readonly STORAGE_KEY = 'book_generation_daily_usage';
+  private readonly PAGE_TIMEOUT_MS = 120000; // 2 minutes per page
   
   constructor() {
     this.checkDailyReset();
+  }
+  
+  cancelCurrentJob() {
+    console.log('🛑 Cancelling current job:', this.currentJobId);
+    this.shouldCancel = true;
+  }
+  
+  getCurrentJobId(): string | null {
+    return this.currentJobId;
   }
   
   async addBook(
@@ -96,11 +108,20 @@ class BookGenerationQueue {
   private async generateBook(job: BookJob): Promise<GeneratedPage[]> {
     const total = job.prompts.length;
     const allPages: GeneratedPage[] = [];
+    this.currentJobId = job.id;
+    this.shouldCancel = false;
     
     job.onProgress(5, 'Preparing to generate your coloring pages...');
     
     // Process pages one at a time with rate limiting
     for (let i = 0; i < total; i++) {
+      // Check for cancellation
+      if (this.shouldCancel) {
+        console.log('🛑 Generation cancelled by user');
+        this.shouldCancel = false;
+        this.currentJobId = null;
+        throw new Error('Generation cancelled by user');
+      }
       const currentPrompt = job.prompts[i];
       const pageNum = i + 1;
       
@@ -110,13 +131,16 @@ class BookGenerationQueue {
       );
       
       try {
-        // Call the edge function with a single prompt
-        const result = await this.callAPIWithRetry(
-          [currentPrompt],
-          job.characters,
-          job.consistentCharacters,
-          job.complexity
-        );
+        // Call the edge function with a single prompt with timeout
+        const result = await Promise.race([
+          this.callAPIWithRetry(
+            [currentPrompt],
+            job.characters,
+            job.consistentCharacters,
+            job.complexity
+          ),
+          this.createTimeout(this.PAGE_TIMEOUT_MS, `Page ${pageNum}`)
+        ]);
         
         if (result.pages && result.pages.length > 0) {
           allPages.push(result.pages[0]);
@@ -149,7 +173,14 @@ class BookGenerationQueue {
     }
     
     job.onProgress(100, '✨ Your coloring book is ready!');
+    this.currentJobId = null;
     return allPages;
+  }
+  
+  private createTimeout(ms: number, context: string): Promise<never> {
+    return new Promise((_, reject) => 
+      setTimeout(() => reject(new Error(`Timeout after ${ms / 1000}s (${context})`)), ms)
+    );
   }
   
   private async callAPIWithRetry(
@@ -160,6 +191,11 @@ class BookGenerationQueue {
     maxRetries = 3
   ): Promise<{ pages: GeneratedPage[]; successCount: number; totalCount: number }> {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      // Check for cancellation during retries
+      if (this.shouldCancel) {
+        throw new Error('Generation cancelled by user');
+      }
+      
       try {
         return await generateImages(prompts, characters, consistentCharacters, undefined, undefined, complexity);
       } catch (error: any) {
@@ -168,8 +204,16 @@ class BookGenerationQueue {
         if (isRateLimitError && attempt < maxRetries - 1) {
           // Exponential backoff: 30s, 60s, 120s
           const waitTime = Math.pow(2, attempt) * 30000;
-          console.log(`Rate limit hit, waiting ${waitTime / 1000}s before retry...`);
-          await this.delay(waitTime);
+          console.log(`⏳ Rate limit hit, waiting ${waitTime / 1000}s before retry (attempt ${attempt + 1}/${maxRetries})...`);
+          
+          // Wait in smaller chunks to allow cancellation checks
+          const checkInterval = 1000; // Check every second
+          for (let waited = 0; waited < waitTime; waited += checkInterval) {
+            if (this.shouldCancel) {
+              throw new Error('Generation cancelled by user');
+            }
+            await this.delay(Math.min(checkInterval, waitTime - waited));
+          }
         } else if (attempt === maxRetries - 1) {
           throw error;
         }
@@ -229,6 +273,8 @@ class BookGenerationQueue {
     return {
       queueLength: this.queue.length,
       isProcessing: this.isProcessing,
+      currentJobId: this.currentJobId,
+      isCancelling: this.shouldCancel,
       dailyUsed: usage.count,
       dailyRemaining: remaining,
       booksRemaining,

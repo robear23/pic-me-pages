@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useBookStore } from '@/store/bookStore';
-import { Sparkles, Check, Loader2, Clock } from 'lucide-react';
+import { Sparkles, Check, Loader2, Clock, XCircle } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { saveBookToDatabase } from '@/lib/bookStorage';
 import { supabase } from '@/integrations/supabase/client';
 import { bookQueue } from '@/lib/generationQueue';
 import type { GeneratedPrompt } from '@/lib/api';
+import { useNavigate } from 'react-router-dom';
 
 const GENERATION_STEPS = [
   'Analyzing your photos',
@@ -54,12 +55,29 @@ export const GeneratingStep = () => {
   
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [prompts, setPrompts] = useState<GeneratedPrompt[]>([]);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
   const [queueStatus, setQueueStatus] = useState(bookQueue.getStatus());
+  const [cancelling, setCancelling] = useState(false);
+  const [startTime] = useState(Date.now());
   const hasRunRef = useRef(false);
+  const timeoutRef = useRef<NodeJS.Timeout>();
 
   useEffect(() => {
+    // Update queue status every 2 seconds
+    const statusInterval = setInterval(() => {
+      setQueueStatus(bookQueue.getStatus());
+    }, 2000);
+    
+    // Set overall timeout (15 minutes)
+    timeoutRef.current = setTimeout(() => {
+      if (generationProgress < 100) {
+        setApiError('Generation timeout - taking too long. Please try again or contact support.');
+        setGenerationStatus('Timeout - please try again');
+      }
+    }, 15 * 60 * 1000);
+    
     const runGeneration = async () => {
       try {
         // CRITICAL: Prevent repeated runs that burn credits
@@ -508,6 +526,16 @@ export const GeneratingStep = () => {
         const errorMessage = error instanceof Error ? error.message : 'Failed to generate book';
         const fullError = error instanceof Error ? error.stack || error.message : String(error);
         
+        // Handle cancellation separately
+        if (errorMessage.includes('cancelled by user')) {
+          setGenerationStatus('Generation cancelled');
+          toast({
+            title: 'Generation Cancelled',
+            description: 'Book generation was stopped.',
+          });
+          return;
+        }
+        
         // Provide more helpful error messages based on error type
         let userMessage = errorMessage;
         let errorTitle = 'Generation Failed';
@@ -567,6 +595,23 @@ export const GeneratingStep = () => {
     setGenerationStatus('');
     setStep('interests');
   };
+  
+  const handleCancel = () => {
+    setCancelling(true);
+    bookQueue.cancelCurrentJob();
+    toast({
+      title: 'Cancelling Generation',
+      description: 'Stopping the book generation process...',
+    });
+    
+    setTimeout(() => {
+      navigate('/dashboard');
+    }, 1500);
+  };
+  
+  const handleReturnToDashboard = () => {
+    navigate('/dashboard');
+  };
 
   return (
     <motion.div
@@ -614,11 +659,11 @@ export const GeneratingStep = () => {
                 </ul>
               </div>
 
-              <div className="flex gap-4">
+              <div className="flex gap-4 flex-wrap justify-center">
                 <Button
                   onClick={handleRetry}
                   size="lg"
-                  className="flex-1"
+                  className="min-w-[140px]"
                 >
                   Try Again
                 </Button>
@@ -626,9 +671,17 @@ export const GeneratingStep = () => {
                   onClick={handleStartOver}
                   variant="secondary"
                   size="lg"
-                  className="flex-1"
+                  className="min-w-[140px]"
                 >
                   Start Over
+                </Button>
+                <Button
+                  onClick={handleReturnToDashboard}
+                  variant="outline"
+                  size="lg"
+                  className="min-w-[140px]"
+                >
+                  Return to Dashboard
                 </Button>
               </div>
             </>
@@ -662,22 +715,46 @@ export const GeneratingStep = () => {
                 </Alert>
               )}
 
-              {/* Main Text */}
               <h2 className="font-black text-4xl md:text-5xl mb-4">
                 Creating Your Coloring Book...
               </h2>
-              <p className="text-lg text-muted-foreground mb-8">
+              <p className="text-lg text-muted-foreground mb-2">
                 {queueStatus.queueLength > 1 
                   ? `Position #${queueStatus.queueLength} in queue • Usually takes 4 minutes per book`
                   : 'Usually takes 3-4 minutes'
                 }
               </p>
+              {generationProgress > 0 && (
+                <p className="text-sm text-muted-foreground/70 mb-8">
+                  {Math.round((Date.now() - startTime) / 1000 / 60)} min elapsed
+                </p>
+              )}
 
               {/* Progress Bar */}
-              <div className="mb-8">
+              <div className="mb-6">
                 <Progress value={generationProgress} className="h-3" />
                 <p className="text-sm text-muted-foreground mt-2">{generationProgress}%</p>
               </div>
+              
+              {/* Cancel Button */}
+              {generationProgress > 0 && generationProgress < 100 && !cancelling && (
+                <Button
+                  onClick={handleCancel}
+                  variant="outline"
+                  size="lg"
+                  className="mb-8"
+                  disabled={cancelling}
+                >
+                  <XCircle className="w-4 h-4 mr-2" />
+                  Cancel & Return to Dashboard
+                </Button>
+              )}
+              
+              {cancelling && (
+                <p className="text-muted-foreground text-sm mb-8">
+                  Cancelling generation...
+                </p>
+              )}
 
               {/* Status Steps */}
               <div className="space-y-4">
