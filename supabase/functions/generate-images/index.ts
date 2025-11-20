@@ -7,7 +7,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MAX_RETRIES = 3; // Allow more retries for quality control
+const MAX_RETRIES = 2; // Reduced for faster generation with relaxed validation
 const BASE_DELAY = 1000;
 const FUNCTION_TIMEOUT = 140000; // 140 seconds (10s before hard limit)
 
@@ -80,8 +80,8 @@ async function validateLineArt(base64Image: string): Promise<{
     let nearGrayPixels = 0;
     const threshold = 30;
     
-    // Sample every 25th pixel (reduced from 5 for performance)
-    const step = 25;
+    // Sample every 50th pixel for faster validation
+    const step = 50;
     for (let y = 0; y < image.height; y += step) {
       for (let x = 0; x < image.width; x += step) {
         // Ensure we're within bounds
@@ -114,8 +114,8 @@ async function validateLineArt(base64Image: string): Promise<{
     const grayPercentage = (grayPixels / totalPixels) * 100;
     const nearGrayPercentage = (nearGrayPixels / totalPixels) * 100;
     
-    const hasShading = grayPercentage > 5;
-    const hasPhotographicElements = nearGrayPercentage > 2;
+    const hasShading = grayPercentage > 15; // Relaxed from 5% to account for JPEG compression
+    const hasPhotographicElements = nearGrayPercentage > 8; // Relaxed from 2% to account for anti-aliasing
     const isValid = !hasShading && !hasPhotographicElements;
     
     console.log(`Line art validation: ${grayPercentage.toFixed(2)}% gray, ${nearGrayPercentage.toFixed(2)}% photo-like pixels`);
@@ -152,8 +152,8 @@ async function validateRealisticImage(base64Image: string): Promise<{
     let totalSamples = 0;
     let colorDifferences = 0;
     
-    // Sample every 30th pixel and compare with neighbors (much lighter computation)
-    const step = 30;
+    // Sample every 60th pixel for faster validation
+    const step = 60;
     for (let y = step; y < image.height - step; y += step) {
       for (let x = step; x < image.width - step; x += step) {
         // Ensure we're within bounds
@@ -190,9 +190,9 @@ async function validateRealisticImage(base64Image: string): Promise<{
     
     const variancePercentage = (colorDifferences / totalSamples) * 100;
     
-    // Photorealistic images should have >25% subtle color variations
-    const isRealistic = variancePercentage > 25;
-    const isCartoonLike = variancePercentage < 15;
+    // Relaxed thresholds: realistic photos often have clean backgrounds
+    const isRealistic = variancePercentage > 15; // Relaxed from 25%
+    const isCartoonLike = variancePercentage < 10; // Relaxed from 15%
     
     console.log(`Realistic validation: ${variancePercentage.toFixed(1)}% variance`);
     
@@ -275,8 +275,10 @@ async function generateRealisticImage(
         );
 
         if (imageResponse.status === 429) {
-          console.error(`Rate limit hit on attempt ${attempt} with model ${model}`);
-          throw new Error('Rate limit exceeded. Please wait and try again.');
+          const backoffDelay = Math.min(BASE_DELAY * Math.pow(2, attempt - 1), 30000);
+          console.error(`Rate limit hit on attempt ${attempt} with model ${model}, backing off for ${backoffDelay}ms`);
+          await new Promise(resolve => setTimeout(resolve, backoffDelay));
+          continue; // Retry with exponential backoff
         }
 
         if (imageResponse.status === 402) {
