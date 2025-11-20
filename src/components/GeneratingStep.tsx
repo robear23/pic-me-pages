@@ -187,8 +187,8 @@ export const GeneratingStep = () => {
           
           console.log(`Final pages after merge: ${finalPages.length} pages`);
         } else {
-          // Process all pages in batches (increased from 3 to 4 for efficiency)
-          const BATCH_SIZE = 4;
+          // Process all pages in batches (optimized for timeout prevention)
+          const BATCH_SIZE = 3; // Safer batch size to stay under 150s timeout
           const totalBatches = Math.ceil(generatedPrompts.length / BATCH_SIZE);
           let allPages: any[] = [];
           
@@ -196,7 +196,7 @@ export const GeneratingStep = () => {
             setGenerationStatus(`${GENERATION_STEPS[3]} (batch ${batchIndex + 1}/${totalBatches})`);
             console.log(`Processing batch ${batchIndex + 1}/${totalBatches}`);
             
-            const { pages: batchPages } = await generateImages(
+            const result = await generateImages(
               generatedPrompts,
               charactersWithPhotos,
               consistentCharacters,
@@ -205,7 +205,26 @@ export const GeneratingStep = () => {
               complexityLevel
             );
             
+            const { pages: batchPages, partialResult, timeoutWarning } = result;
+            
+            if (timeoutWarning) {
+              console.warn(`Edge function approached timeout, got partial results for batch ${batchIndex + 1}`);
+            }
+            
             allPages = [...allPages, ...batchPages];
+            
+            // If we got partial results, log which pages are missing
+            if (partialResult) {
+              const batchStartIdx = batchIndex * BATCH_SIZE;
+              const batchEndIdx = Math.min(batchStartIdx + BATCH_SIZE, generatedPrompts.length);
+              const expectedPages = generatedPrompts.slice(batchStartIdx, batchEndIdx).map(p => p.pageNumber);
+              const receivedPages = batchPages.map(p => p.pageNumber);
+              const missingPages = expectedPages.filter(pn => !receivedPages.includes(pn));
+              
+              if (missingPages.length > 0) {
+                console.warn(`Missing pages from batch ${batchIndex + 1}: ${missingPages.join(', ')}`);
+              }
+            }
             
             // Update progress within the 50-90% range
             const batchProgress = 50 + (40 * (batchIndex + 1) / totalBatches);
