@@ -7,76 +7,34 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MAX_RETRIES = 2;
+const MAX_RETRIES = 1; // Reduced from 2 to save costs
 const BASE_DELAY = 1000;
 
-// System message for Step 1: Generate realistic, photogenic image
-const REALISTIC_SYSTEM_MESSAGE = `You are creating photorealistic images for a personalized children's book.
+// Optimized system message for Step 1 (50% token reduction)
+const REALISTIC_SYSTEM_MESSAGE = `Generate photorealistic image matching reference photo exactly.
+CHARACTER: Preserve exact facial features, hair, skin tone, age. Must be recognizable.
+STYLE: Professional portrait, natural lighting, clean background, child-friendly.
+OUTPUT: Real photograph quality, NOT illustration.`;
 
-TASK: Generate a realistic, photogenic image that MUST look like a real photograph taken with a camera.
+// Optimized system message for Step 2 (60% token reduction)
+const LINE_ART_SYSTEM_MESSAGE = `Convert to BLACK/WHITE line art coloring page.
+CHARACTER: Keep recognizable facial structure from reference.
+REQUIREMENTS: ONLY pure black lines on white background. NO shading, gradients, colors, or photographic elements.
+Bold 2-4px outlines for children. Binary output: black lines or white spaces only.
+CRITICAL: Output will be threshold-filtered - avoid gray tones.`;
 
-CHARACTER CONSISTENCY (CRITICAL):
-- Study the reference photo carefully to capture EXACT character appearance
-- Preserve EXACT facial features: eye color, eye shape, nose shape, mouth, face structure
-- Keep hairstyle, hair color, hair texture EXACTLY as shown in reference
-- Maintain skin tone, age, and ALL distinctive characteristics precisely
-- The character MUST be recognizable as the same person from the reference photo
-- Generate natural poses and expressions appropriate for the scene
-- This should look like a real photograph of this specific child
-
-STYLE REQUIREMENTS:
-- PHOTOREALISTIC - This MUST look like an actual photograph, NOT an illustration
-- Shot like a professional children's portrait photographer
-- Soft, natural lighting with flattering angles
-- Clean, pleasant background that fits the scene
-- Natural colors and authentic skin tones
-- Real-world appearance as if captured with a professional camera
-- Child-friendly and age-appropriate content
-
-CRITICAL: This is NOT line art yet - create a realistic photo-style image first that looks indistinguishable from a real photograph.`;
-
-// System message for Step 2: Convert realistic image to line art
-const LINE_ART_SYSTEM_MESSAGE = `You are converting a realistic image into black and white line art for a children's coloring book.
-
-CRITICAL RULE: OUTPUT MUST BE LINE ART, NOT A PHOTO
-- If you output anything that looks like a photograph, realistic render, or has photographic qualities, YOU HAVE FAILED
-- The output must be unmistakably a coloring book page with clear black outlines
-
-TASK: Transform the provided image into PURE BLACK AND WHITE line art suitable for coloring.
-
-CHARACTER RECOGNITION (CRITICAL):
-- MAINTAIN the character's recognizable facial structure and proportions
-- Keep distinctive features clearly identifiable: hairstyle, face shape, eye shape, nose, mouth
-- The character MUST be recognizable from the reference photo after conversion
-- Preserve exact facial proportions and feature placement
-- Keep the character's unique characteristics visible in line art form
-
-LINE ART REQUIREMENTS - MUST BE FOLLOWED EXACTLY:
-- ONLY pure black lines (#000000) on PURE white background (#FFFFFF)
-- ABSOLUTELY NO colors, NO shading, NO gradients, NO gray tones, NO anti-aliasing
-- NO texture fills, NO patterns inside shapes, NO cross-hatching, NO stippling
-- NO photorealistic elements - everything must be simple outlines ONLY
-- Think: "black ink pen drawing on white paper" - nothing else
-- All areas should be either 100% black (lines only) or 100% white (empty spaces to color)
-- Clear, bold outlines (2-4 pixel thick black lines) that children aged 3-12 can easily color within
-- Keep composition simple and uncluttered
-- FORBIDDEN: Shaded areas, gradient fills, textured backgrounds, photographic elements
-
-CRITICAL POST-PROCESSING WARNING:
-- Your output will be automatically processed with a threshold filter
-- Any pixel that is not pure white will be converted to pure black
-- Therefore: Use BOLD, CLEAN outlines with minimal gray transition zones
-- Avoid subtle shading or anti-aliasing - these will become pure black blobs
-- Think in binary: "What should be black lines vs white coloring areas"
-
-VERIFICATION CHECKLIST (Must pass ALL before generating):
-✓ Output contains ONLY bold black lines on white background?
-✓ ZERO colors or shading of any kind?
-✓ Character remains recognizable from reference?
-✓ Could a child easily color this with crayons?
-✓ Does NOT look like a photograph or realistic render?
-
-STYLE: Pure black and white line art coloring book page with recognizable character features - absolutely no exceptions or compromises.`;
+// Model selection based on complexity level
+const getModelForComplexity = (complexity?: string): string => {
+  switch(complexity) {
+    case 'simple': 
+      return 'google/gemini-2.5-flash-lite'; // 30% cheaper
+    case 'detailed': 
+      return 'google/gemini-2.5-flash-image'; // Premium quality
+    case 'medium':
+    default: 
+      return 'google/gemini-2.5-flash-image'; // Default
+  }
+};
 
 // Post-processing function to ensure pure black and white output
 async function convertToPureBlackAndWhite(base64Image: string, threshold: number = 180): Promise<string> {

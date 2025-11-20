@@ -27,6 +27,7 @@ export const GeneratingStep = () => {
     characters,
     selectedInterests,
     consistentCharacters,
+    complexityLevel,
     selectedPageCount,
     selectedBinding,
     selectedPrice,
@@ -161,7 +162,8 @@ export const GeneratingStep = () => {
             charactersWithPhotos,
             consistentCharacters,
             undefined,  // No batchIndex - process all prompts
-            undefined   // No batchSize - process all prompts
+            undefined,  // No batchSize - process all prompts
+            complexityLevel
           );
           
           console.log(`Rework complete: received ${reworkedPages.length} pages with page numbers: [${reworkedPages.map(p => p.pageNumber).join(', ')}]`);
@@ -185,8 +187,8 @@ export const GeneratingStep = () => {
           
           console.log(`Final pages after merge: ${finalPages.length} pages`);
         } else {
-          // Process all pages in batches
-          const BATCH_SIZE = 3;
+          // Process all pages in batches (increased from 3 to 4 for efficiency)
+          const BATCH_SIZE = 4;
           const totalBatches = Math.ceil(generatedPrompts.length / BATCH_SIZE);
           let allPages: any[] = [];
           
@@ -199,7 +201,8 @@ export const GeneratingStep = () => {
               charactersWithPhotos,
               consistentCharacters,
               batchIndex,
-              BATCH_SIZE
+              BATCH_SIZE,
+              complexityLevel
             );
             
             allPages = [...allPages, ...batchPages];
@@ -220,7 +223,7 @@ export const GeneratingStep = () => {
         if (failedPages.length > 0) {
           console.log(`Found ${failedPages.length} failed pages, retrying...`);
           
-          const MAX_RETRIES = 2;
+          const MAX_RETRIES = 1; // Reduced from 2 to save costs
           let retryAttempt = 0;
           let stillFailedPages = failedPages;
           
@@ -242,7 +245,10 @@ export const GeneratingStep = () => {
               const { pages: retriedPages } = await generateImages(
                 failedPrompts,
                 charactersWithPhotos,
-                consistentCharacters
+                consistentCharacters,
+                undefined,
+                undefined,
+                complexityLevel
               );
               
               const retryDuration = ((Date.now() - retryStartTime) / 1000).toFixed(1);
