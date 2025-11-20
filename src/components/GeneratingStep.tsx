@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { useBookStore } from '@/store/bookStore';
 import { Sparkles, Check, Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { generatePrompts, generateImages, generateCover } from '@/lib/api';
@@ -54,17 +54,33 @@ export const GeneratingStep = () => {
   const { toast } = useToast();
   const [prompts, setPrompts] = useState<GeneratedPrompt[]>([]);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const hasRunRef = useRef(false);
 
   useEffect(() => {
     const runGeneration = async () => {
       try {
+        // CRITICAL: Prevent repeated runs that burn credits
+        if (hasRunRef.current) {
+          console.log('⚠️ Generation already running or completed - preventing duplicate run');
+          return;
+        }
+        hasRunRef.current = true;
+
         // Log state for debugging
-        const { generatedBookId: existingBookId } = useBookStore.getState();
-        console.log('Generation starting:', { 
+        const { generatedBookId: existingBookId, generationStatus: currentStatus } = useBookStore.getState();
+        console.log('✅ Generation starting:', { 
           isReworkMode, 
           existingBookId, 
-          selectedPagesForRework 
+          selectedPagesForRework,
+          complexity: complexityLevel 
         });
+        
+        // Safety guard: Don't regenerate if book already exists and not in rework mode
+        if (existingBookId && !isReworkMode && currentStatus !== 'error') {
+          console.log('⚠️ Book already generated (ID:', existingBookId, ') - skipping generation');
+          setStep('complete');
+          return;
+        }
         
         // Security check: Verify payment or bypass (skip for rework mode)
         if (!isReworkMode && !paymentBypassed && !orderId) {
@@ -496,28 +512,14 @@ export const GeneratingStep = () => {
     };
 
     runGeneration();
-  }, [
-    characters,
-    selectedInterests,
-    consistentCharacters,
-    isReworkMode,
-    selectedPagesForRework,
-    generatedPages,
-    user,
-    setGenerationProgress,
-    setGenerationStatus,
-    setStep,
-    setGeneratedPages,
-    setApiError,
-    completeRework,
-    toast
-  ]);
+  }, []); // Empty deps - runs once on mount. Retry handled by handleRetry.
 
   const currentStepIndex = GENERATION_STEPS.findIndex((step) => step === generationStatus);
 
   const handleRetry = () => {
     setErrorDetails(null);
     setApiError(null);
+    hasRunRef.current = false; // Allow retry by resetting the guard
     setGenerationProgress(0);
     setGenerationStatus('');
     

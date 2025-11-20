@@ -111,8 +111,9 @@ export const generateImages = async (
   
   console.log(`[API] generateImages called with ${prompts.length} prompts. Page numbers: [${prompts.map(p => p.pageNumber).join(', ')}]`);
   console.log(`[API] Rework mode: ${isReworkMode}, batchIndex: ${batchIndex}, batchSize: ${batchSize}, complexity: ${complexity || 'default'}`);
+  console.log(`💰 Estimated cost for this batch: ${prompts.length} pages × 2 calls × $${complexity === 'simple' ? '0.053' : complexity === 'detailed' ? '0.177' : '0.106'}`);
   
-  return callEdgeFunction('generate-images', { 
+  return callEdgeFunction('generate-images', {
     prompts, 
     characters,
     consistentCharacters,
@@ -120,7 +121,7 @@ export const generateImages = async (
     batchSize,
     isReworkMode,
     complexity
-  });
+  }, 1); // Only 1 retry for expensive AI calls to prevent credit burning
 };
 
 export const uploadPhotos = async (
@@ -153,10 +154,11 @@ export const generateCover = async (
   pageImageUrl: string,
   characters?: Character[]
 ): Promise<{ frontCover: string; backCover: string }> => {
+  console.log(`💰 Generating cover with 2 AI calls`);
   return callEdgeFunction('generate-cover', { 
     characterName, 
     interests,
     pageImageUrl,
     characters
-  });
+  }, 1); // Only 1 retry for expensive AI calls
 };
