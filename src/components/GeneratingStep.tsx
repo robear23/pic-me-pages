@@ -173,14 +173,30 @@ export const GeneratingStep = () => {
           // The edge function should process ALL prompts in the array since it's already filtered
           setGenerationStatus(`${GENERATION_STEPS[3]} (${promptsToRework.length} pages)`);
           
-          const { pages: reworkedPages } = await generateImages(
-            promptsToRework,
-            charactersWithPhotos,
-            consistentCharacters,
-            undefined,  // No batchIndex - process all prompts
-            undefined,  // No batchSize - process all prompts
-            complexityLevel
-          );
+          let reworkedPages;
+          try {
+            const result = await generateImages(
+              promptsToRework,
+              charactersWithPhotos,
+              consistentCharacters,
+              undefined,  // No batchIndex - process all prompts
+              undefined,  // No batchSize - process all prompts
+              complexityLevel
+            );
+            reworkedPages = result.pages;
+          } catch (error: any) {
+            if (error.message?.includes('Rate limit')) {
+              toast({
+                title: 'Rate Limit Reached',
+                description: 'Google AI is temporarily rate limiting requests. Please wait 1-2 minutes and try again.',
+                variant: 'destructive',
+                duration: 8000,
+              });
+              setApiError('Rate limit reached. Please wait a moment and try again.');
+              return;
+            }
+            throw error; // Re-throw other errors
+          }
           
           console.log(`Rework complete: received ${reworkedPages.length} pages with page numbers: [${reworkedPages.map(p => p.pageNumber).join(', ')}]`);
           
@@ -212,14 +228,29 @@ export const GeneratingStep = () => {
             setGenerationStatus(`${GENERATION_STEPS[3]} (batch ${batchIndex + 1}/${totalBatches})`);
             console.log(`Processing batch ${batchIndex + 1}/${totalBatches}`);
             
-            const result = await generateImages(
-              generatedPrompts,
-              charactersWithPhotos,
-              consistentCharacters,
-              batchIndex,
-              BATCH_SIZE,
-              complexityLevel
-            );
+            let result;
+            try {
+              result = await generateImages(
+                generatedPrompts,
+                charactersWithPhotos,
+                consistentCharacters,
+                batchIndex,
+                BATCH_SIZE,
+                complexityLevel
+              );
+            } catch (error: any) {
+              if (error.message?.includes('Rate limit')) {
+                toast({
+                  title: 'Rate Limit Reached',
+                  description: 'Google AI is temporarily rate limiting requests. Please wait 1-2 minutes and try again.',
+                  variant: 'destructive',
+                  duration: 8000,
+                });
+                setApiError('Rate limit reached. Please wait a moment and try again.');
+                return;
+              }
+              throw error; // Re-throw other errors
+            }
             
             const { pages: batchPages, partialResult, timeoutWarning } = result;
             
@@ -276,15 +307,31 @@ export const GeneratingStep = () => {
             try {
               const retryStartTime = Date.now();
               
-              // Retry failed pages without batching (all at once)
-              const { pages: retriedPages } = await generateImages(
-                failedPrompts,
-                charactersWithPhotos,
-                consistentCharacters,
-                undefined,
-                undefined,
-                complexityLevel
-              );
+              let retriedPages;
+              try {
+                // Retry failed pages without batching (all at once)
+                const result = await generateImages(
+                  failedPrompts,
+                  charactersWithPhotos,
+                  consistentCharacters,
+                  undefined,
+                  undefined,
+                  complexityLevel
+                );
+                retriedPages = result.pages;
+              } catch (retryError: any) {
+                if (retryError.message?.includes('Rate limit')) {
+                  toast({
+                    title: 'Rate Limit During Retry',
+                    description: 'Google AI rate limit reached while retrying. Continuing with current pages.',
+                    variant: 'default',
+                    duration: 8000,
+                  });
+                  console.log('Rate limit hit during retry, continuing with current pages');
+                  break; // Exit retry loop but continue with what we have
+                }
+                throw retryError;
+              }
               
               const retryDuration = ((Date.now() - retryStartTime) / 1000).toFixed(1);
               console.log(`Retry took ${retryDuration}s`);
@@ -490,7 +537,7 @@ export const GeneratingStep = () => {
           userMessage = errorMessage + '\n\nThe generation service may be temporarily unavailable or redeploying. Please wait 30 seconds and try again.';
         } else if (errorMessage.includes('Rate limit')) {
           errorTitle = 'Rate Limit Reached';
-          userMessage = 'You have reached the rate limit. Please wait a few minutes before trying again.';
+          userMessage = 'Google AI is temporarily rate limiting requests. Please wait 1-2 minutes before trying again. Your progress has been saved.';
         } else if (errorMessage.includes('AI credits')) {
           errorTitle = 'Credits Depleted';
           userMessage = 'Your AI credits have been depleted. Please add credits to continue generating books.';
@@ -504,9 +551,12 @@ export const GeneratingStep = () => {
           title: errorTitle,
           description: userMessage,
           variant: 'destructive',
-          duration: 30000, // 30 seconds instead of 3
+          duration: 10000, // 10 seconds
         });
 
+        // Reset hasRunRef so user can retry
+        hasRunRef.current = false;
+        
         // DO NOT auto-redirect - let user decide what to do
       }
     };

@@ -37,7 +37,12 @@ const callEdgeFunction = async (functionName: string, body: any, retries = 3) =>
       
       if (!response.ok) {
         if (response.status === 429) {
-          throw new Error('Rate limit exceeded. Please wait and try again.');
+          const errorData = await response.json().catch(() => ({}));
+          const isRateLimitError = errorData.isRateLimitError || errorData.error?.includes('Rate limit');
+          
+          if (isRateLimitError) {
+            throw new Error('Rate limit exceeded. Please wait 1-2 minutes and try again.');
+          }
         }
         if (response.status === 402) {
           throw new Error('AI credits depleted. Please add credits in Settings → Workspace → Usage to continue.');
