@@ -70,29 +70,29 @@ OUTPUT: Clean black and white line drawing ready for children to color with cray
 
 // Helper function to simplify prompts that might trigger safety filters
 function simplifyPromptForRetry(originalPrompt: string, attemptNumber: number): string {
-  let simplified = originalPrompt;
+  const nameMatch = originalPrompt.match(/^([A-Z][a-z]+)/);
+  const characterName = nameMatch ? nameMatch[1] : 'the character';
   
-  // Attempt 1: Remove potentially ambiguous descriptors
   if (attemptNumber === 1) {
-    simplified = simplified
-      .replace(/enchanted|magical|mystical/gi, '')
-      .replace(/admiring|gazing|staring/gi, 'looking at')
-      .replace(/playful|teasing/gi, 'playing with');
-  }
-  
-  // Attempt 2: Further simplify to basic action
-  if (attemptNumber === 2) {
-    // Extract just the character name and main action
-    const nameMatch = simplified.match(/^([A-Z][a-z]+)/);
-    const actionMatch = simplified.match(/(holding|playing|sitting|standing|walking|running)/i);
-    
-    if (nameMatch && actionMatch) {
-      simplified = `${nameMatch[1]}, ${actionMatch[1]} in a simple indoor setting. Natural lighting, clean background.`;
+    // First retry: Extract main activity, remove adjectives and complex words
+    const activityMatch = originalPrompt.match(/(playing|sitting|holding|standing|walking|running|reading|drawing|building|eating)/i);
+    if (activityMatch) {
+      return `${characterName} ${activityMatch[1]} in a simple room. Natural lighting.`;
     }
+    // Fallback: remove problematic words
+    return originalPrompt
+      .replace(/enchanted|magical|mystical|wonder|admiring|gazing/gi, '')
+      .replace(/playful|teasing/gi, 'playing')
+      .substring(0, 150);
   }
   
-  console.log(`Simplified prompt (attempt ${attemptNumber}): ${simplified.substring(0, 100)}...`);
-  return simplified;
+  if (attemptNumber === 2) {
+    // Second retry: Ultra-simple fallback
+    return `${characterName} in a simple indoor scene. Bright, natural lighting.`;
+  }
+  
+  console.log(`Simplified prompt (attempt ${attemptNumber}): ${originalPrompt.substring(0, 80)}...`);
+  return originalPrompt;
 }
 
 // Use Google's Gemini API directly - cheapest model with image generation
@@ -370,6 +370,32 @@ async function generateRealisticImage(
           const errorData = await imageResponse.json();
           const errorMessage = errorData.error?.message || 'Unknown error';
           console.error(`Step 1 API error (${imageResponse.status}): ${errorMessage}`);
+          
+          // Check for safety/content policy refusal
+          if (errorMessage.toLowerCase().includes('safety') || 
+              errorMessage.toLowerCase().includes('refused') || 
+              errorMessage.toLowerCase().includes('policy') ||
+              errorMessage.toLowerCase().includes('blocked')) {
+            console.warn(`⚠️ Safety filter triggered on attempt ${attempt}`);
+            
+            // Auto-simplify and retry
+            if (attempt < MAX_RETRIES) {
+              console.log('Simplifying prompt and retrying...');
+              const simplifiedPrompt = simplifyPromptForRetry(prompt.prompt, attempt);
+              
+              // Update content parts with simplified prompt
+              contentParts[0] = {
+                type: 'text',
+                text: `${simplifiedPrompt}\n\nMatch the person in the reference photo. Natural lighting, simple background, child-appropriate.`
+              };
+              
+              const delay = BASE_DELAY * Math.pow(2, attempt - 1);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              continue;
+            }
+            
+            throw new Error(`MODEL_REFUSED: Safety filter triggered - ${errorMessage}`);
+          }
           
           // Check for region restriction
           if (errorMessage.toLowerCase().includes('not available in your country') || 
@@ -754,31 +780,14 @@ serve(async (req) => {
             }
           }
 
-          // Step 1: Generate realistic image
-          const realisticPrompt = `Create a photorealistic image of ${characterNames || 'the character'} in this scene:
-
-SCENE: ${prompt.prompt}
-
-CHARACTER CONSISTENCY:
-${characterContext.length > 0 
-  ? `Study the reference photo to capture the character's appearance:
-- Face shape, facial features, and proportions
-- Hairstyle, hair color, and texture
-- Age and body proportions
-- Distinctive features (glasses, smile, etc.)
-- Keep this EXACT person recognizable`
-  : 'Create a consistent character appearance'}
-
-STYLE:
-- Photorealistic with soft, natural lighting
-- Flattering composition and angles
-- Clean, pleasant background
-- Natural colors and tones
-- Child-friendly content`;
+          // Step 1: Generate realistic image - SIMPLIFIED PROMPT
+          const realisticPrompt = characterContext.length > 0 
+            ? `${prompt.prompt}\n\nMatch the person in the reference photo exactly. Natural lighting, simple background, child-appropriate.`
+            : `${prompt.prompt}\n\nNatural lighting, simple background, child-appropriate.`;
 
           const contentParts = [
-            { type: 'text', text: realisticPrompt },
-            ...characterContext
+            ...characterContext, // Photos first for better matching
+            { type: 'text', text: realisticPrompt }
           ];
 
           const realisticImageBase64 = await generateRealisticImage(

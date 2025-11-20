@@ -66,29 +66,24 @@ Each scene should feel unique and alive - the character should be doing somethin
       ? `Create scenes based on this custom theme/story: ${customPrompt}`
       : `Generate scenes related to these interests: ${interests.join(', ')}. ${interests.length === 1 ? 'Create diverse scenarios all related to this interest.' : 'Distribute scenes evenly across the interests.'}`;
 
-    const systemPrompt = `You are an expert at creating child-friendly coloring page descriptions. Generate ${targetPageCount} unique, detailed prompts for black & white coloring pages featuring ${characterNames}.
+    const systemPrompt = `Generate ${targetPageCount} simple scene descriptions for ${characterNames}.
 
-STYLE REQUIREMENTS:
-- PHOTOREALISTIC PHOTOGRAPHY STYLE - Shot like a professional children's portrait photographer
-- Natural, authentic, real-world appearance as if captured with a camera
-- CRITICAL: NOT illustrated, NOT cartoon, NOT artistic rendering - must look like real photographs
-- Character Consistency: CRITICAL - Keep character identity consistent across ALL pages. Recognize the same character throughout with exact facial features, eye color, hair texture, and skin tone.${characterGuidance}
-- Natural poses and expressions as if captured in a real moment
-- Final output will be converted to simple black and white line art
-- Child-appropriate content
-- Focus on action, setting, and clear character presence
-- Pleasant composition with clean, uncluttered backgrounds
+REQUIREMENTS:
+- Natural, child-appropriate scenes
+- ${characterNames} doing simple activities
+- Clear, straightforward descriptions (1-2 sentences maximum)
+- Focus on the action and setting only
+${hasCharacterPhotos ? '- Character appears in different poses and activities' : ''}
 
 ${complexityGuidance}
 
-CONTENT GUIDANCE:
 ${contentGuidance}
 
-Return a JSON array of exactly ${targetPageCount} prompts, each with:
+Return JSON array with:
 {
   "pageNumber": 1-${targetPageCount},
   "interest": "the interest category",
-  "prompt": "detailed scene description including character names and style notes"
+  "prompt": "Simple 1-2 sentence scene description"
 }`;
 
     console.log('Calling Lovable AI for prompt generation...');
@@ -204,13 +199,14 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
         throw new Error('Parsed JSON is not an array');
       }
       
-      // Add character names to each prompt and append photorealism hints for illustration-triggering words
+      // Add character names and enforce length limits
       prompts = prompts.map((p: any) => {
         let prompt = p.prompt;
         
-        // Add photorealism enforcement for scenes that might trigger illustration mode
-        if (prompt.toLowerCase().match(/drawing|art|paint|color|creat|sketch|illustrat/)) {
-          prompt += ". CRITICAL: Generate this as a real photograph of a child doing this activity, not as an illustration or cartoon.";
+        // Enforce 300 character limit
+        if (prompt.length > 300) {
+          console.warn(`Prompt ${p.pageNumber} too long (${prompt.length} chars), truncating...`);
+          prompt = prompt.substring(0, 297) + '...';
         }
         
         return {
