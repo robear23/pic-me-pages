@@ -31,13 +31,20 @@ OUTPUT: High-quality REAL PHOTOGRAPH that looks like it was taken with a camera.
 const LINE_ART_SYSTEM_MESSAGE = `CRITICAL: Convert the INPUT IMAGE ONLY to pure black and white line art. Do NOT regenerate the scene.
 
 CONVERSION REQUIREMENTS:
-- ONLY use pure black (#000000) lines on pure white (#FFFFFF) background
-- ABSOLUTELY NO gray tones, shading, shadows, gradients, or photographic elements
-- NO filled black areas - use hatching patterns for texture
+- Transform EVERY gray pixel to either pure black (#000000) OR pure white (#FFFFFF)
+- ABSOLUTELY NO gray tones, shading, shadows, gradients, or photographic elements remaining
+- NO filled black areas - use hatching/crosshatching patterns for dark regions
 - Bold 2-4px outlines suitable for children to color
+- If you see ANY photographic elements remaining, you FAILED
 
 CHARACTER: Preserve recognizable facial features from the input image
 STYLE: Clean professional coloring book style with simple outlines
+
+VALIDATION CRITERIA (you will be checked):
+1. <8% of pixels can be gray (compression artifacts only)
+2. <4% of pixels can be mid-tone gray (50-200 range)
+3. >50% gray means COMPLETE FAILURE - image wasn't converted at all
+4. Must look like a hand-drawn coloring book page
 
 CRITICAL RULES:
 1. Convert the PROVIDED IMAGE - do NOT create a new image from the text description
@@ -45,6 +52,7 @@ CRITICAL RULES:
 3. NO partial conversions - remove ALL photographic elements completely
 4. Must be printer-ready with crisp black lines on white background
 
+CRITICAL: A successful conversion has clear black outlines on white background with NO photographic traces.
 OUTPUT: Clean black and white line drawing ready for children to color with crayons.`;
 
 // Use Google's Gemini API directly - cheapest model with image generation
@@ -80,29 +88,34 @@ async function validateLineArt(base64Image: string): Promise<{
     let nearGrayPixels = 0;
     const threshold = 30;
     
-    // Sample every 50th pixel for faster validation
+    // Sample every 50th pixel for faster validation (balanced approach)
     const step = 50;
     for (let y = 0; y < image.height; y += step) {
       for (let x = 0; x < image.width; x += step) {
-        // Ensure we're within bounds
-        if (x >= image.width || y >= image.height) continue;
+        // Ensure we're within bounds with safety margin
+        if (x >= image.width - 1 || y >= image.height - 1 || x < 0 || y < 0) continue;
         
-        totalPixels++;
-        const color = image.getPixelAt(x, y);
+        try {
+          totalPixels++;
+          const color = image.getPixelAt(x, y);
         
-        const r = (color >> 24) & 0xFF;
-        const g = (color >> 16) & 0xFF;
-        const b = (color >> 8) & 0xFF;
-        
-        const isBlack = r <= threshold && g <= threshold && b <= threshold;
-        const isWhite = r >= (255 - threshold) && g >= (255 - threshold) && b >= (255 - threshold);
-        
-        if (!isBlack && !isWhite) {
-          grayPixels++;
-          const avg = (r + g + b) / 3;
-          if (avg > 60 && avg < 195) {
-            nearGrayPixels++;
+          const r = (color >> 24) & 0xFF;
+          const g = (color >> 16) & 0xFF;
+          const b = (color >> 8) & 0xFF;
+          
+          const isBlack = r <= threshold && g <= threshold && b <= threshold;
+          const isWhite = r >= (255 - threshold) && g >= (255 - threshold) && b >= (255 - threshold);
+          
+          if (!isBlack && !isWhite) {
+            grayPixels++;
+            const avg = (r + g + b) / 3;
+            if (avg > 60 && avg < 195) {
+              nearGrayPixels++;
+            }
           }
+        } catch (err) {
+          console.error(`Pixel access error at (${x}, ${y}):`, err);
+          continue; // Skip problematic pixel, don't crash validation
         }
       }
     }
@@ -113,12 +126,24 @@ async function validateLineArt(base64Image: string): Promise<{
     
     const grayPercentage = (grayPixels / totalPixels) * 100;
     const nearGrayPercentage = (nearGrayPixels / totalPixels) * 100;
+    const blackPercentage = ((totalPixels - grayPixels) / totalPixels) * 100;
     
-    const hasShading = grayPercentage > 15; // Relaxed from 5% to account for JPEG compression
-    const hasPhotographicElements = nearGrayPercentage > 8; // Relaxed from 2% to account for anti-aliasing
+    // CRITICAL: Check for complete conversion failure
+    if (grayPercentage > 50) {
+      console.error(`CRITICAL: Image is ${grayPercentage.toFixed(1)}% gray - still a photo!`);
+      return { valid: false, grayPixelPercentage: grayPercentage, hasPhotographicElements: true };
+    }
+    
+    // Stricter thresholds - balance between quality and speed
+    const hasShading = grayPercentage > 8; // Allows compression artifacts but rejects shading
+    const hasPhotographicElements = nearGrayPercentage > 4; // Rejects mid-tone grays
     const isValid = !hasShading && !hasPhotographicElements;
     
-    console.log(`Line art validation: ${grayPercentage.toFixed(2)}% gray, ${nearGrayPercentage.toFixed(2)}% photo-like pixels`);
+    console.log(`[VALIDATION DETAIL] Line art page:
+  - Gray pixels: ${grayPercentage.toFixed(2)}% (threshold: 8%)
+  - Mid-tone gray: ${nearGrayPercentage.toFixed(2)}% (threshold: 4%)
+  - Black/White: ${blackPercentage.toFixed(2)}%
+  - Result: ${isValid ? '✓ PASS' : '✗ FAIL'}`);
     
     return { 
       valid: isValid, 
@@ -190,11 +215,13 @@ async function validateRealisticImage(base64Image: string): Promise<{
     
     const variancePercentage = (colorDifferences / totalSamples) * 100;
     
-    // Relaxed thresholds: realistic photos often have clean backgrounds
-    const isRealistic = variancePercentage > 15; // Relaxed from 25%
-    const isCartoonLike = variancePercentage < 10; // Relaxed from 15%
+    // Balanced thresholds: stricter than before but not as strict as original
+    const isRealistic = variancePercentage > 20; // Middle ground - catches cartoons but allows clean photos
+    const isCartoonLike = variancePercentage < 12; // Stricter than 10, less than 15
     
-    console.log(`Realistic validation: ${variancePercentage.toFixed(1)}% variance`);
+    console.log(`[VALIDATION DETAIL] Realistic image:
+  - Color variance: ${variancePercentage.toFixed(1)}% (threshold: 20%)
+  - Result: ${isRealistic ? '✓ PASS - Photorealistic' : '✗ FAIL - ' + (isCartoonLike ? 'Cartoon-like' : 'Low texture')}`);
     
     return {
       valid: isRealistic,
@@ -345,7 +372,8 @@ async function generateRealisticImage(
             continue; // Retry the generation
           }
           
-          console.warn(`⚠️ Final attempt still not fully photorealistic, proceeding anyway`);
+          // CRITICAL CHANGE: Don't proceed with bad images
+          throw new Error(`Realistic image generation failed after ${MAX_RETRIES} attempts: Image is ${realisticValidation.isCartoonLike ? 'cartoon-like' : 'not photorealistic'} (${realisticValidation.colorVariance.toFixed(1)}% variance). This page cannot be processed.`);
         }
 
         console.log(`✓ Realistic image validated successfully for page ${pageIndex + 1}/${totalPages}`);
@@ -411,8 +439,10 @@ async function convertToLineArt(
         );
 
         if (imageResponse.status === 429) {
-          console.error(`Rate limit hit on attempt ${attempt} with model ${model}`);
-          throw new Error('Rate limit exceeded. Please wait and try again.');
+          const backoffDelay = Math.min(BASE_DELAY * Math.pow(2, attempt - 1), 30000);
+          console.error(`Rate limit hit on attempt ${attempt} with model ${model}, backing off for ${backoffDelay}ms`);
+          await new Promise(resolve => setTimeout(resolve, backoffDelay));
+          continue; // Retry with exponential backoff
         }
 
         if (imageResponse.status === 402) {
@@ -473,8 +503,12 @@ async function convertToLineArt(
         const validation = await validateLineArt(imageData);
         if (!validation.valid) {
           const issues: string[] = [];
-          if (validation.grayPixelPercentage > 5) issues.push(`${validation.grayPixelPercentage.toFixed(1)}% gray pixels`);
-          if (validation.hasPhotographicElements) issues.push('photographic elements detected');
+          if (validation.grayPixelPercentage > 8) {
+            issues.push(`${validation.grayPixelPercentage.toFixed(1)}% gray pixels`);
+          }
+          if (validation.hasPhotographicElements) {
+            issues.push('photographic elements detected');
+          }
           
           console.error(`Line art validation failed for page ${pageIndex + 1}: ${issues.join(', ')}`);
           
@@ -483,7 +517,8 @@ async function convertToLineArt(
             continue;
           }
           
-          console.warn(`⚠️ Final attempt still has issues: ${issues.join(', ')}, proceeding anyway`);
+          // CRITICAL CHANGE: Don't proceed with bad images
+          throw new Error(`Line art conversion failed after ${MAX_RETRIES} attempts: ${issues.join(', ')}. This page cannot be processed.`);
         }
 
         console.log(`✓ Line art validated successfully for page ${pageIndex + 1}/${totalPages} (${validation.grayPixelPercentage.toFixed(2)}% gray pixels)`);
