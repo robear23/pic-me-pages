@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Search, Download, CheckCircle2, XCircle, AlertCircle } from "lucide-react";
+import { ArrowLeft, Search, Download, CheckCircle2, XCircle, AlertCircle, Mail } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -239,6 +239,13 @@ export default function AdminPanel() {
             </div>
           </div>
           <div className="flex gap-2">
+            <Button 
+              onClick={() => navigate('/admin/emails')}
+              variant="outline"
+            >
+              <Mail className="h-4 w-4 mr-2" />
+              Email Templates
+            </Button>
             <Button 
               onClick={checkPdfHealth} 
               variant="outline"

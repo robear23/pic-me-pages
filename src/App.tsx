@@ -12,6 +12,8 @@ import App from "./pages/App";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import AdminPanel from "./pages/AdminPanel";
+import AdminEmailTemplates from "./pages/AdminEmailTemplates";
+import EmailTemplateEditor from "./pages/EmailTemplateEditor";
 import TestPdfGeneration from "./pages/TestPdfGeneration";
 import NotFound from "./pages/NotFound";
 
@@ -49,6 +51,16 @@ const AppRoot = () => (
                   <Navigation />
                   <AdminPanel />
                 </>
+              </AdminRoute>
+            } />
+            <Route path="/admin/emails" element={
+              <AdminRoute>
+                <AdminEmailTemplates />
+              </AdminRoute>
+            } />
+            <Route path="/admin/emails/:templateId" element={
+              <AdminRoute>
+                <EmailTemplateEditor />
               </AdminRoute>
             } />
             <Route path="/test-pdf" element={
