@@ -146,8 +146,10 @@ export async function generateCoverWrapPdf(
     const backCoverDataUrl = await toDataUrl(backImageUrl);
     const frontCoverDataUrl = await toDataUrl(frontImageUrl);
 
-    pdf.addImage(backCoverDataUrl, 'PNG', 0, 0, halfWidth, LULU_CONFIG.COVER_HEIGHT);
-    pdf.addImage(frontCoverDataUrl, 'PNG', halfWidth, 0, halfWidth, LULU_CONFIG.COVER_HEIGHT);
+    // Use fullHeight (in points) instead of LULU_CONFIG.COVER_HEIGHT (in inches)
+    // Use 'NONE' compression to preserve high-resolution upscaled images
+    pdf.addImage(backCoverDataUrl, 'PNG', 0, 0, halfWidth, fullHeight, undefined, 'NONE');
+    pdf.addImage(frontCoverDataUrl, 'PNG', halfWidth, 0, halfWidth, fullHeight, undefined, 'NONE');
 
     // Add margin guides if requested (for testing)
     if (showGuides) {

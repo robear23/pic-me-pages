@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { decode } from "https://deno.land/x/imagescript@1.2.15/mod.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,6 +21,49 @@ interface GenerateCoverRequest {
 interface CoverResponse {
   frontCover: string;
   backCover: string;
+}
+
+// Upscale image to print-quality resolution (320 DPI for professional printing)
+async function upscaleToHighRes(
+  base64Image: string,
+  widthInches: number,
+  heightInches: number,
+  targetDPI: number = 320
+): Promise<string> {
+  console.log(`[UPSCALE] Starting upscale to ${targetDPI} DPI...`);
+  
+  // Decode base64
+  const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
+  const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+  
+  // Load image
+  const image = await decode(imageBuffer);
+  const originalDPI = Math.round(image.width / widthInches);
+  
+  console.log(`[COVER QUALITY]`);
+  console.log(`  Original: ${image.width}x${image.height} (~${originalDPI} DPI)`);
+  console.log(`  Required by Lulu: minimum 200 DPI`);
+  
+  // Calculate target dimensions
+  const targetWidth = Math.round(widthInches * targetDPI);
+  const targetHeight = Math.round(heightInches * targetDPI);
+  
+  console.log(`  Target: ${targetWidth}x${targetHeight} (${targetDPI} DPI)`);
+  
+  if (originalDPI < 100) {
+    console.warn(`⚠️ AI generated very low resolution image (${originalDPI} DPI) - upscaling will help but consider requesting higher res from AI`);
+  }
+  
+  // Resize using high-quality bicubic interpolation (mutates the image)
+  image.resize(targetWidth, targetHeight);
+  
+  // Encode back to PNG
+  const pngBuffer = await image.encode();
+  const base64Upscaled = btoa(String.fromCharCode(...new Uint8Array(pngBuffer)));
+  
+  console.log(`✓ Upscaled from ${image.width}x${image.height} (original) to ${targetWidth}x${targetHeight} (${targetDPI} DPI)`);
+  
+  return `data:image/png;base64,${base64Upscaled}`;
 }
 
 serve(async (req) => {
@@ -102,9 +146,12 @@ OUTPUT: Complete front cover ready for print.`;
     
     // Convert to data URL
     const frontMimeType = frontImagePart.inlineData.mimeType || 'image/png';
-    const frontCover = `data:${frontMimeType};base64,${frontImagePart.inlineData.data}`;
+    const frontCoverOriginal = `data:${frontMimeType};base64,${frontImagePart.inlineData.data}`;
 
-    console.log('Front cover completed');
+    // UPSCALE to print quality (8.5" x 11.25" at 320 DPI = 2720x3600 pixels)
+    const frontCover = await upscaleToHighRes(frontCoverOriginal, 8.5, 11.25, 320);
+
+    console.log('Front cover completed and upscaled');
 
     // STEP 2: Generate complementary back cover
     console.log('Step 2: Generating back cover...');
@@ -153,9 +200,12 @@ Simple elegant design, complementary colors, matching border style. Space for te
     
     // Convert to data URL
     const backMimeType = backImagePart.inlineData.mimeType || 'image/png';
-    const backCover = `data:${backMimeType};base64,${backImagePart.inlineData.data}`;
+    const backCoverOriginal = `data:${backMimeType};base64,${backImagePart.inlineData.data}`;
 
-    console.log('Both covers generated successfully');
+    // UPSCALE to print quality
+    const backCover = await upscaleToHighRes(backCoverOriginal, 8.5, 11.25, 320);
+
+    console.log('Both covers generated and upscaled successfully');
 
     return new Response(
       JSON.stringify({ frontCover, backCover }),
