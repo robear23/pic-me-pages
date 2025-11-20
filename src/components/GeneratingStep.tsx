@@ -287,33 +287,38 @@ export const GeneratingStep = () => {
         if (failedPages.length > 0) {
           console.log(`Found ${failedPages.length} failed pages, analyzing errors...`);
           
-          // Classify errors: validation/content vs transient infra issues
-          const classifyError = (page: any) => {
-            const error = page.error || '';
-            if (error.includes('VALIDATION_FAILED') || 
-                error.includes('gray pixels') || 
-                error.includes('too photographic') ||
-                error.includes('Line art conversion failed')) {
-              return 'validation'; // Content issue - won't fix with retry
+          // Classify errors: style issues, validation, infra, timeout
+          const classifyError = (errorMessage: string): 'validation' | 'style' | 'infra' | 'timeout' | 'unknown' => {
+            const msg = errorMessage.toLowerCase();
+            
+            if (msg.includes('cartoon') || msg.includes('illustration') || msg.includes('variance')) {
+              return 'style'; // Wrong artistic style - specific error type
             }
-            if (error.includes('WORKER_LIMIT') || 
-                error.includes('429') || 
-                error.includes('Rate limit')) {
+            if (msg.includes('validation_failed') || 
+                msg.includes('gray pixels') || 
+                msg.includes('too photographic') ||
+                msg.includes('line art conversion failed')) {
+              return 'validation'; // Line art validation issues
+            }
+            if (msg.includes('worker_limit') || 
+                msg.includes('429') || 
+                msg.includes('rate limit')) {
               return 'infra'; // Transient - retry may help
             }
-            if (error.includes('Timeout') || error.includes('timeout')) {
+            if (msg.includes('timeout')) {
               return 'timeout'; // Transient - retry may help
             }
             return 'unknown'; // Retry cautiously
           };
           
-          const validationFailures = failedPages.filter(p => classifyError(p) === 'validation');
+          const validationFailures = failedPages.filter(p => classifyError(p.error || '') === 'validation');
+          const styleFailures = failedPages.filter(p => classifyError(p.error || '') === 'style');
           const retryableFailures = failedPages.filter(p => {
-            const type = classifyError(p);
+            const type = classifyError(p.error || '');
             return type === 'infra' || type === 'timeout' || type === 'unknown';
           });
           
-          console.log(`Error classification: ${validationFailures.length} validation, ${retryableFailures.length} retryable`);
+          console.log(`Error classification: ${styleFailures.length} style, ${validationFailures.length} validation, ${retryableFailures.length} retryable`);
           
           // Only retry transient failures
           const MAX_RETRIES = 1;
@@ -399,34 +404,36 @@ export const GeneratingStep = () => {
           
           // Re-classify remaining failures after all retries
           const allRemainingFailures = finalPages.filter(p => !p.imageUrl);
-          const permanentValidationFailures = allRemainingFailures.filter(p => classifyError(p) === 'validation');
-          const otherFailures = allRemainingFailures.filter(p => classifyError(p) !== 'validation');
+          const permanentStyleFailures = allRemainingFailures.filter(p => classifyError(p.error || '') === 'style');
+          const permanentValidationFailures = allRemainingFailures.filter(p => classifyError(p.error || '') === 'validation');
+          const otherFailures = allRemainingFailures.filter(p => {
+            const type = classifyError(p.error || '');
+            return type !== 'validation' && type !== 'style';
+          });
           
-          console.log(`After retries: ${permanentValidationFailures.length} validation failures, ${otherFailures.length} other failures`);
+          console.log(`After retries: ${permanentStyleFailures.length} style, ${permanentValidationFailures.length} validation, ${otherFailures.length} other failures`);
           
           // Build specific error message
           if (allRemainingFailures.length > 0) {
             const failedPageNumbers = allRemainingFailures.map(p => p.pageNumber).sort((a, b) => a - b);
-            let errorMsg = '';
+            let errorParts: string[] = [];
+            
+            if (permanentStyleFailures.length > 0) {
+              const stylePages = permanentStyleFailures.map(p => p.pageNumber).sort((a, b) => a - b).join(', ');
+              errorParts.push(`📸 PHOTO STYLE ISSUES (Pages ${stylePages}):\nThe AI generated illustrated/cartoon images instead of realistic photos.\n\nTry these fixes:\n• Use clearer, well-lit reference photos\n• Simplify prompts - avoid words like "drawing," "artistic," "creative"\n• Use the Rework feature to regenerate just these pages\n• Consider different character poses/photos for these scenes`);
+            }
             
             if (permanentValidationFailures.length > 0) {
               const validationPages = permanentValidationFailures.map(p => p.pageNumber).sort((a, b) => a - b).join(', ');
-              errorMsg = `CONTENT_ISSUE: Pages ${validationPages} couldn't be converted to clean line art - they appear too photographic or have excessive shading.\n\n` +
-                        `To fix this:\n` +
-                        `• Use brighter, higher-contrast photos with fewer shadows\n` +
-                        `• Avoid close-up or studio-style shots\n` +
-                        `• Try simpler poses with clear lighting\n` +
-                        `• Then use the Rework feature to regenerate just these pages`;
+              errorParts.push(`🎨 LINE ART CONVERSION ISSUES (Pages ${validationPages}):\nPages couldn't be converted to clean line art - too photographic or excessive shading.\n\nTo fix this:\n• Use brighter, higher-contrast photos with fewer shadows\n• Avoid close-up or studio-style shots\n• Try simpler poses with clear lighting\n• Then use the Rework feature to regenerate just these pages`);
             }
             
-            if (otherFailures.length > 0 && otherFailures.length < allRemainingFailures.length) {
+            if (otherFailures.length > 0) {
               const infraPages = otherFailures.map(p => p.pageNumber).sort((a, b) => a - b).join(', ');
-              errorMsg += (errorMsg ? '\n\n' : '') + 
-                         `INFRA_ISSUE: Pages ${infraPages} failed due to temporary system issues. Please try again in a few minutes.`;
-            } else if (otherFailures.length === allRemainingFailures.length) {
-              errorMsg = `Failed to generate pages ${failedPageNumbers.join(', ')} after ${MAX_RETRIES} retry attempts. This appears to be a temporary system issue - please try again in a few minutes.`;
+              errorParts.push(`⚠️ SYSTEM ISSUES (Pages ${infraPages}):\nPages failed due to temporary system issues.\n\nPlease try again in a few minutes or use the Rework feature.`);
             }
             
+            const errorMsg = errorParts.join('\n\n');
             console.error(errorMsg);
             setErrorDetails(errorMsg);
             throw new Error(errorMsg);

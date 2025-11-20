@@ -24,11 +24,11 @@ class BookGenerationQueue {
   private shouldCancel = false;
   
   // Configuration
-  private readonly DELAY_MS = 6000; // 6 seconds = 10 RPM (free tier)
+  private readonly DELAY_MS = 3000; // 3 seconds - faster between pages
   private readonly DAILY_LIMIT = 500;
   private readonly CALLS_PER_BOOK = 28; // Approximate
   private readonly STORAGE_KEY = 'book_generation_daily_usage';
-  private readonly PAGE_TIMEOUT_MS = 120000; // 2 minutes per page
+  private readonly PAGE_TIMEOUT_MS = 150000; // 150 seconds (2.5 minutes) - allows time for 3 retry attempts
   
   constructor() {
     this.checkDailyReset();

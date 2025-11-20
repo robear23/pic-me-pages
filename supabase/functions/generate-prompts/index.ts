@@ -204,13 +204,22 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
         throw new Error('Parsed JSON is not an array');
       }
       
-      // Add character names to each prompt
-      prompts = prompts.map((p: any) => ({
-        pageNumber: p.pageNumber,
-        interest: p.interest,
-        prompt: p.prompt,
-        characterName: characterNames
-      }));
+      // Add character names to each prompt and append photorealism hints for illustration-triggering words
+      prompts = prompts.map((p: any) => {
+        let prompt = p.prompt;
+        
+        // Add photorealism enforcement for scenes that might trigger illustration mode
+        if (prompt.toLowerCase().match(/drawing|art|paint|color|creat|sketch|illustrat/)) {
+          prompt += ". CRITICAL: Generate this as a real photograph of a child doing this activity, not as an illustration or cartoon.";
+        }
+        
+        return {
+          pageNumber: p.pageNumber,
+          interest: p.interest,
+          prompt: prompt,
+          characterName: characterNames
+        };
+      });
       
     } catch (e) {
       console.error('Failed to parse AI response:', e);
