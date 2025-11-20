@@ -7,25 +7,39 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MAX_RETRIES = 1; // Reduced to 1 for faster processing and prevent timeouts
+const MAX_RETRIES = 2; // Increased to 2 - gives 3 total attempts for better quality
 const BASE_DELAY = 1000;
 const FUNCTION_TIMEOUT = 140000; // 140 seconds (10s before hard limit)
 
 // Enhanced system message for Step 1 - Photorealistic requirement
-const REALISTIC_SYSTEM_MESSAGE = `CRITICAL: Generate a REAL PHOTOGRAPH - NOT an illustration, drawing, cartoon, or artistic rendering.
+const REALISTIC_SYSTEM_MESSAGE = `ABSOLUTE REQUIREMENT: Generate a REAL CAMERA PHOTOGRAPH with actual depth, lighting, and texture.
 
-CHARACTER REQUIREMENTS:
-- Match reference photo EXACTLY: facial features, hair color/style, skin tone, eye color, age
-- Must look like the SAME PERSON in a real photograph
-- Professional portrait quality with natural lighting
+CRITICAL FORBIDDEN STYLES:
+❌ NO cartoons, illustrations, anime, digital art, drawings, sketches, clipart, or 2D renders
+❌ NO flat colors, sharp boundaries, or uniform shading
+❌ NO artistic interpretations or stylized images
 
-STYLE REQUIREMENTS:
-- Real camera photograph with natural imperfections (subtle skin texture, hair details)
-- Natural lighting and soft shadows
-- Clean, simple background (solid color or simple setting)
-- Child-friendly and appropriate scene
+REQUIRED PHOTOGRAPHIC ELEMENTS:
+✓ Natural camera depth of field (soft background blur)
+✓ Realistic skin texture with pores, subtle imperfections
+✓ Natural hair with individual strands and highlights
+✓ Soft shadows from natural/studio lighting
+✓ Subtle color gradients (not flat fills)
+✓ Environmental context (real room, outdoor scene, simple backdrop)
 
-OUTPUT: High-quality REAL PHOTOGRAPH that looks like it was taken with a camera. NOT: cartoon, illustration, digital art, anime, sketch, or any artistic style.`;
+CHARACTER MATCHING:
+- Match reference photo EXACTLY: face, hair color/style, skin tone, eye color, age
+- Same person in a DIFFERENT real-world photo scenario
+- Professional portrait photography quality
+
+SCENE COMPOSITION:
+- Clean, simple background (solid color backdrop or simple real setting)
+- Natural pose appropriate for the described activity
+- Child-friendly and wholesome
+
+VALIDATION: Your output will be analyzed for color variance. Photorealistic images have 25-50% variance. Cartoons have <15% variance. IF YOUR IMAGE TESTS BELOW 18% VARIANCE, IT WILL BE REJECTED.
+
+OUTPUT: A real photograph that could have been taken with a professional camera. Think: school photo, family portrait, candid snapshot - NOT illustration.`;
 
 // Enhanced system message for Step 2 - Line art conversion
 const LINE_ART_SYSTEM_MESSAGE = `CRITICAL: Convert the INPUT IMAGE ONLY to pure black and white line art. Do NOT regenerate the scene.
@@ -221,9 +235,9 @@ async function validateRealisticImage(base64Image: string): Promise<{
     
     const variancePercentage = (colorDifferences / totalSamples) * 100;
     
-    // Balanced thresholds: stricter than before but not as strict as original
-    const isRealistic = variancePercentage > 20; // Middle ground - catches cartoons but allows clean photos
-    const isCartoonLike = variancePercentage < 12; // Stricter than 10, less than 15
+    // Relaxed thresholds to reduce false positives on clean photos
+    const isRealistic = variancePercentage > 18; // Lowered from 20% - accepts more borderline photos
+    const isCartoonLike = variancePercentage < 12; // Keep strict for obvious cartoons
     
     console.log(`[VALIDATION DETAIL] Realistic image:
   - Color variance: ${variancePercentage.toFixed(1)}% (threshold: 20%)
@@ -370,19 +384,42 @@ async function generateRealisticImage(
         
         // Validate the realistic image BEFORE returning
         const realisticValidation = await validateRealisticImage(imageData);
-        if (!realisticValidation.valid) {
-          console.error(`Realistic image validation failed for page ${pageIndex + 1}: ${realisticValidation.isCartoonLike ? 'CARTOON-LIKE' : 'LOW TEXTURE'} (${realisticValidation.colorVariance.toFixed(1)}% variance)`);
+        const variance = realisticValidation.colorVariance;
+        
+        if (variance < 15) {
+          // Clearly cartoon - reject and retry
+          console.error(`Realistic image validation failed for page ${pageIndex + 1}: CARTOON-LIKE (${variance.toFixed(1)}% variance)`);
           
           if (attempt < MAX_RETRIES) {
-            console.log(`Retrying realistic image generation (attempt ${attempt + 1}/${MAX_RETRIES}) - previous image was ${realisticValidation.isCartoonLike ? 'too cartoony' : 'not photorealistic enough'}...`);
-            continue; // Retry the generation
+            console.log(`Retrying realistic image generation (attempt ${attempt + 1}/${MAX_RETRIES}) with strengthened prompt...`);
+            
+            // STRENGTHEN the prompt by prepending explicit anti-cartoon instructions
+            const firstTextIndex = mergedContent.findIndex((part: any) => part.type === 'text');
+            if (firstTextIndex >= 0) {
+              mergedContent[firstTextIndex] = {
+                type: 'text',
+                text: `CRITICAL OVERRIDE: The previous attempt produced a cartoon/illustration (${variance.toFixed(1)}% variance). You MUST generate a REAL PHOTOGRAPH this time with natural lighting, realistic textures, and photographic depth. Aim for 30-40% color variance minimum.\n\n` + mergedContent[firstTextIndex].text
+              };
+            }
+            continue; // Retry with modified prompt
           }
           
-          // CRITICAL CHANGE: Don't proceed with bad images
-          throw new Error(`Realistic image generation failed after ${MAX_RETRIES} attempts: Image is ${realisticValidation.isCartoonLike ? 'cartoon-like' : 'not photorealistic'} (${realisticValidation.colorVariance.toFixed(1)}% variance). This page cannot be processed.`);
+          throw new Error(`Realistic image generation failed: Too cartoon-like (${variance.toFixed(1)}% variance) after ${MAX_RETRIES} retries`);
+          
+        } else if (variance < 18) {
+          // Borderline - accept on final attempt, retry earlier
+          if (attempt < MAX_RETRIES) {
+            console.log(`Borderline realistic image (${variance.toFixed(1)}% variance) - retrying for better quality...`);
+            continue;
+          }
+          console.warn(`⚠️ Accepting borderline realistic image for page ${pageIndex + 1} (${variance.toFixed(1)}% variance) - may affect line art quality`);
+          // Fall through - accept it
+          
+        } else {
+          // Good photorealism (>18%)
+          console.log(`✓ Realistic image validated successfully for page ${pageIndex + 1}/${totalPages}`);
         }
 
-        console.log(`✓ Realistic image validated successfully for page ${pageIndex + 1}/${totalPages}`);
         return imageData;
         
       } catch (error) {
