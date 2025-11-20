@@ -86,6 +86,54 @@ export type Database = {
         }
         Relationships: []
       }
+      email_templates: {
+        Row: {
+          accent_color: string
+          content: Json
+          created_at: string | null
+          description: string
+          display_name: string
+          id: string
+          is_published: boolean
+          last_edited_at: string | null
+          last_published_at: string | null
+          primary_color: string
+          template_name: string
+          updated_at: string | null
+          version_history: Json
+        }
+        Insert: {
+          accent_color?: string
+          content?: Json
+          created_at?: string | null
+          description: string
+          display_name: string
+          id?: string
+          is_published?: boolean
+          last_edited_at?: string | null
+          last_published_at?: string | null
+          primary_color?: string
+          template_name: string
+          updated_at?: string | null
+          version_history?: Json
+        }
+        Update: {
+          accent_color?: string
+          content?: Json
+          created_at?: string | null
+          description?: string
+          display_name?: string
+          id?: string
+          is_published?: boolean
+          last_edited_at?: string | null
+          last_published_at?: string | null
+          primary_color?: string
+          template_name?: string
+          updated_at?: string | null
+          version_history?: Json
+        }
+        Relationships: []
+      }
       orders: {
         Row: {
           book_id: string | null
