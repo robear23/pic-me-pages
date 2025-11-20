@@ -23,47 +23,77 @@ interface CoverResponse {
   backCover: string;
 }
 
-// Upscale image to print-quality resolution (320 DPI for professional printing)
-async function upscaleToHighRes(
+// Upscale image to print-quality resolution with progressive fallback
+// Default to 200 DPI (Lulu's minimum) to prevent memory errors
+async function upscaleToHighResWithFallback(
   base64Image: string,
   widthInches: number,
-  heightInches: number,
-  targetDPI: number = 320
+  heightInches: number
 ): Promise<string> {
-  console.log(`[UPSCALE] Starting upscale to ${targetDPI} DPI...`);
+  // Try progressively lower DPI levels if memory errors occur
+  const dpiLevels = [200, 150]; // Start at 200 DPI (Lulu minimum)
   
-  // Decode base64
-  const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
-  const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-  
-  // Load image
-  const image = await decode(imageBuffer);
-  const originalDPI = Math.round(image.width / widthInches);
-  
-  console.log(`[COVER QUALITY]`);
-  console.log(`  Original: ${image.width}x${image.height} (~${originalDPI} DPI)`);
-  console.log(`  Required by Lulu: minimum 200 DPI`);
-  
-  // Calculate target dimensions
-  const targetWidth = Math.round(widthInches * targetDPI);
-  const targetHeight = Math.round(heightInches * targetDPI);
-  
-  console.log(`  Target: ${targetWidth}x${targetHeight} (${targetDPI} DPI)`);
-  
-  if (originalDPI < 100) {
-    console.warn(`⚠️ AI generated very low resolution image (${originalDPI} DPI) - upscaling will help but consider requesting higher res from AI`);
+  for (let i = 0; i < dpiLevels.length; i++) {
+    const targetDPI = dpiLevels[i];
+    try {
+      console.log(`[UPSCALE] Attempting upscale to ${targetDPI} DPI...`);
+      
+      // Decode base64
+      const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
+      const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+      
+      // Load image
+      const image = await decode(imageBuffer);
+      const originalDPI = Math.round(image.width / widthInches);
+      
+      console.log(`[COVER QUALITY]`);
+      console.log(`  Original: ${image.width}x${image.height} (~${originalDPI} DPI)`);
+      console.log(`  Required by Lulu: minimum 200 DPI`);
+      console.log(`  Target: ${targetDPI} DPI`);
+      
+      // Skip upscaling if already high enough resolution
+      if (originalDPI >= 200) {
+        console.log(`✓ Image already meets quality requirements (${originalDPI} DPI), skipping upscale`);
+        return base64Image;
+      }
+      
+      if (originalDPI < 100) {
+        console.warn(`⚠️ AI generated low resolution image (${originalDPI} DPI) - upscaling to ${targetDPI} DPI`);
+      }
+      
+      // Calculate target dimensions
+      const targetWidth = Math.round(widthInches * targetDPI);
+      const targetHeight = Math.round(heightInches * targetDPI);
+      
+      console.log(`  Upscaling to: ${targetWidth}x${targetHeight}`);
+      
+      // Resize using high-quality bicubic interpolation (mutates the image)
+      image.resize(targetWidth, targetHeight);
+      
+      // Encode back to PNG
+      const pngBuffer = await image.encode();
+      const base64Upscaled = btoa(String.fromCharCode(...new Uint8Array(pngBuffer)));
+      
+      console.log(`✓ Successfully upscaled to ${targetWidth}x${targetHeight} (${targetDPI} DPI)`);
+      
+      return `data:image/png;base64,${base64Upscaled}`;
+      
+    } catch (error: any) {
+      const isMemoryError = error.message?.includes('memory') || 
+                           error.message?.includes('Memory') ||
+                           error.name === 'RangeError';
+      
+      if (isMemoryError && i < dpiLevels.length - 1) {
+        console.warn(`⚠️ Memory error at ${targetDPI} DPI, trying lower quality (${dpiLevels[i + 1]} DPI)...`);
+        continue;
+      }
+      
+      // If it's the last attempt or not a memory error, throw
+      throw error;
+    }
   }
   
-  // Resize using high-quality bicubic interpolation (mutates the image)
-  image.resize(targetWidth, targetHeight);
-  
-  // Encode back to PNG
-  const pngBuffer = await image.encode();
-  const base64Upscaled = btoa(String.fromCharCode(...new Uint8Array(pngBuffer)));
-  
-  console.log(`✓ Upscaled from ${image.width}x${image.height} (original) to ${targetWidth}x${targetHeight} (${targetDPI} DPI)`);
-  
-  return `data:image/png;base64,${base64Upscaled}`;
+  throw new Error('Failed to upscale image at any quality level');
 }
 
 serve(async (req) => {
@@ -93,7 +123,7 @@ serve(async (req) => {
     const frontCoverPrompt = `Transform this coloring page into a vibrant book cover with border.
 COLOR: Fill with rich colors matching theme: ${interestsText}. Professional, age-appropriate.
 BORDER: Add playful decorative border (10-15% width) with theme elements. Eye-catching, child-friendly. NO text.
-OUTPUT: Complete front cover ready for print.`;
+OUTPUT: High resolution 2000x2666 pixels complete front cover ready for print.`;
 
     // Transform image to Google's native format
     const base64Data = pageImageUrl.replace(/^data:image\/\w+;base64,/, '');
@@ -148,15 +178,15 @@ OUTPUT: Complete front cover ready for print.`;
     const frontMimeType = frontImagePart.inlineData.mimeType || 'image/png';
     const frontCoverOriginal = `data:${frontMimeType};base64,${frontImagePart.inlineData.data}`;
 
-    // UPSCALE to print quality (8.5" x 11.25" at 320 DPI = 2720x3600 pixels)
-    const frontCover = await upscaleToHighRes(frontCoverOriginal, 8.5, 11.25, 320);
+    // UPSCALE to print quality with progressive fallback (200 DPI minimum for Lulu)
+    const frontCover = await upscaleToHighResWithFallback(frontCoverOriginal, 8.5, 11.25);
 
     console.log('Front cover completed and upscaled');
 
     // STEP 2: Generate complementary back cover
     console.log('Step 2: Generating back cover...');
     
-    const backCoverPrompt = `Create back cover for children's book. Theme: ${interestsText}.
+    const backCoverPrompt = `Create high resolution 2000x2666 pixels back cover for children's book. Theme: ${interestsText}.
 Simple elegant design, complementary colors, matching border style. Space for text (NO actual text). Clean, professional, age-appropriate.`;
 
     const backCoverResponse = await fetch(
@@ -202,8 +232,8 @@ Simple elegant design, complementary colors, matching border style. Space for te
     const backMimeType = backImagePart.inlineData.mimeType || 'image/png';
     const backCoverOriginal = `data:${backMimeType};base64,${backImagePart.inlineData.data}`;
 
-    // UPSCALE to print quality
-    const backCover = await upscaleToHighRes(backCoverOriginal, 8.5, 11.25, 320);
+    // UPSCALE to print quality with progressive fallback
+    const backCover = await upscaleToHighResWithFallback(backCoverOriginal, 8.5, 11.25);
 
     console.log('Both covers generated and upscaled successfully');
 
