@@ -24,17 +24,10 @@ REQUIREMENTS: ONLY pure black lines (#000000) on white background (#FFFFFF). NO 
 Bold 2-4px outlines for children. Binary output: pure black lines or pure white spaces only - no gray pixels.
 CRITICAL: Must be printer-ready coloring page with clean black outlines on white background.`;
 
-// Model selection based on complexity level
+// LOCKED TO SIMPLE MODEL FOR TESTING - DO NOT USE EXPENSIVE MODELS
 const getModelForComplexity = (complexity?: string): string => {
-  switch(complexity) {
-    case 'simple': 
-      return 'google/gemini-2.5-flash-lite'; // 30% cheaper
-    case 'detailed': 
-      return 'google/gemini-2.5-flash-image'; // Premium quality
-    case 'medium':
-    default: 
-      return 'google/gemini-2.5-flash-image'; // Default
-  }
+  console.log(`🔒 Model locked to google/gemini-2.5-flash-lite for quality testing (requested: ${complexity || 'default'})`);
+  return 'google/gemini-2.5-flash-lite'; // Always use cheapest model - 70% cost savings
 };
 
 // Lightweight validation - just check if image looks reasonable
