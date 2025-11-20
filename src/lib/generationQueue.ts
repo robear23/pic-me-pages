@@ -24,14 +24,24 @@ class BookGenerationQueue {
   private shouldCancel = false;
   
   // Configuration
-  private readonly DELAY_MS = 3000; // 3 seconds - faster between pages
   private readonly DAILY_LIMIT = 500;
   private readonly CALLS_PER_BOOK = 28; // Approximate
   private readonly STORAGE_KEY = 'book_generation_daily_usage';
-  private readonly PAGE_TIMEOUT_MS = 150000; // 150 seconds (2.5 minutes) - allows time for 3 retry attempts
+  private readonly PAGE_TIMEOUT_MS = 60000; // 60 seconds - tight for rework, still allows retries
   
   constructor() {
     this.checkDailyReset();
+  }
+  
+  private getDelayForBatch(totalPages: number): number {
+    // No delay for small rework batches (<5 pages)
+    if (totalPages < 5) return 0;
+    
+    // 2s delay for medium batches
+    if (totalPages < 10) return 2000;
+    
+    // 3s delay for full books
+    return 3000;
   }
   
   cancelCurrentJob() {
@@ -95,7 +105,10 @@ class BookGenerationQueue {
       this.updateQueuePositions();
       
       try {
-        const results = await this.generateBook(job);
+        // Use parallel generation for small batches (rework), sequential for large (full books)
+        const results = job.prompts.length <= 3 
+          ? await this.generateBookParallel(job)
+          : await this.generateBook(job);
         job.resolve(results);
       } catch (error) {
         job.reject(error as Error);
@@ -103,6 +116,55 @@ class BookGenerationQueue {
     }
     
     this.isProcessing = false;
+  }
+  
+  private async generateBookParallel(job: BookJob): Promise<GeneratedPage[]> {
+    const total = job.prompts.length;
+    this.currentJobId = job.id;
+    this.shouldCancel = false;
+    
+    job.onProgress(5, 'Generating pages in parallel... 🚀');
+    
+    // Generate all pages simultaneously
+    const promises = job.prompts.map(async (prompt, i) => {
+      try {
+        const result = await Promise.race([
+          this.callAPIWithRetry(
+            [prompt],
+            job.characters,
+            job.consistentCharacters,
+            job.complexity,
+            2 // Fewer retries for parallel - avoid timeout pileup
+          ),
+          this.createTimeout(this.PAGE_TIMEOUT_MS, `Page ${prompt.pageNumber}`)
+        ]);
+        
+        if (result.pages && result.pages.length > 0) {
+          this.incrementDailyUsage();
+          job.onProgress(
+            Math.round(((i + 1) / total) * 100),
+            `Page ${prompt.pageNumber} complete! ✓`
+          );
+          return result.pages[0];
+        }
+        throw new Error(`Failed to generate page ${prompt.pageNumber}`);
+        
+      } catch (error: any) {
+        console.error(`Failed to generate page ${prompt.pageNumber}:`, error);
+        return {
+          pageNumber: prompt.pageNumber,
+          imageUrl: '',
+          prompt: prompt.prompt,
+          error: error.message || 'Generation failed'
+        };
+      }
+    });
+    
+    const allPages = await Promise.all(promises);
+    
+    job.onProgress(100, '✨ Rework complete!');
+    this.currentJobId = null;
+    return allPages;
   }
   
   private async generateBook(job: BookJob): Promise<GeneratedPage[]> {
@@ -153,11 +215,14 @@ class BookGenerationQueue {
         
         // Add delay between pages (except for the last page)
         if (i < total - 1) {
-          job.onProgress(
-            Math.round(((i + 0.8) / total) * 100),
-            `Page ${pageNum} complete! Taking a brief pause... ☕`
-          );
-          await this.delay(this.DELAY_MS);
+          const delayMs = this.getDelayForBatch(total);
+          if (delayMs > 0) {
+            job.onProgress(
+              Math.round(((i + 0.8) / total) * 100),
+              `Page ${pageNum} complete! Taking a brief pause... ☕`
+            );
+            await this.delay(delayMs);
+          }
         }
         
       } catch (error: any) {
@@ -197,7 +262,9 @@ class BookGenerationQueue {
       }
       
       try {
-        return await generateImages(prompts, characters, consistentCharacters, undefined, undefined, complexity);
+        // Pass isRework flag for rework requests
+        const isRework = prompts.length <= 3;
+        return await generateImages(prompts, characters, consistentCharacters, undefined, undefined, complexity, isRework);
       } catch (error: any) {
         const isRateLimitError = error.message?.includes('Rate limit') || error.message?.includes('429');
         

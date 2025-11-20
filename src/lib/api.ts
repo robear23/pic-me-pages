@@ -101,7 +101,8 @@ export const generateImages = async (
   consistentCharacters: boolean,
   batchIndex?: number,
   batchSize?: number,
-  complexity?: string
+  complexity?: string,
+  isRework: boolean = false
 ): Promise<{ 
   pages: GeneratedPage[]; 
   successCount: number; 
@@ -112,7 +113,7 @@ export const generateImages = async (
   executionTime?: number;
 }> => {
   // Determine if this is a rework call (no batch parameters)
-  const isReworkMode = batchIndex === undefined && batchSize === undefined && prompts.length < 12;
+  const isReworkMode = isRework || (batchIndex === undefined && batchSize === undefined && prompts.length < 12);
   
   console.log(`[API] generateImages called with ${prompts.length} prompts. Page numbers: [${prompts.map(p => p.pageNumber).join(', ')}]`);
   console.log(`[API] Rework mode: ${isReworkMode}, batchIndex: ${batchIndex}, batchSize: ${batchSize}, complexity: ${complexity || 'default'}`);

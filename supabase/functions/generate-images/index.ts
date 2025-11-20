@@ -7,7 +7,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const MAX_RETRIES = 2; // Increased to 2 - gives 3 total attempts for better quality
 const BASE_DELAY = 1000;
 const FUNCTION_TIMEOUT = 140000; // 140 seconds (10s before hard limit)
 
@@ -288,8 +287,10 @@ async function generateRealisticImage(
   GOOGLE_API_KEY: string,
   pageIndex: number,
   totalPages: number,
-  complexity?: string
+  complexity?: string,
+  maxRetries?: number
 ): Promise<string> {
+  const MAX_RETRIES = maxRetries || 2;
   const selectedModel = getModelForComplexity(complexity);
   const MODELS = [selectedModel]; // Use only the selected model
   
@@ -485,8 +486,10 @@ async function convertToLineArt(
   GOOGLE_API_KEY: string,
   pageIndex: number,
   totalPages: number,
-  complexity?: string
+  complexity?: string,
+  maxRetries?: number
 ): Promise<string> {
+  const MAX_RETRIES = maxRetries || 2;
   const selectedModel = getModelForComplexity(complexity);
   const MODELS = [selectedModel]; // Use only the selected model
   
@@ -651,6 +654,9 @@ serve(async (req) => {
     }
 
     const { prompts, characters, consistentCharacters, batchIndex, batchSize = 2, isReworkMode = false, complexity } = await req.json();
+    
+    // Set retries based on rework mode - fewer retries for rework to be faster
+    const MAX_RETRIES = isReworkMode ? 1 : 2; // 2 attempts for rework, 3 for initial gen
 
     if (!prompts || !Array.isArray(prompts)) {
       throw new Error('Invalid prompts array');
@@ -666,6 +672,7 @@ serve(async (req) => {
     // Log received prompts for debugging
     console.log(`Received ${prompts.length} prompts, ${validPrompts.length} valid. Page numbers: [${validPrompts.map(p => p.pageNumber).join(', ')}]`);
     console.log(`Rework mode: ${isReworkMode}, batchIndex: ${batchIndex}, batchSize: ${batchSize}`);
+    console.log(`MAX_RETRIES set to: ${MAX_RETRIES} (${isReworkMode ? 'rework mode' : 'initial generation'})`);
 
     // Calculate batch range if batchIndex is provided AND not in rework mode
     // In rework mode, prompts are already filtered to only selected pages
@@ -777,10 +784,11 @@ STYLE:
           const realisticImageBase64 = await generateRealisticImage(
             prompt,
             contentParts,
-          GOOGLE_API_KEY,
+            GOOGLE_API_KEY,
             i,
             validPrompts.length,
-            complexity
+            complexity,
+            MAX_RETRIES
           );
 
           // Step 2: Convert to line art
@@ -790,7 +798,8 @@ STYLE:
             GOOGLE_API_KEY,
             i,
             validPrompts.length,
-            complexity
+            complexity,
+            MAX_RETRIES
           );
 
           successCount++;
