@@ -6,6 +6,7 @@ import { useAdmin } from '@/hooks/useAdmin';
 import { supabase } from '@/integrations/supabase/client';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
+import { useBookStore } from '@/store/bookStore';
 
 export const Navigation = () => {
   const { user } = useAuth();
@@ -47,7 +48,11 @@ export const Navigation = () => {
             
             <Button
               variant={isActive('/app') ? 'secondary' : 'ghost'}
-              onClick={() => navigate('/app')}
+              onClick={() => {
+                useBookStore.getState().reset();
+                useBookStore.getState().setStep('upload');
+                navigate('/app');
+              }}
               className="gap-2"
             >
               <Plus className="w-4 h-4" />
@@ -110,6 +115,8 @@ export const Navigation = () => {
               <Button
                 variant={isActive('/app') ? 'secondary' : 'ghost'}
                 onClick={() => {
+                  useBookStore.getState().reset();
+                  useBookStore.getState().setStep('upload');
                   navigate('/app');
                   setMobileMenuOpen(false);
                 }}
