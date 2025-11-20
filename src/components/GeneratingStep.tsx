@@ -1,14 +1,16 @@
 import { motion } from 'framer-motion';
 import { useBookStore } from '@/store/bookStore';
-import { Sparkles, Check, Loader2 } from 'lucide-react';
+import { Sparkles, Check, Loader2, Clock } from 'lucide-react';
 import { useEffect, useState, useRef } from 'react';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { generatePrompts, generateImages, generateCover } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { saveBookToDatabase } from '@/lib/bookStorage';
 import { supabase } from '@/integrations/supabase/client';
+import { bookQueue } from '@/lib/generationQueue';
 import type { GeneratedPrompt } from '@/lib/api';
 
 const GENERATION_STEPS = [
@@ -54,6 +56,7 @@ export const GeneratingStep = () => {
   const { toast } = useToast();
   const [prompts, setPrompts] = useState<GeneratedPrompt[]>([]);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  const [queueStatus, setQueueStatus] = useState(bookQueue.getStatus());
   const hasRunRef = useRef(false);
 
   useEffect(() => {
@@ -158,6 +161,10 @@ export const GeneratingStep = () => {
         setGenerationStatus(GENERATION_STEPS[3]);
         console.log('Generating images with batch processing...');
         
+        // Update queue status periodically
+        const updateQueueStatus = () => setQueueStatus(bookQueue.getStatus());
+        const statusInterval = setInterval(updateQueueStatus, 3000);
+        
         // If in rework mode, only regenerate selected pages
         let finalPages;
         if (isReworkMode && selectedPagesForRework.length > 0) {
@@ -169,33 +176,32 @@ export const GeneratingStep = () => {
           console.log(`REWORK MODE: Regenerating ${promptsToRework.length} pages: [${promptsToRework.map(p => p.pageNumber).join(', ')}]`);
           console.log(`Selected pages for rework:`, selectedPagesForRework);
           
-          // CRITICAL: In rework mode, send only the filtered prompts WITHOUT batch slicing
-          // The edge function should process ALL prompts in the array since it's already filtered
-          setGenerationStatus(`${GENERATION_STEPS[3]} (${promptsToRework.length} pages)`);
-          
           let reworkedPages;
           try {
-            const result = await generateImages(
+            reworkedPages = await bookQueue.addBook(
               promptsToRework,
               charactersWithPhotos,
               consistentCharacters,
-              undefined,  // No batchIndex - process all prompts
-              undefined,  // No batchSize - process all prompts
-              complexityLevel
+              complexityLevel || 'medium',
+              (percent, status) => {
+                setGenerationProgress(Math.round(50 + (percent * 0.4))); // 50-90%
+                setGenerationStatus(status);
+                updateQueueStatus();
+              }
             );
-            reworkedPages = result.pages;
           } catch (error: any) {
-            if (error.message?.includes('Rate limit')) {
+            clearInterval(statusInterval);
+            if (error.message?.includes('Rate limit') || error.message?.includes('Daily limit')) {
               toast({
-                title: 'Rate Limit Reached',
-                description: 'Google AI is temporarily rate limiting requests. Please wait 1-2 minutes and try again.',
+                title: error.message.includes('Daily limit') ? 'Daily Limit Reached' : 'Rate Limit Reached',
+                description: error.message,
                 variant: 'destructive',
-                duration: 8000,
+                duration: 10000,
               });
-              setApiError('Rate limit reached. Please wait a moment and try again.');
+              setApiError(error.message);
               return;
             }
-            throw error; // Re-throw other errors
+            throw error;
           }
           
           console.log(`Rework complete: received ${reworkedPages.length} pages with page numbers: [${reworkedPages.map(p => p.pageNumber).join(', ')}]`);
@@ -219,67 +225,41 @@ export const GeneratingStep = () => {
           
           console.log(`Final pages after merge: ${finalPages.length} pages`);
         } else {
-          // Process all pages in batches (optimized for timeout prevention)
-          const BATCH_SIZE = 3; // Safer batch size to stay under 150s timeout
-          const totalBatches = Math.ceil(generatedPrompts.length / BATCH_SIZE);
-          let allPages: any[] = [];
+          // Use queue system for full book generation
+          console.log(`Queueing ${generatedPrompts.length} pages for generation...`);
           
-          for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-            setGenerationStatus(`${GENERATION_STEPS[3]} (batch ${batchIndex + 1}/${totalBatches})`);
-            console.log(`Processing batch ${batchIndex + 1}/${totalBatches}`);
-            
-            let result;
-            try {
-              result = await generateImages(
-                generatedPrompts,
-                charactersWithPhotos,
-                consistentCharacters,
-                batchIndex,
-                BATCH_SIZE,
-                complexityLevel
-              );
-            } catch (error: any) {
-              if (error.message?.includes('Rate limit')) {
-                toast({
-                  title: 'Rate Limit Reached',
-                  description: 'Google AI is temporarily rate limiting requests. Please wait 1-2 minutes and try again.',
-                  variant: 'destructive',
-                  duration: 8000,
-                });
-                setApiError('Rate limit reached. Please wait a moment and try again.');
-                return;
+          try {
+            finalPages = await bookQueue.addBook(
+              generatedPrompts,
+              charactersWithPhotos,
+              consistentCharacters,
+              complexityLevel || 'medium',
+              (percent, status) => {
+                setGenerationProgress(Math.round(50 + (percent * 0.4))); // 50-90%
+                setGenerationStatus(status);
+                updateQueueStatus();
               }
-              throw error; // Re-throw other errors
+            );
+            
+            setGeneratedPages(finalPages);
+            console.log(`Queue generation complete: ${finalPages.length} pages`);
+          } catch (error: any) {
+            clearInterval(statusInterval);
+            if (error.message?.includes('Rate limit') || error.message?.includes('Daily limit')) {
+              toast({
+                title: error.message.includes('Daily limit') ? 'Daily Limit Reached' : 'Rate Limit Reached',
+                description: error.message,
+                variant: 'destructive',
+                duration: 10000,
+              });
+              setApiError(error.message);
+              return;
             }
-            
-            const { pages: batchPages, partialResult, timeoutWarning } = result;
-            
-            if (timeoutWarning) {
-              console.warn(`Edge function approached timeout, got partial results for batch ${batchIndex + 1}`);
-            }
-            
-            allPages = [...allPages, ...batchPages];
-            
-            // If we got partial results, log which pages are missing
-            if (partialResult) {
-              const batchStartIdx = batchIndex * BATCH_SIZE;
-              const batchEndIdx = Math.min(batchStartIdx + BATCH_SIZE, generatedPrompts.length);
-              const expectedPages = generatedPrompts.slice(batchStartIdx, batchEndIdx).map(p => p.pageNumber);
-              const receivedPages = batchPages.map(p => p.pageNumber);
-              const missingPages = expectedPages.filter(pn => !receivedPages.includes(pn));
-              
-              if (missingPages.length > 0) {
-                console.warn(`Missing pages from batch ${batchIndex + 1}: ${missingPages.join(', ')}`);
-              }
-            }
-            
-            // Update progress within the 50-90% range
-            const batchProgress = 50 + (40 * (batchIndex + 1) / totalBatches);
-            setGenerationProgress(Math.round(batchProgress));
+            throw error;
           }
-          
-          finalPages = allPages;
         }
+        
+        clearInterval(statusInterval);
         
         setGenerationProgress(85);
         
@@ -663,12 +643,34 @@ export const GeneratingStep = () => {
                 <Sparkles className="w-20 h-20 text-primary" />
               </motion.div>
 
+              {/* Queue Status Alerts */}
+              {queueStatus.booksRemaining <= 3 && queueStatus.booksRemaining > 0 && (
+                <Alert className="mb-6 bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800">
+                  <Clock className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                  <AlertDescription className="text-amber-800 dark:text-amber-200">
+                    <strong>Approaching Daily Limit:</strong> {queueStatus.booksRemaining} book{queueStatus.booksRemaining === 1 ? '' : 's'} remaining today ({queueStatus.dailyRemaining}/{queueStatus.dailyLimit} API calls)
+                  </AlertDescription>
+                </Alert>
+              )}
+              
+              {queueStatus.queueLength > 1 && (
+                <Alert className="mb-6 bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                  <Clock className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                  <AlertDescription className="text-blue-800 dark:text-blue-200">
+                    <strong>{queueStatus.queueLength} books</strong> in queue. Your book will be processed soon!
+                  </AlertDescription>
+                </Alert>
+              )}
+
               {/* Main Text */}
               <h2 className="font-black text-4xl md:text-5xl mb-4">
                 Creating Your Coloring Book...
               </h2>
-              <p className="text-lg text-muted-foreground mb-12">
-                Usually takes 1-2 minutes
+              <p className="text-lg text-muted-foreground mb-8">
+                {queueStatus.queueLength > 1 
+                  ? `Position #${queueStatus.queueLength} in queue • Usually takes 4 minutes per book`
+                  : 'Usually takes 3-4 minutes'
+                }
               </p>
 
               {/* Progress Bar */}
