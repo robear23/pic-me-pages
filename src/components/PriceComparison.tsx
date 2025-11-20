@@ -35,53 +35,61 @@ export const PriceComparison = () => {
           >
             <div className="mt-4 backdrop-blur-xl bg-background/40 border-2 border-border rounded-xl p-6">
               <h3 className="text-lg font-bold mb-4 text-center">
-                Standard vs Premium Coil Binding
+                Compare All Options
               </h3>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border">
-                      <th className="text-left py-3 px-4 font-semibold">Feature</th>
-                      <th className="text-center py-3 px-4 font-semibold">Standard</th>
-                      <th className="text-center py-3 px-4 font-semibold bg-primary/5 rounded-t-lg">
+                      <th className="text-left py-3 px-2 sm:px-4 font-semibold">Feature</th>
+                      <th className="text-center py-3 px-2 sm:px-4 font-semibold">PDF</th>
+                      <th className="text-center py-3 px-2 sm:px-4 font-semibold">Standard</th>
+                      <th className="text-center py-3 px-2 sm:px-4 font-semibold bg-primary/5 rounded-t-lg">
                         Premium Coil
                       </th>
                     </tr>
                   </thead>
                   <tbody>
                     <ComparisonRow
-                      feature="Binding Type"
+                      feature="Format"
+                      pdf="Digital Download"
                       standard="Saddle Stitch (Stapled)"
                       premium="Professional Coil"
                     />
                     <ComparisonRow
+                      feature="Delivery"
+                      pdf="Instant"
+                      standard="Shipped"
+                      premium="Shipped"
+                    />
+                    <ComparisonRow
                       feature="Lays Completely Flat"
+                      pdf="You print it"
                       standard={false}
                       premium={true}
                     />
                     <ComparisonRow
                       feature="360° Page Rotation"
+                      pdf="You print it"
                       standard={false}
                       premium={true}
                     />
                     <ComparisonRow
                       feature="Durability"
+                      pdf="Depends on printing"
                       standard="Good"
                       premium="Excellent"
                     />
                     <ComparisonRow
-                      feature="Professional Appearance"
-                      standard="Standard"
-                      premium="Premium"
-                    />
-                    <ComparisonRow
-                      feature="Easy Page Turning"
-                      standard="Good"
-                      premium="Outstanding"
+                      feature="Print Copies"
+                      pdf="Unlimited"
+                      standard="1"
+                      premium="1"
                     />
                     <ComparisonRow
                       feature="Best For"
+                      pdf="Budget & DIY"
                       standard="Budget-conscious"
                       premium="Best coloring experience"
                       isLast
@@ -92,8 +100,8 @@ export const PriceComparison = () => {
 
               <div className="mt-6 p-4 bg-primary/10 rounded-lg border border-primary/20">
                 <p className="text-sm text-center">
-                  <span className="font-bold">💡 Pro Tip:</span> Premium coil binding is our most popular choice! 
-                  The book lays completely flat, making coloring easier and more enjoyable.
+                  <span className="font-bold">💡 Pro Tip:</span> PDF downloads are perfect if you want to save money and print multiple copies. 
+                  Premium coil binding is best if you want the ultimate coloring experience with professionally bound pages that lay flat!
                 </p>
               </div>
             </div>
@@ -106,13 +114,15 @@ export const PriceComparison = () => {
 
 interface ComparisonRowProps {
   feature: string;
+  pdf?: string | boolean;
   standard: string | boolean;
   premium: string | boolean;
   isLast?: boolean;
 }
 
-const ComparisonRow = ({ feature, standard, premium, isLast }: ComparisonRowProps) => {
-  const renderCell = (value: string | boolean) => {
+const ComparisonRow = ({ feature, pdf, standard, premium, isLast }: ComparisonRowProps) => {
+  const renderCell = (value: string | boolean | undefined) => {
+    if (value === undefined) return <span className="text-muted-foreground">-</span>;
     if (typeof value === 'boolean') {
       return value ? (
         <Check className="w-5 h-5 text-green-500 mx-auto" />
@@ -126,6 +136,7 @@ const ComparisonRow = ({ feature, standard, premium, isLast }: ComparisonRowProp
   return (
     <tr className={!isLast ? 'border-b border-border/50' : ''}>
       <td className="py-3 px-4 font-medium">{feature}</td>
+      <td className="py-3 px-4 text-center">{renderCell(pdf)}</td>
       <td className="py-3 px-4 text-center">{renderCell(standard)}</td>
       <td className="py-3 px-4 text-center bg-primary/5">
         {renderCell(premium)}

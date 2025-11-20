@@ -43,6 +43,7 @@ export const PaymentStep = () => {
   const [stripeCheckoutUrl, setStripeCheckoutUrl] = useState<string | null>(null);
 
   const bookOption = getSelectedBookOption();
+  const isPdfOnly = bookOption?.isPdfOnly || selectedBinding === 'pdf';
 
   // Handle payment success on mount
   useEffect(() => {
@@ -261,7 +262,12 @@ export const PaymentStep = () => {
           <Card className="mb-6">
             <CardHeader>
               <CardTitle>Order Summary</CardTitle>
-              <CardDescription>Your personalized coloring book details</CardDescription>
+              <CardDescription>
+                {isPdfOnly 
+                  ? 'Your instant PDF download details'
+                  : 'Your personalized coloring book details'
+                }
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex justify-between items-center py-2 border-b">
@@ -283,14 +289,24 @@ export const PaymentStep = () => {
                     <Check className="h-4 w-4 text-green-500" />
                     <span>Digital PDF Download</span>
                   </div>
-                  <div className="flex items-center gap-1 text-sm font-medium">
-                    <Check className="h-4 w-4 text-green-500" />
-                    <span>Physical Book Printing</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-sm font-medium">
-                    <Check className="h-4 w-4 text-green-500" />
-                    <span>Free Shipping</span>
-                  </div>
+                  {!isPdfOnly && (
+                    <>
+                      <div className="flex items-center gap-1 text-sm font-medium">
+                        <Check className="h-4 w-4 text-green-500" />
+                        <span>Physical Book Printing</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-sm font-medium">
+                        <Check className="h-4 w-4 text-green-500" />
+                        <span>Free Shipping</span>
+                      </div>
+                    </>
+                  )}
+                  {isPdfOnly && (
+                    <div className="flex items-center gap-1 text-sm font-medium">
+                      <Check className="h-4 w-4 text-green-500" />
+                      <span>Instant Download</span>
+                    </div>
+                  )}
                 </div>
               </div>
               <div className="flex justify-between items-center py-4 text-xl font-bold">
