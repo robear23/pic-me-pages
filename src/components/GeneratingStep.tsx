@@ -287,9 +287,16 @@ export const GeneratingStep = () => {
         if (failedPages.length > 0) {
           console.log(`Found ${failedPages.length} failed pages, analyzing errors...`);
           
-          // Classify errors: style issues, validation, infra, timeout
-          const classifyError = (errorMessage: string): 'validation' | 'style' | 'infra' | 'timeout' | 'unknown' => {
+          // Classify errors: style issues, validation, infra, timeout, model refusals
+          const classifyError = (errorMessage: string): 'validation' | 'style' | 'infra' | 'timeout' | 'refused' | 'unknown' => {
             const msg = errorMessage.toLowerCase();
+            
+            // NEW: Detect model refusals
+            if (msg.includes('model_refused') || 
+                msg.includes('no image data') ||
+                msg.includes('content policy')) {
+              return 'refused'; // Model safety filter / refusal
+            }
             
             if (msg.includes('cartoon') || msg.includes('illustration') || msg.includes('variance')) {
               return 'style'; // Wrong artistic style - specific error type
@@ -313,6 +320,7 @@ export const GeneratingStep = () => {
           
           const validationFailures = failedPages.filter(p => classifyError(p.error || '') === 'validation');
           const styleFailures = failedPages.filter(p => classifyError(p.error || '') === 'style');
+          const refusedFailures = failedPages.filter(p => classifyError(p.error || '') === 'refused');
           const retryableFailures = failedPages.filter(p => {
             const type = classifyError(p.error || '');
             return type === 'infra' || type === 'timeout' || type === 'unknown';
@@ -406,17 +414,27 @@ export const GeneratingStep = () => {
           const allRemainingFailures = finalPages.filter(p => !p.imageUrl);
           const permanentStyleFailures = allRemainingFailures.filter(p => classifyError(p.error || '') === 'style');
           const permanentValidationFailures = allRemainingFailures.filter(p => classifyError(p.error || '') === 'validation');
+          const permanentRefusedFailures = allRemainingFailures.filter(p => classifyError(p.error || '') === 'refused');
           const otherFailures = allRemainingFailures.filter(p => {
             const type = classifyError(p.error || '');
-            return type !== 'validation' && type !== 'style';
+            return type !== 'validation' && type !== 'style' && type !== 'refused';
           });
           
-          console.log(`After retries: ${permanentStyleFailures.length} style, ${permanentValidationFailures.length} validation, ${otherFailures.length} other failures`);
+          console.log(`After retries: ${permanentStyleFailures.length} style, ${permanentValidationFailures.length} validation, ${permanentRefusedFailures.length} refused, ${otherFailures.length} other failures`);
           
           // Build specific error message
           if (allRemainingFailures.length > 0) {
+            const successCount = finalPages.filter(p => p.imageUrl).length;
+            const totalPages = finalPages.length;
+            const successRate = successCount / totalPages;
+            
             const failedPageNumbers = allRemainingFailures.map(p => p.pageNumber).sort((a, b) => a - b);
             let errorParts: string[] = [];
+            
+            if (permanentRefusedFailures.length > 0) {
+              const refusedPages = permanentRefusedFailures.map(p => p.pageNumber).sort((a, b) => a - b).join(', ');
+              errorParts.push(`🚫 AI MODEL REFUSED (Pages ${refusedPages}):\nThe AI couldn't generate images for these prompts, possibly due to:\n• Complex or ambiguous scene descriptions\n• Certain word combinations that triggered safety filters\n• Conflicts between the reference photo and the requested scene\n\nTo fix this:\n• Use the Rework feature to regenerate with simpler prompts\n• Try different interests that are more straightforward (e.g., "playing with toys" instead of "doing magical activities")\n• Ensure reference photos are clear and well-lit\n• Avoid abstract or overly creative scenarios`);
+            }
             
             if (permanentStyleFailures.length > 0) {
               const stylePages = permanentStyleFailures.map(p => p.pageNumber).sort((a, b) => a - b).join(', ');
@@ -436,7 +454,22 @@ export const GeneratingStep = () => {
             const errorMsg = errorParts.join('\n\n');
             console.error(errorMsg);
             setErrorDetails(errorMsg);
-            throw new Error(errorMsg);
+            
+            // Only hard-fail if success rate is very low (partial success mode)
+            if (successRate < 0.5) { // Less than 50% success
+              throw new Error(`Generation mostly failed (${successCount}/${totalPages} pages):\n\n${errorMsg}`);
+            }
+            
+            // Otherwise: soft-fail with warning, allow user to continue
+            toast({
+              title: `⚠️ ${allRemainingFailures.length} Pages Need Attention`,
+              description: `${successCount}/${totalPages} pages generated successfully. Check the details to fix the remaining pages.`,
+              variant: 'default',
+              duration: 10000,
+            });
+            
+            // Don't throw - let generation continue to cover/PDF with successful pages
+            // User can use Rework feature for failed pages later
           }
         }
         
@@ -709,6 +742,38 @@ export const GeneratingStep = () => {
                   {errorDetails}
                 </p>
               </div>
+
+              {/* Show "Continue Anyway" option if some pages succeeded */}
+              {(() => {
+                const successCount = generatedPages?.filter(p => p.imageUrl).length || 0;
+                const totalPages = selectedPageCount || 0;
+                
+                if (successCount > 0 && successCount < totalPages) {
+                  return (
+                    <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                      <p className="text-sm font-medium text-amber-900 dark:text-amber-100">
+                        ✓ {successCount} of {totalPages} pages generated successfully
+                      </p>
+                      <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                        You can continue with the successful pages and use Rework later to fix the failed ones.
+                      </p>
+                      <Button 
+                        onClick={() => {
+                          // Clear error and proceed to complete step
+                          setApiError(null);
+                          setErrorDetails(null);
+                          setStep('complete'); // Move to complete step to show the book
+                        }}
+                        variant="outline"
+                        className="mt-3 bg-white hover:bg-amber-50 border-amber-300 text-amber-900"
+                      >
+                        Continue with {successCount} Pages
+                      </Button>
+                    </div>
+                  );
+                }
+                return null;
+              })()}
 
               <div className="space-y-4 mb-6">
                 <h3 className="font-semibold text-lg">What you can try:</h3>

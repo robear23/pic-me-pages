@@ -69,6 +69,33 @@ CRITICAL RULES:
 CRITICAL: A successful conversion has clear black outlines on white background with NO photographic traces.
 OUTPUT: Clean black and white line drawing ready for children to color with crayons.`;
 
+// Helper function to simplify prompts that might trigger safety filters
+function simplifyPromptForRetry(originalPrompt: string, attemptNumber: number): string {
+  let simplified = originalPrompt;
+  
+  // Attempt 1: Remove potentially ambiguous descriptors
+  if (attemptNumber === 1) {
+    simplified = simplified
+      .replace(/enchanted|magical|mystical/gi, '')
+      .replace(/admiring|gazing|staring/gi, 'looking at')
+      .replace(/playful|teasing/gi, 'playing with');
+  }
+  
+  // Attempt 2: Further simplify to basic action
+  if (attemptNumber === 2) {
+    // Extract just the character name and main action
+    const nameMatch = simplified.match(/^([A-Z][a-z]+)/);
+    const actionMatch = simplified.match(/(holding|playing|sitting|standing|walking|running)/i);
+    
+    if (nameMatch && actionMatch) {
+      simplified = `${nameMatch[1]}, ${actionMatch[1]} in a simple indoor setting. Natural lighting, clean background.`;
+    }
+  }
+  
+  console.log(`Simplified prompt (attempt ${attemptNumber}): ${simplified.substring(0, 100)}...`);
+  return simplified;
+}
+
 // Use Google's Gemini API directly - cheapest model with image generation
 const getModelForComplexity = (complexity?: string): string => {
   console.log(`Using gemini-2.5-flash-image via Google API (requested: ${complexity || 'default'})`);
@@ -369,11 +396,29 @@ async function generateRealisticImage(
         );
         
         if (!imagePart?.inlineData?.data) {
-          console.error('No image data in Step 1 response');
+          // Extract the prompt text for error logging
+          const promptText = contentParts.find((p: any) => p.type === 'text')?.text || 'unknown prompt';
+          const errorMsg = `Model refused to generate image - possible content policy issue with prompt: "${promptText.substring(0, 100)}..."`;
+          console.error(`No image data in Step 1 response: ${errorMsg}`);
+          
           if (attempt < MAX_RETRIES) {
+            console.log(`Attempt ${attempt + 1}: No image data received. Trying with simplified prompt...`);
+            
+            // FALLBACK: Simplify the prompt to remove potentially problematic words
+            const simplifiedPrompt = simplifyPromptForRetry(promptText, attempt);
+            
+            // Retry with simplified prompt
+            const firstTextIndex = mergedContent.findIndex((part: any) => part.type === 'text');
+            if (firstTextIndex >= 0) {
+              mergedContent[firstTextIndex] = {
+                type: 'text',
+                text: REALISTIC_SYSTEM_MESSAGE + '\n\n' + simplifiedPrompt
+              };
+            }
             continue;
           }
-          throw new Error('No image data received from Step 1');
+          
+          throw new Error(`MODEL_REFUSED: ${errorMsg}`);
         }
 
         // Convert to data URL
