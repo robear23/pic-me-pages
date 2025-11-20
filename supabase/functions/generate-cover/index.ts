@@ -31,9 +31,9 @@ serve(async (req) => {
   }
 
   try {
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY');
-    if (!lovableApiKey) {
-      throw new Error('LOVABLE_API_KEY not configured');
+    const googleApiKey = Deno.env.get('GOOGLE_API_KEY');
+    if (!googleApiKey) {
+      throw new Error('GOOGLE_API_KEY not configured');
     }
 
     const { characterName, interests, pageImageUrl, characters }: GenerateCoverRequest = await req.json();
@@ -51,39 +51,58 @@ COLOR: Fill with rich colors matching theme: ${interestsText}. Professional, age
 BORDER: Add playful decorative border (10-15% width) with theme elements. Eye-catching, child-friendly. NO text.
 OUTPUT: Complete front cover ready for print.`;
 
-    const frontResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-image',
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: frontCoverPrompt },
-              { type: 'image_url', image_url: { url: pageImageUrl } }
+    // Transform image to Google's native format
+    const base64Data = pageImageUrl.replace(/^data:image\/\w+;base64,/, '');
+    const mimeType = pageImageUrl.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/jpeg';
+
+    const frontResponse = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
+      {
+        method: 'POST',
+        headers: {
+          'x-goog-api-key': googleApiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: frontCoverPrompt },
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Data
+                }
+              }
             ]
+          }],
+          generationConfig: {
+            responseModalities: ['IMAGE']
           }
-        ],
-        modalities: ['image', 'text']
-      }),
-    });
+        }),
+      }
+    );
 
     if (!frontResponse.ok) {
-      const errorText = await frontResponse.text();
-      console.error('Front cover AI error:', errorText);
-      throw new Error(`Front cover generation failed: ${errorText}`);
+      const errorData = await frontResponse.json();
+      const errorMessage = errorData.error?.message || 'Unknown error';
+      console.error('Front cover AI error:', errorMessage);
+      throw new Error(`Front cover generation failed: ${errorMessage}`);
     }
 
     const frontData = await frontResponse.json();
-    const frontCover = frontData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-
-    if (!frontCover) {
+    
+    // Extract base64 image from Google's response format
+    const frontImagePart = frontData.candidates?.[0]?.content?.parts?.find(
+      (p: any) => p.inlineData
+    );
+    
+    if (!frontImagePart?.inlineData?.data) {
       throw new Error('No front cover generated');
     }
+    
+    // Convert to data URL
+    const frontMimeType = frontImagePart.inlineData.mimeType || 'image/png';
+    const frontCover = `data:${frontMimeType};base64,${frontImagePart.inlineData.data}`;
 
     console.log('Front cover completed');
 
@@ -93,36 +112,48 @@ OUTPUT: Complete front cover ready for print.`;
     const backCoverPrompt = `Create back cover for children's book. Theme: ${interestsText}.
 Simple elegant design, complementary colors, matching border style. Space for text (NO actual text). Clean, professional, age-appropriate.`;
 
-    const backCoverResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${lovableApiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-image',
-        messages: [
-          {
-            role: 'user',
-            content: backCoverPrompt
+    const backCoverResponse = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
+      {
+        method: 'POST',
+        headers: {
+          'x-goog-api-key': googleApiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: backCoverPrompt }
+            ]
+          }],
+          generationConfig: {
+            responseModalities: ['IMAGE']
           }
-        ],
-        modalities: ['image', 'text']
-      }),
-    });
+        }),
+      }
+    );
 
     if (!backCoverResponse.ok) {
-      const errorText = await backCoverResponse.text();
-      console.error('Back cover AI error:', errorText);
-      throw new Error(`Back cover generation failed: ${errorText}`);
+      const errorData = await backCoverResponse.json();
+      const errorMessage = errorData.error?.message || 'Unknown error';
+      console.error('Back cover AI error:', errorMessage);
+      throw new Error(`Back cover generation failed: ${errorMessage}`);
     }
 
     const backCoverData = await backCoverResponse.json();
-    const backCover = backCoverData.choices?.[0]?.message?.images?.[0]?.image_url?.url;
-
-    if (!backCover) {
+    
+    // Extract base64 image from Google's response format
+    const backImagePart = backCoverData.candidates?.[0]?.content?.parts?.find(
+      (p: any) => p.inlineData
+    );
+    
+    if (!backImagePart?.inlineData?.data) {
       throw new Error('No back cover image generated');
     }
+    
+    // Convert to data URL
+    const backMimeType = backImagePart.inlineData.mimeType || 'image/png';
+    const backCover = `data:${backMimeType};base64,${backImagePart.inlineData.data}`;
 
     console.log('Both covers generated successfully');
 

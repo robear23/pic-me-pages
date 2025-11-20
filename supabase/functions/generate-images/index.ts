@@ -24,10 +24,10 @@ REQUIREMENTS: ONLY pure black lines (#000000) on white background (#FFFFFF). NO 
 Bold 2-4px outlines for children. Binary output: pure black lines or pure white spaces only - no gray pixels.
 CRITICAL: Must be printer-ready coloring page with clean black outlines on white background.`;
 
-// Use the cheapest model that supports image generation globally
+// Use Google's Gemini API directly - cheapest model with image generation
 const getModelForComplexity = (complexity?: string): string => {
-  console.log(`🔒 Model locked to google/gemini-2.5-flash for testing (requested: ${complexity || 'default'})`);
-  return 'google/gemini-2.5-flash'; // Cheapest model with image generation support - 40% cost savings
+  console.log(`Using gemini-2.5-flash-image via Google API (requested: ${complexity || 'default'})`);
+  return 'gemini-2.5-flash-image'; // Remove "google/" prefix for direct API
 };
 
 // Lightweight validation - just check if image looks reasonable
@@ -50,7 +50,7 @@ async function validateLineArt(base64Image: string): Promise<boolean> {
 async function generateRealisticImage(
   prompt: any,
   contentParts: any[],
-  LOVABLE_API_KEY: string,
+  GOOGLE_API_KEY: string,
   pageIndex: number,
   totalPages: number,
   complexity?: string
@@ -76,23 +76,42 @@ async function generateRealisticImage(
           mergedContent.unshift({ type: 'text', text: REALISTIC_SYSTEM_MESSAGE });
         }
         
-        const imageResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: model,
-            messages: [
-              {
-                role: 'user',
-                content: mergedContent
+        // Transform content parts to Google's native format
+        const parts = mergedContent.map((part: any) => {
+          if (part.type === 'text') {
+            return { text: part.text };
+          } else if (part.type === 'image_url') {
+            // Convert data URL to inline data format
+            const base64Data = part.image_url.url.replace(/^data:image\/\w+;base64,/, '');
+            const mimeType = part.image_url.url.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/jpeg';
+            return {
+              inlineData: {
+                mimeType: mimeType,
+                data: base64Data
               }
-            ],
-            modalities: ['image', 'text']
-          }),
+            };
+          }
+          return part;
         });
+
+        const imageResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: 'POST',
+            headers: {
+              'x-goog-api-key': GOOGLE_API_KEY,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contents: [{
+                parts: parts
+              }],
+              generationConfig: {
+                responseModalities: ['IMAGE']
+              }
+            }),
+          }
+        );
 
         if (imageResponse.status === 429) {
           console.error(`Rate limit hit on attempt ${attempt} with model ${model}`);
@@ -110,8 +129,17 @@ async function generateRealisticImage(
         }
 
         if (!imageResponse.ok) {
-          const errorText = await imageResponse.text();
-          console.error(`Step 1 API error (${imageResponse.status}): ${errorText}`);
+          const errorData = await imageResponse.json();
+          const errorMessage = errorData.error?.message || 'Unknown error';
+          console.error(`Step 1 API error (${imageResponse.status}): ${errorMessage}`);
+          
+          // Check for region restriction
+          if (errorMessage.toLowerCase().includes('not available in your country') || 
+              errorMessage.toLowerCase().includes('not available in your region')) {
+            const err: any = new Error('REGION_BLOCKED: Image generation is not available in your country');
+            err.isRegionRestriction = true;
+            throw err;
+          }
           
           // Only retry on transient errors
           if (attempt < MAX_RETRIES && (imageResponse.status === 429 || imageResponse.status === 402 || imageResponse.status === 504)) {
@@ -120,19 +148,27 @@ async function generateRealisticImage(
             await new Promise(resolve => setTimeout(resolve, delay));
             continue;
           }
-          throw new Error(`Step 1 failed: ${errorText}`);
+          throw new Error(`Step 1 failed: ${errorMessage}`);
         }
 
         const data = await imageResponse.json();
-        const imageData = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
         
-        if (!imageData) {
+        // Extract base64 image from Google's response format
+        const imagePart = data.candidates?.[0]?.content?.parts?.find(
+          (p: any) => p.inlineData
+        );
+        
+        if (!imagePart?.inlineData?.data) {
           console.error('No image data in Step 1 response');
           if (attempt < MAX_RETRIES) {
             continue;
           }
           throw new Error('No image data received from Step 1');
         }
+
+        // Convert to data URL
+        const step1MimeType = imagePart.inlineData.mimeType || 'image/png';
+        const imageData = `data:${step1MimeType};base64,${imagePart.inlineData.data}`;
 
         console.log(`Successfully generated realistic image ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
         return imageData;
@@ -152,7 +188,7 @@ async function generateRealisticImage(
 async function convertToLineArt(
   realisticImageBase64: string,
   prompt: any,
-  LOVABLE_API_KEY: string,
+  GOOGLE_API_KEY: string,
   pageIndex: number,
   totalPages: number,
   complexity?: string
@@ -165,36 +201,36 @@ async function convertToLineArt(
       try {
         console.log(`Step 2/2 - Converting to line art ${pageIndex + 1}/${totalPages} (attempt ${attempt}/${MAX_RETRIES}, model: ${model})`);
         
-        const contentParts = [
-          {
-            type: 'text',
-            text: LINE_ART_SYSTEM_MESSAGE + `\n\nConvert this realistic image to black and white line art for a children's coloring book. The scene is: ${prompt.prompt}`
-          },
-          {
-            type: 'image_url',
-            image_url: {
-              url: realisticImageBase64
-            }
-          }
-        ];
+        // Transform to Google's native format
+        const base64Data = realisticImageBase64.replace(/^data:image\/\w+;base64,/, '');
+        const inputMimeType = realisticImageBase64.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/png';
         
-        const imageResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: model,
-            messages: [
-              {
-                role: 'user',
-                content: contentParts
+        const imageResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: 'POST',
+            headers: {
+              'x-goog-api-key': GOOGLE_API_KEY,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { text: LINE_ART_SYSTEM_MESSAGE + `\n\nConvert this realistic image to black and white line art for a children's coloring book. The scene is: ${prompt.prompt}` },
+                  {
+                    inlineData: {
+                      mimeType: inputMimeType,
+                      data: base64Data
+                    }
+                  }
+                ]
+              }],
+              generationConfig: {
+                responseModalities: ['IMAGE']
               }
-            ],
-            modalities: ['image', 'text']
-          }),
-        });
+            }),
+          }
+        );
 
         if (imageResponse.status === 429) {
           console.error(`Rate limit hit on attempt ${attempt} with model ${model}`);
@@ -212,8 +248,17 @@ async function convertToLineArt(
         }
 
         if (!imageResponse.ok) {
-          const errorText = await imageResponse.text();
-          console.error(`Step 2 API error (${imageResponse.status}): ${errorText}`);
+          const errorData = await imageResponse.json();
+          const errorMessage = errorData.error?.message || 'Unknown error';
+          console.error(`Step 2 API error (${imageResponse.status}): ${errorMessage}`);
+          
+          // Check for region restriction
+          if (errorMessage.toLowerCase().includes('not available in your country') || 
+              errorMessage.toLowerCase().includes('not available in your region')) {
+            const err: any = new Error('REGION_BLOCKED: Image generation is not available in your country');
+            err.isRegionRestriction = true;
+            throw err;
+          }
           
           // Only retry on transient errors
           if (attempt < MAX_RETRIES && (imageResponse.status === 429 || imageResponse.status === 402 || imageResponse.status === 504)) {
@@ -222,19 +267,27 @@ async function convertToLineArt(
             await new Promise(resolve => setTimeout(resolve, delay));
             continue;
           }
-          throw new Error(`Step 2 failed: ${errorText}`);
+          throw new Error(`Step 2 failed: ${errorMessage}`);
         }
 
         const data = await imageResponse.json();
-        const imageData = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
         
-        if (!imageData) {
+        // Extract base64 image from Google's response format
+        const imagePart = data.candidates?.[0]?.content?.parts?.find(
+          (p: any) => p.inlineData
+        );
+        
+        if (!imagePart?.inlineData?.data) {
           console.error('No image data in Step 2 response');
           if (attempt < MAX_RETRIES) {
             continue;
           }
           throw new Error('No image data received from Step 2');
         }
+
+        // Convert to data URL
+        const step2MimeType = imagePart.inlineData.mimeType || 'image/png';
+        const imageData = `data:${step2MimeType};base64,${imagePart.inlineData.data}`;
 
         console.log(`Successfully converted to line art ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
         
