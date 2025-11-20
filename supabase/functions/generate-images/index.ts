@@ -53,7 +53,7 @@ const getModelForComplexity = (complexity?: string): string => {
   return 'gemini-2.5-flash-image'; // Remove "google/" prefix for direct API
 };
 
-// Pixel-level validation for line art - detects shading and photo elements
+// Simplified validation for line art - detects shading and photo elements
 async function validateLineArt(base64Image: string): Promise<{ 
   valid: boolean; 
   grayPixelPercentage: number;
@@ -65,18 +65,28 @@ async function validateLineArt(base64Image: string): Promise<{
       return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true };
     }
 
-    // Decode and analyze pixels
+    // Decode and validate image dimensions
     const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
     const image = await Image.decode(buffer);
     
+    // Safety check for valid dimensions
+    if (image.width < 10 || image.height < 10) {
+      console.error('Image dimensions too small:', image.width, 'x', image.height);
+      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true };
+    }
+    
     let totalPixels = 0;
     let grayPixels = 0;
-    let nearGrayPixels = 0; // For detecting partial conversions
-    const threshold = 30; // Tolerance for near-black/near-white
+    let nearGrayPixels = 0;
+    const threshold = 30;
     
-    // Sample every 5th pixel for accuracy
-    for (let y = 0; y < image.height; y += 5) {
-      for (let x = 0; x < image.width; x += 5) {
+    // Sample every 25th pixel (reduced from 5 for performance)
+    const step = 25;
+    for (let y = 0; y < image.height; y += step) {
+      for (let x = 0; x < image.width; x += step) {
+        // Ensure we're within bounds
+        if (x >= image.width || y >= image.height) continue;
+        
         totalPixels++;
         const color = image.getPixelAt(x, y);
         
@@ -89,8 +99,6 @@ async function validateLineArt(base64Image: string): Promise<{
         
         if (!isBlack && !isWhite) {
           grayPixels++;
-          
-          // Detect "near-gray" pixels that indicate partial photo elements
           const avg = (r + g + b) / 3;
           if (avg > 60 && avg < 195) {
             nearGrayPixels++;
@@ -99,13 +107,15 @@ async function validateLineArt(base64Image: string): Promise<{
       }
     }
     
+    if (totalPixels === 0) {
+      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true };
+    }
+    
     const grayPercentage = (grayPixels / totalPixels) * 100;
     const nearGrayPercentage = (nearGrayPixels / totalPixels) * 100;
     
-    // Strict thresholds
-    const hasShading = grayPercentage > 5; // Max 5% gray allowed
-    const hasPhotographicElements = nearGrayPercentage > 2; // Max 2% mid-tone gray
-    
+    const hasShading = grayPercentage > 5;
+    const hasPhotographicElements = nearGrayPercentage > 2;
     const isValid = !hasShading && !hasPhotographicElements;
     
     console.log(`Line art validation: ${grayPercentage.toFixed(2)}% gray, ${nearGrayPercentage.toFixed(2)}% photo-like pixels`);
@@ -122,7 +132,7 @@ async function validateLineArt(base64Image: string): Promise<{
   }
 }
 
-// Photorealistic validation - detects cartoon/illustrated images
+// Simplified photorealistic validation - detects cartoon/illustrated images
 async function validateRealisticImage(base64Image: string): Promise<{
   valid: boolean;
   isCartoonLike: boolean;
@@ -133,55 +143,63 @@ async function validateRealisticImage(base64Image: string): Promise<{
     const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
     const image = await Image.decode(buffer);
     
-    let totalPixels = 0;
-    let highVarianceRegions = 0;
-    let flatColorRegions = 0;
+    // Safety check for valid dimensions
+    if (image.width < 10 || image.height < 10) {
+      console.error('Image dimensions too small:', image.width, 'x', image.height);
+      return { valid: false, isCartoonLike: true, colorVariance: 0 };
+    }
     
-    // Sample in 10x10 pixel blocks
-    for (let y = 0; y < image.height - 10; y += 10) {
-      for (let x = 0; x < image.width - 10; x += 10) {
-        totalPixels++;
+    let totalSamples = 0;
+    let colorDifferences = 0;
+    
+    // Sample every 30th pixel and compare with neighbors (much lighter computation)
+    const step = 30;
+    for (let y = step; y < image.height - step; y += step) {
+      for (let x = step; x < image.width - step; x += step) {
+        // Ensure we're within bounds
+        if (x >= image.width - 1 || y >= image.height - 1) continue;
         
-        // Calculate variance in this block
-        const colors: number[] = [];
-        for (let dy = 0; dy < 10; dy++) {
-          for (let dx = 0; dx < 10; dx++) {
-            const color = image.getPixelAt(x + dx, y + dy);
-            const r = (color >> 24) & 0xFF;
-            const g = (color >> 16) & 0xFF;
-            const b = (color >> 8) & 0xFF;
-            colors.push((r + g + b) / 3);
-          }
-        }
+        totalSamples++;
         
-        // Calculate standard deviation
-        const avg = colors.reduce((a, b) => a + b, 0) / colors.length;
-        const variance = colors.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / colors.length;
-        const stdDev = Math.sqrt(variance);
+        // Get current pixel and neighbor
+        const color1 = image.getPixelAt(x, y);
+        const color2 = image.getPixelAt(x + 1, y + 1);
         
-        // Photorealistic images have natural variance (noise, texture, gradients)
-        // Cartoons have flat color regions
-        if (stdDev > 15) {
-          highVarianceRegions++;
-        } else if (stdDev < 5) {
-          flatColorRegions++;
+        const r1 = (color1 >> 24) & 0xFF;
+        const g1 = (color1 >> 16) & 0xFF;
+        const b1 = (color1 >> 8) & 0xFF;
+        
+        const r2 = (color2 >> 24) & 0xFF;
+        const g2 = (color2 >> 16) & 0xFF;
+        const b2 = (color2 >> 8) & 0xFF;
+        
+        // Calculate color difference between neighbors
+        const diff = Math.abs(r1 - r2) + Math.abs(g1 - g2) + Math.abs(b1 - b2);
+        
+        // Photorealistic images have more subtle color variations
+        // Cartoons have sharp color boundaries
+        if (diff > 10 && diff < 100) {
+          colorDifferences++;
         }
       }
     }
     
-    const highVariancePercentage = (highVarianceRegions / totalPixels) * 100;
-    const flatColorPercentage = (flatColorRegions / totalPixels) * 100;
+    if (totalSamples === 0) {
+      return { valid: false, isCartoonLike: true, colorVariance: 0 };
+    }
     
-    // Photorealistic images should have >30% high variance and <20% flat colors
-    const isRealistic = highVariancePercentage > 30 && flatColorPercentage < 20;
-    const isCartoonLike = flatColorPercentage > 40 || highVariancePercentage < 20;
+    const variancePercentage = (colorDifferences / totalSamples) * 100;
     
-    console.log(`Realistic validation: ${highVariancePercentage.toFixed(1)}% textured, ${flatColorPercentage.toFixed(1)}% flat colors`);
+    // Photorealistic images should have >25% subtle color variations
+    const isRealistic = variancePercentage > 25;
+    const isCartoonLike = variancePercentage < 15;
+    
+    console.log(`Realistic validation: ${variancePercentage.toFixed(1)}% variance`);
     
     return {
       valid: isRealistic,
       isCartoonLike: isCartoonLike,
-      colorVariance: highVariancePercentage
+      colorVariance: variancePercentage
     };
     
   } catch (error) {
