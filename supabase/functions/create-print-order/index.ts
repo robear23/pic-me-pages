@@ -343,6 +343,32 @@ serve(async (req) => {
       throw new Error('Failed to save order');
     }
 
+    // Send confirmation email (don't fail the order if email fails)
+    try {
+      await supabase.functions.invoke('send-email', {
+        body: {
+          templateName: 'order_confirmation',
+          recipientEmail: user.email,
+          variables: {
+            customerName: shippingAddress.name,
+            childName: book.character_name,
+            interests: Array.isArray(book.interests) ? book.interests.join(', ') : book.interests,
+            orderId: order.id,
+            orderDate: new Date().toLocaleDateString('en-US', {
+              month: 'long',
+              day: 'numeric',
+              year: 'numeric'
+            }),
+            totalAmount: `$${pricePaid.toFixed(2)}`,
+          },
+        },
+      });
+      console.log('Order confirmation email sent successfully');
+    } catch (emailError) {
+      console.error('Failed to send confirmation email:', emailError);
+      // Don't fail the order, just log the error
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true, 
