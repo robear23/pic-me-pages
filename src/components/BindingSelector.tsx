@@ -1,37 +1,49 @@
 import { motion } from 'framer-motion';
-import { Layers, Circle, Check } from 'lucide-react';
+import { Layers, Circle, Check, Download } from 'lucide-react';
 import type { PageCount, BindingType, BookOption } from '@/types/bookOptions';
 
 interface BindingSelectorProps {
   pageCount: PageCount;
   selectedBinding: BindingType;
   onSelect: (binding: BindingType) => void;
-  standardOption: BookOption;
-  premiumOption: BookOption;
+  options: BookOption[];
 }
 
 export const BindingSelector = ({
   selectedBinding,
   onSelect,
-  standardOption,
-  premiumOption,
+  options,
 }: BindingSelectorProps) => {
-  const options = [
-    { type: 'standard' as BindingType, option: standardOption, icon: Layers },
-    { type: 'premium' as BindingType, option: premiumOption, icon: Circle },
-  ];
+  const getIcon = (binding: BindingType) => {
+    if (binding === 'pdf') return Download;
+    if (binding === 'standard') return Layers;
+    return Circle;
+  };
+
+  const getBindingLabel = (binding: BindingType) => {
+    if (binding === 'pdf') return 'PDF Download';
+    if (binding === 'standard') return 'Standard';
+    return 'Premium Coil';
+  };
+
+  const getBindingSubtext = (binding: BindingType) => {
+    if (binding === 'pdf') return 'Instant';
+    if (binding === 'standard') return 'Saddle Stitch';
+    return 'Lays Flat';
+  };
 
   return (
     <div className="space-y-2 sm:space-y-3">
-      {options.map(({ type, option, icon: Icon }) => {
-        const isSelected = selectedBinding === type;
+      {options.map((option) => {
+        const Icon = getIcon(option.binding);
+        const isSelected = selectedBinding === option.binding;
 
         return (
           <motion.button
-            key={type}
+            key={option.binding}
             onClick={(e) => {
               e.stopPropagation();
-              onSelect(type);
+              onSelect(option.binding);
             }}
             className={`
               w-full text-left p-3 sm:p-4 rounded-xl border-2 transition-all duration-300
@@ -44,13 +56,13 @@ export const BindingSelector = ({
             whileTap={{ scale: 0.98 }}
             role="radio"
             aria-checked={isSelected}
-            aria-label={`Select ${type} binding - $${option.price.toFixed(2)}`}
+            aria-label={`Select ${option.binding} binding - $${option.price.toFixed(2)}`}
             tabIndex={0}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 e.stopPropagation();
-                onSelect(type);
+                onSelect(option.binding);
               }
             }}
           >
@@ -67,11 +79,11 @@ export const BindingSelector = ({
                 </div>
                 <div className="min-w-0 flex-1">
                   <h4 className="font-semibold text-xs sm:text-sm flex items-center gap-1 sm:gap-2">
-                    <span className="truncate">{type === 'standard' ? 'Standard' : 'Premium Coil'}</span>
+                    <span className="truncate">{getBindingLabel(option.binding)}</span>
                     {isSelected && <Check className="w-3 h-3 sm:w-4 sm:h-4 text-primary flex-shrink-0" />}
                   </h4>
                   <p className="text-xs text-muted-foreground hidden sm:block">
-                    {type === 'standard' ? 'Saddle Stitch' : 'Lays Flat'}
+                    {getBindingSubtext(option.binding)}
                   </p>
                 </div>
               </div>
@@ -95,8 +107,8 @@ export const BindingSelector = ({
               ))}
             </ul>
 
-            {/* Premium Badge */}
-            {type === 'premium' && option.badge && (
+            {/* Badge */}
+            {option.badge && (
               <div className="mt-2 ml-7 sm:ml-11">
                 <span className="inline-block text-xs px-2 py-0.5 sm:py-1 rounded-full bg-gradient-to-r from-primary/20 to-purple-500/20 text-primary font-semibold">
                   ⭐ {option.badge}

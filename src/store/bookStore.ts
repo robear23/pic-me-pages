@@ -115,7 +115,7 @@ const initialState = {
   backCoverImageUrl: null as string | null,
   selectedPageCount: 24 as PageCount,
   selectedBinding: 'premium' as BindingType,
-  selectedPrice: 39.99,
+  selectedPrice: 34.99,
   selectedPodPackageId: '0850X1100FCPRECO060UW444MXX',
   paymentBypassed: false,
   orderId: null,

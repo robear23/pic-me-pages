@@ -21,8 +21,6 @@ export const PageCountCard = ({
   onBindingSelect,
 }: PageCountCardProps) => {
   const options = getOptionsForPageCount(pageCount);
-  const standardOption = options[0];
-  const premiumOption = options[1];
 
   const getBadge = () => {
     if (pageCount === 24) return { text: 'BEST VALUE', icon: Star };
@@ -98,8 +96,7 @@ export const PageCountCard = ({
           onSelect(pageCount);
           onBindingSelect(binding);
         }}
-        standardOption={standardOption}
-        premiumOption={premiumOption}
+        options={options}
       />
 
       {/* Value Messaging */}

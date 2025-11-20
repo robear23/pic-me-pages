@@ -100,8 +100,10 @@ export function OrderPhysicalBookDialog({
   }, [open, bookId]);
   
   // Calculate current price based on selected options
-  const currentOptions = getOptionsForPageCount(selectedPageCount);
-  const selectedOption = currentOptions.find(opt => opt.binding === selectedBinding);
+  const physicalOptions = getOptionsForPageCount(selectedPageCount).filter(
+    opt => opt.binding !== 'pdf'
+  );
+  const selectedOption = physicalOptions.find(opt => opt.binding === selectedBinding);
   const currentPrice = selectedOption?.price || 24.99;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -273,8 +275,7 @@ export function OrderPhysicalBookDialog({
               pageCount={selectedPageCount}
               selectedBinding={selectedBinding}
               onSelect={setSelectedBinding}
-              standardOption={currentOptions[0]}
-              premiumOption={currentOptions[1]}
+              options={physicalOptions}
             />
           </div>
         )}
