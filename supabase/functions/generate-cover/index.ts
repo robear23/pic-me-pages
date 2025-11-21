@@ -23,91 +23,8 @@ interface CoverResponse {
   backCover: string;
 }
 
-// Upscale image to print-quality resolution with progressive fallback
-// Default to 200 DPI (Lulu's minimum) to prevent memory errors
-async function upscaleToHighResWithFallback(
-  base64Image: string,
-  widthInches: number,
-  heightInches: number
-): Promise<string> {
-  // Try progressively lower DPI levels if memory errors occur
-  const dpiLevels = [200, 150, 100]; // Progressive fallback to prevent stack overflow
-  
-  for (let i = 0; i < dpiLevels.length; i++) {
-    const targetDPI = dpiLevels[i];
-    try {
-      console.log(`[UPSCALE] Attempting upscale to ${targetDPI} DPI...`);
-      
-      // Decode base64
-      const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
-      const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
-      
-      // Load image
-      const image = await decode(imageBuffer);
-      const originalDPI = Math.round(image.width / widthInches);
-      
-      console.log(`[COVER QUALITY]`);
-      console.log(`  Original: ${image.width}x${image.height} (~${originalDPI} DPI)`);
-      console.log(`  Required by Lulu: minimum 200 DPI`);
-      console.log(`  Target: ${targetDPI} DPI`);
-      
-      // Skip upscaling if already high enough resolution
-      if (originalDPI >= 200) {
-        console.log(`✓ Image already meets quality requirements (${originalDPI} DPI), skipping upscale`);
-        return base64Image;
-      }
-      
-      // Skip upscaling if close enough to target (within 10 DPI) to avoid unnecessary processing
-      if (Math.abs(originalDPI - targetDPI) <= 10) {
-        console.log(`✓ Image close enough to target (${originalDPI} DPI vs ${targetDPI} DPI), skipping upscale`);
-        return base64Image;
-      }
-      
-      if (originalDPI < 100) {
-        console.warn(`⚠️ AI generated low resolution image (${originalDPI} DPI) - upscaling to ${targetDPI} DPI`);
-      }
-      
-      // Calculate target dimensions
-      const targetWidth = Math.round(widthInches * targetDPI);
-      const targetHeight = Math.round(heightInches * targetDPI);
-      
-      console.log(`  Upscaling to: ${targetWidth}x${targetHeight}`);
-      
-      // Resize using high-quality bicubic interpolation (mutates the image)
-      image.resize(targetWidth, targetHeight);
-      
-      // Encode back to PNG
-      const pngBuffer = await image.encode();
-      const base64Upscaled = btoa(String.fromCharCode(...new Uint8Array(pngBuffer)));
-      
-      console.log(`✓ Successfully upscaled to ${targetWidth}x${targetHeight} (${targetDPI} DPI)`);
-      
-      return `data:image/png;base64,${base64Upscaled}`;
-      
-    } catch (error: any) {
-      const isMemoryError = error.message?.includes('memory') || 
-                           error.message?.includes('Memory') ||
-                           error.name === 'RangeError';
-      
-      if (isMemoryError && i < dpiLevels.length - 1) {
-        console.warn(`⚠️ ${error.name} at ${targetDPI} DPI, trying lower quality (${dpiLevels[i + 1]} DPI)...`);
-        continue;
-      }
-      
-      // Last resort: if all upscaling fails, return original image
-      if (i === dpiLevels.length - 1) {
-        console.error(`⚠️ All upscaling attempts failed, returning original image at ~${Math.round(base64Image.length / 1024)}KB`);
-        return base64Image;
-      }
-      
-      throw error;
-    }
-  }
-  
-  // Fallback: return original if all else fails
-  console.warn('⚠️ Returning original image without upscaling');
-  return base64Image;
-}
+// Note: Upscaling removed to prevent CPU timeout errors in edge function
+// Client-side PDF generation handles any necessary resolution adjustments
 
 serve(async (req) => {
   console.log(`[${new Date().toISOString()}] generate-cover started - Method: ${req.method}`);
@@ -189,12 +106,9 @@ OUTPUT: High resolution 2000x2666 pixels complete front cover ready for print.`;
     
     // Convert to data URL
     const frontMimeType = frontImagePart.inlineData.mimeType || 'image/png';
-    const frontCoverOriginal = `data:${frontMimeType};base64,${frontImagePart.inlineData.data}`;
+    const frontCover = `data:${frontMimeType};base64,${frontImagePart.inlineData.data}`;
 
-    // UPSCALE to print quality with progressive fallback (200 DPI minimum for Lulu)
-    const frontCover = await upscaleToHighResWithFallback(frontCoverOriginal, 8.5, 11.25);
-
-    console.log('Front cover completed and upscaled');
+    console.log('Front cover generated successfully');
 
     // STEP 2: Generate complementary back cover
     console.log('Step 2: Generating back cover...');
@@ -243,12 +157,9 @@ Simple elegant design, complementary colors, matching border style. Space for te
     
     // Convert to data URL
     const backMimeType = backImagePart.inlineData.mimeType || 'image/png';
-    const backCoverOriginal = `data:${backMimeType};base64,${backImagePart.inlineData.data}`;
+    const backCover = `data:${backMimeType};base64,${backImagePart.inlineData.data}`;
 
-    // UPSCALE to print quality with progressive fallback
-    const backCover = await upscaleToHighResWithFallback(backCoverOriginal, 8.5, 11.25);
-
-    console.log('Both covers generated and upscaled successfully');
+    console.log('Both covers generated successfully');
 
     return new Response(
       JSON.stringify({ frontCover, backCover }),
