@@ -16,8 +16,6 @@ import { Progress } from '@/components/ui/progress';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { repairBookPdf, toDataUrl } from '@/lib/repairPdf';
 import { jsPDF } from 'jspdf';
-import { BookHealthStatus } from '@/components/BookHealthStatus';
-import { BookDiagnostics } from '@/components/BookDiagnostics';
 
 interface Book {
   id: string;
@@ -665,13 +663,6 @@ const Dashboard = () => {
           );
         })()}
 
-        {/* Book Health Status */}
-        {!loading && books.length > 0 && (
-          <div className="mb-6">
-            <BookHealthStatus books={books} retryCreditCount={retryCredits.length} />
-          </div>
-        )}
-
         {loading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
@@ -784,11 +775,6 @@ const Dashboard = () => {
                             {interest}
                           </span>
                         ))}
-                      </div>
-                      
-                      {/* Book Diagnostics */}
-                      <div className="mb-3" onClick={(e) => e.stopPropagation()}>
-                        <BookDiagnostics book={book} />
                       </div>
                       
                       <div className="space-y-2">
