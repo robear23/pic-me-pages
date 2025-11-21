@@ -28,15 +28,41 @@ const handler = async (req: Request): Promise<Response> => {
   }
 
   try {
+    // SECURITY: Authenticate user first
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      console.error('No authorization header provided');
+      throw new Error('Authentication required');
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user) {
+      console.error('Authentication failed:', authError);
+      throw new Error('User not authenticated');
+    }
+
+    console.log('Authenticated user:', user.id);
+
     const { templateName, recipientEmail, variables }: EmailRequest = await req.json();
 
-    // Fetch template from database
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
+    // SECURITY: Validate inputs
+    if (!templateName || !recipientEmail) {
+      throw new Error('Missing required fields: templateName and recipientEmail');
+    }
+
+    // Fetch template from database with service role
+    const supabaseAdmin = createClient(
+      supabaseUrl,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""
     );
 
-    const { data: template, error: templateError } = await supabase
+    const { data: template, error: templateError } = await supabaseAdmin
       .from("email_templates")
       .select("*")
       .eq("template_name", templateName)

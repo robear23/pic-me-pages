@@ -58,7 +58,7 @@ export const PaymentStep = () => {
 
           // Call edge function to verify payment and create order
           const { data, error } = await supabase.functions.invoke('verify-payment', {
-            body: { sessionId, userId: user.id }
+            body: { sessionId }
           });
 
           if (error) throw error;
@@ -121,7 +121,6 @@ export const PaymentStep = () => {
           pageCount: selectedPageCount,
           binding: selectedBinding,
           price: selectedPrice,
-          userId: user.id,
         }
       });
 
