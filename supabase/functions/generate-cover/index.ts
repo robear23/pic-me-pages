@@ -60,7 +60,7 @@ BORDER: Add playful decorative border (10-15% width) with theme elements (${inte
 
 CHARACTER NAME: Add the name "${characterName}" in a super stylized, fun, decorative font near the character. Make it prominent, playful, and integrated into the design. Use creative lettering that matches the book's theme.
 
-OUTPUT: High resolution 2000x2666 pixels complete front cover ready for print.`;
+OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at 300 DPI.`;
 
     // Transform image to Google's native format
     const base64Data = pageImageUrl.replace(/^data:image\/\w+;base64,/, '');
@@ -121,7 +121,7 @@ OUTPUT: High resolution 2000x2666 pixels complete front cover ready for print.`;
     console.log('Step 2: Generating back cover...');
     
     const backCoverPrompt = `Create a BLANK back cover for children's book printing.
-High resolution 2000x2666 pixels. Simple solid color background (soft pastel matching theme: ${interestsText}).
+High resolution 2588x3375 pixels at 300 DPI. Simple solid color background (soft pastel matching theme: ${interestsText}).
 Minimal or no decorative elements. Clean, professional, ready for text overlay if needed.`;
 
     const backCoverResponse = await fetch(
