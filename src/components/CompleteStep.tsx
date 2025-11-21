@@ -36,6 +36,8 @@ export const CompleteStep = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
+  const [bookData, setBookData] = useState<any>(null);
+  const [retryingCovers, setRetryingCovers] = useState(false);
   
   const characterNames = characters.map(c => c.name).filter(Boolean).join(' and ');
 
@@ -76,14 +78,58 @@ export const CompleteStep = () => {
     setStep('rework-settings');
   };
 
+  const handleRetryCover = async () => {
+    if (!generatedBookId) return;
+    
+    setRetryingCovers(true);
+    try {
+      console.log('🎨 Retrying cover generation...');
+      
+      const { data, error } = await supabase.functions.invoke('retry-book-cover', {
+        body: { bookId: generatedBookId }
+      });
+      
+      if (error) throw error;
+      
+      if (data.success) {
+        toast({
+          title: 'Covers Generated!',
+          description: 'Your book covers have been created successfully.',
+        });
+        
+        // Reload book data
+        const { data: updatedBook } = await supabase
+          .from('books')
+          .select('*')
+          .eq('id', generatedBookId)
+          .single();
+        
+        if (updatedBook) {
+          setBookData(updatedBook);
+        }
+      } else {
+        throw new Error(data.error || 'Cover generation failed');
+      }
+    } catch (error: any) {
+      console.error('Cover retry error:', error);
+      toast({
+        title: 'Cover Generation Failed',
+        description: error.message || 'Unable to generate covers. Please try again later.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRetryingCovers(false);
+    }
+  };
+
   useEffect(() => {
     // Load book data from database if we have a book ID
     const loadBookData = async () => {
       if (generatedBookId && user) {
         try {
-          const { data: bookData, error } = await supabase
+          const { data: fetchedBook, error } = await supabase
             .from('books')
-            .select('pages, reworked_page_numbers')
+            .select('*')
             .eq('id', generatedBookId)
             .single();
           
@@ -92,10 +138,12 @@ export const CompleteStep = () => {
             return;
           }
           
-          if (bookData) {
+          if (fetchedBook) {
+            setBookData(fetchedBook);
+            
             // Update pages if we got fresh data
-            if (bookData.pages) {
-              const pages = (bookData.pages as any[]).map(p => ({
+            if (fetchedBook.pages) {
+              const pages = (fetchedBook.pages as any[]).map((p: any) => ({
                 pageNumber: p.pageNumber,
                 imageUrl: p.imageUrl,
                 prompt: p.prompt
@@ -104,8 +152,8 @@ export const CompleteStep = () => {
             }
             
             // Update reworked page numbers and recalculate limit
-            if (bookData.reworked_page_numbers) {
-              setReworkedPageNumbers(bookData.reworked_page_numbers);
+            if (fetchedBook.reworked_page_numbers) {
+              setReworkedPageNumbers(fetchedBook.reworked_page_numbers);
             }
           }
         } catch (error) {
@@ -354,6 +402,82 @@ export const CompleteStep = () => {
               </AlertDescription>
             </Alert>
           )}
+        
+        {/* Missing Covers Alert */}
+        {bookData?.missing_covers && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-8"
+          >
+            <Alert className="border-amber-500/50 bg-amber-500/10">
+              <AlertCircle className="h-4 w-4 text-amber-500" />
+              <AlertDescription className="text-foreground">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <strong>Book covers are missing!</strong>
+                    <p className="text-sm mt-1 text-muted-foreground">
+                      Your interior pages are ready, but covers failed to generate. Click below to retry.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={handleRetryCover}
+                    disabled={retryingCovers}
+                    className="bg-gradient-to-r from-primary to-secondary"
+                  >
+                    {retryingCovers ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Generating...
+                      </>
+                    ) : (
+                      'Generate Covers'
+                    )}
+                  </Button>
+                </div>
+              </AlertDescription>
+            </Alert>
+          </motion.div>
+        )}
+        
+        {/* Cover Preview Section */}
+        {bookData && (bookData.cover_image_url || bookData.back_cover_image_url) && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.15 }}
+            className="mb-8"
+          >
+            <h3 className="text-2xl font-bold mb-4 text-center">Book Covers</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
+              {bookData.cover_image_url && (
+                <div className="relative aspect-[8.5/11] rounded-xl overflow-hidden border border-border">
+                  <img
+                    src={bookData.cover_image_url}
+                    alt="Front Cover"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-2 left-2 bg-background/80 backdrop-blur-sm px-3 py-1 rounded text-sm font-bold">
+                    Front Cover
+                  </div>
+                </div>
+              )}
+              {bookData.back_cover_image_url && (
+                <div className="relative aspect-[8.5/11] rounded-xl overflow-hidden border border-border">
+                  <img
+                    src={bookData.back_cover_image_url}
+                    alt="Back Cover"
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-2 left-2 bg-background/80 backdrop-blur-sm px-3 py-1 rounded text-sm font-bold">
+                    Back Cover
+                  </div>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+        
         {failedCount > 0 && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}

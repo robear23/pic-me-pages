@@ -306,28 +306,44 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
     }
 
     // 6. Update book with PDF URLs and determine status
-    // A book is complete if it has an interior PDF and at least a front cover
     const hasInteriorPdf = !!interiorPdfUrl;
     const hasFrontCover = !!uploadedCoverUrl;
+    const hasBackCover = !!uploadedBackCoverUrl;
+    const hasCoverPdf = !!coverPdfUrl;
     
+    // Determine book status based on what we have
     let bookStatus: 'completed' | 'partial' | 'failed' = 'completed';
+    let missingCovers = false;
+    let missingComponents: string[] = [];
     
     if (!hasInteriorPdf) {
       // No interior PDF = truly failed
       bookStatus = 'failed';
-    } else if (!hasFrontCover) {
-      // Interior exists but no cover images at all (shouldn't happen with fallback)
-      bookStatus = 'completed'; // Still usable - interior only
+    } else if (!hasFrontCover || !hasBackCover || !hasCoverPdf) {
+      // Has interior but missing some/all covers = partial completion
+      bookStatus = 'partial';
+      missingCovers = true;
+      
+      // Track what's missing
+      if (!hasFrontCover) missingComponents.push('front_cover');
+      if (!hasBackCover) missingComponents.push('back_cover');
+      if (!hasCoverPdf) missingComponents.push('cover_pdf');
+      
+      console.log(`⚠️ Book ${bookId} is PARTIAL - missing covers:`, missingComponents);
     } else {
-      // Has interior + at least front cover = complete
+      // Has everything = complete
       bookStatus = 'completed';
+      missingCovers = false;
+      missingComponents = [];
     }
     
     console.log(`Book ${bookId} status: ${bookStatus}`, {
-      hasInteriorPdf: !!interiorPdfUrl,
-      hasFrontCover: !!uploadedCoverUrl,
-      hasBackCover: !!uploadedBackCoverUrl,
-      hasCoverPdf: !!coverPdfUrl,
+      hasInteriorPdf,
+      hasFrontCover,
+      hasBackCover,
+      hasCoverPdf,
+      missingCovers,
+      missingComponents,
     });
     
     const { error: updateError } = await supabase
@@ -338,6 +354,9 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
         back_cover_image_url: uploadedBackCoverUrl,
         pdf_url: interiorPdfUrl,
         status: bookStatus,
+        missing_covers: missingCovers,
+        missing_components: missingComponents,
+        last_cover_attempt_at: missingCovers ? new Date().toISOString() : null,
       })
       .eq('id', bookId);
 

@@ -30,6 +30,8 @@ interface Book {
   status: string;
   created_at: string;
   user_id: string;
+  missing_covers?: boolean;
+  missing_components?: string[];
 }
 
 interface Order {
@@ -92,7 +94,7 @@ const Dashboard = () => {
     try {
       const { data, error } = await supabase
         .from('books')
-        .select('id, character_name, interests, pdf_url, cover_url, cover_image_url, status, created_at, user_id, pages')
+        .select('id, character_name, interests, pdf_url, cover_url, cover_image_url, status, created_at, user_id, pages, missing_covers, missing_components')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -178,10 +180,18 @@ const Dashboard = () => {
 
   const getIncompleteBooks = () => {
     // A book is truly incomplete only if it's processing, failed, or has no interior PDF
+    // Partial books with missing covers are NOT considered incomplete
     return books.filter(book => 
       book.status === 'processing' || 
       book.status === 'failed' ||
       !book.pdf_url
+    );
+  };
+  
+  const getPartialBooks = () => {
+    // Books with status 'partial' or explicitly marked as missing covers
+    return books.filter(book => 
+      book.status === 'partial' || book.missing_covers
     );
   };
 
@@ -713,14 +723,16 @@ const Dashboard = () => {
                           )}
                           <Badge 
                             variant={
-                              book.status === 'completed' ? 'default' : 
-                              book.status === 'partial' ? 'secondary' :
+                              book.status === 'completed' && !book.missing_covers ? 'default' : 
+                              book.status === 'partial' || book.missing_covers ? 'secondary' :
                               book.status === 'processing' ? 'secondary' : 
                               'destructive'
                             } 
                             className="text-xs"
                           >
-                            {book.status === 'partial' ? 'Partial' : book.status}
+                            {book.missing_covers ? 'Missing Covers' : 
+                             book.status === 'partial' ? 'Partial' : 
+                             book.status.charAt(0).toUpperCase() + book.status.slice(1)}
                           </Badge>
                         </div>
                       </div>
@@ -730,6 +742,11 @@ const Dashboard = () => {
                       {book.pages && book.pages.length < 12 && (
                         <div className="mb-2 p-2 bg-amber-100 dark:bg-amber-950/50 border border-amber-500/50 rounded text-xs text-amber-700 dark:text-amber-300">
                           ⚠️ This book has missing pages
+                        </div>
+                      )}
+                      {book.missing_covers && (
+                        <div className="mb-2 p-2 bg-amber-100 dark:bg-amber-950/50 border border-amber-500/50 rounded text-xs text-amber-700 dark:text-amber-300">
+                          ⚠️ Book covers are missing
                         </div>
                       )}
                       <div className="flex flex-wrap gap-1 mb-4">
