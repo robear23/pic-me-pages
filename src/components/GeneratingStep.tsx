@@ -519,10 +519,28 @@ export const GeneratingStep = () => {
               
               if (coverAttempts < maxCoverAttempts) {
                 await new Promise(resolve => setTimeout(resolve, 1000 * coverAttempts));
-              } else {
-                console.error('All cover generation attempts failed - book will be marked as partial');
               }
             }
+          }
+          
+          // If AI cover generation failed, use fallback covers
+          if (!coverImageUrl) {
+            console.log('AI cover generation failed; creating fallback covers instead');
+            const { generateFallbackCovers } = await import('@/lib/fallbackCover');
+            const successfulPages = finalPages.filter(p => p.imageUrl);
+            const coverPage = successfulPages[0];
+            const sampleImage = coverPage?.imageUrl;
+
+            const { front, back } = await generateFallbackCovers(
+              characters.map(c => c.name).filter(Boolean).join(' and '),
+              sampleImage
+            );
+
+            coverImageUrl = front;
+            backCoverImageUrl = back;
+            setCoverImageUrl(front);
+            setBackCoverImageUrl(back);
+            console.log('Fallback covers generated successfully');
           }
         } else if (isReworkMode && existingBookId) {
           // Preserve existing covers in rework mode

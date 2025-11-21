@@ -177,12 +177,11 @@ const Dashboard = () => {
   };
 
   const getIncompleteBooks = () => {
+    // A book is truly incomplete only if it's processing, failed, or has no interior PDF
     return books.filter(book => 
       book.status === 'processing' || 
       book.status === 'failed' ||
-      book.status === 'partial' ||
-      !book.pdf_url || 
-      !book.cover_image_url
+      !book.pdf_url
     );
   };
 
