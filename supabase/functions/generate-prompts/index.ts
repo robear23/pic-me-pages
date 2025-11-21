@@ -44,13 +44,15 @@ serve(async (req) => {
     const hasCharacterPhotos = consistentCharacters && characters.some((c: any) => c.photos && c.photos.length > 0);
 
     const characterGuidance = hasCharacterPhotos
-      ? `\nIMPORTANT - DYNAMIC CHARACTER SCENES: For characters with reference photos, create scenes where the character is:
-- In different poses and positions (not repetitive)
-- Showing varied facial expressions appropriate to the activity
-- Actively engaged with the scene (playing, exploring, creating, discovering)
-- At different angles and perspectives
-- Naturally interacting with environment and props
-Each scene should feel unique and alive - the character should be doing something different in each page.`
+      ? `\nCRITICAL - CHARACTER CONSISTENCY REQUIREMENTS:
+- The character's AGE, facial features, and appearance MUST remain EXACTLY the same across ALL pages
+- Reference the provided photo(s) for accurate AGE, facial structure, hair style, and physical features
+- DO NOT age up or age down the character - maintain the EXACT age shown in reference photo
+- Keep facial proportions, eye shape, nose, and mouth IDENTICAL to the reference
+- Vary ONLY the pose, expression, clothing, and environment - NOT the character's core appearance or age
+- If the reference shows a 5-year-old, ALL 12 pages must show that SAME 5-year-old
+- Think: same child in different yearbook photos from the SAME year, not different years
+- Dynamic scenes with varied poses and expressions, but IDENTICAL character age and features`
       : '';
 
     // Complexity level guidance
