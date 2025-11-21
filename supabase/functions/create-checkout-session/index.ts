@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import Stripe from 'https://esm.sh/stripe@14.21.0';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -12,6 +13,26 @@ serve(async (req) => {
   }
 
   try {
+    // Authenticate user first
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseAnonKey);
+
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      throw new Error('No authorization header');
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    
+    if (authError || !user || !user.email) {
+      console.error('Authentication failed:', authError);
+      throw new Error('User not authenticated or email not available');
+    }
+
+    console.log('Authenticated user:', user.id);
+
     const stripeKey = Deno.env.get('STRIPE_SECRET_KEY');
     if (!stripeKey) {
       throw new Error('Stripe secret key not configured');
@@ -22,17 +43,26 @@ serve(async (req) => {
       httpClient: Stripe.createFetchHttpClient(),
     });
 
-    const { pageCount, binding, price, userId } = await req.json();
+    const { pageCount, binding, price } = await req.json();
 
-    console.log('Creating checkout session:', { pageCount, binding, price, userId });
+    // SECURITY: Validate input
+    if (!pageCount || !binding || !price || price <= 0) {
+      throw new Error('Invalid checkout parameters');
+    }
 
-    // Create or retrieve customer
-    const customers = await stripe.customers.list({ limit: 1 });
+    console.log('Creating checkout session:', { pageCount, binding, price, userId: user.id });
+
+    // Create or retrieve customer by email
+    const customers = await stripe.customers.list({ 
+      email: user.email,
+      limit: 1 
+    });
     let customerId = customers.data[0]?.id;
 
     if (!customerId) {
       const customer = await stripe.customers.create({
-        metadata: { supabase_user_id: userId }
+        email: user.email,
+        metadata: { supabase_user_id: user.id }
       });
       customerId = customer.id;
     }
@@ -57,7 +87,7 @@ serve(async (req) => {
       success_url: `${req.headers.get('origin')}/app?payment=success&session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${req.headers.get('origin')}/app?payment=cancelled`,
       metadata: {
-        supabase_user_id: userId,
+        supabase_user_id: user.id,
         page_count: pageCount.toString(),
         binding: binding,
       },
