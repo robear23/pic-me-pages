@@ -44,6 +44,18 @@ export const GeneratingStep = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [canLeave, setCanLeave] = useState(false);
   const [startTime] = useState(Date.now());
+  const [, setTick] = useState(0);
+
+  // Force re-render every 10 seconds to update elapsed time
+  useEffect(() => {
+    if (jobStatus === 'completed' || jobStatus === 'failed') return;
+    
+    const timer = setInterval(() => {
+      setTick(prev => prev + 1); // Force re-render
+    }, 10000); // Update every 10 seconds
+    
+    return () => clearInterval(timer);
+  }, [jobStatus]);
 
   // Check for existing pending job on mount
   useEffect(() => {
