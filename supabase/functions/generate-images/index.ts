@@ -317,13 +317,14 @@ async function validateRealisticImage(base64Image: string): Promise<{
     
     const variancePercentage = (colorDifferences / totalSamples) * 100;
     
-    // Relaxed thresholds to reduce false positives on clean photos
-    const isRealistic = variancePercentage > 18; // Lowered from 20% - accepts more borderline photos
-    const isCartoonLike = variancePercentage < 12; // Keep strict for obvious cartoons
+    // PHASE 2: Much more lenient thresholds for high-key lighting style
+    const isRealistic = variancePercentage >= 10; // Accept anything 10% and above
+    const isCartoonLike = variancePercentage < 8; // Only reject very flat cartoon-like images
     
     console.log(`[VALIDATION DETAIL] Realistic image:
-  - Color variance: ${variancePercentage.toFixed(1)}% (threshold: 20%)
-  - Result: ${isRealistic ? '✓ PASS - Photorealistic' : '✗ FAIL - ' + (isCartoonLike ? 'Cartoon-like' : 'Low texture')}`);
+  - Color variance: ${variancePercentage.toFixed(1)}%
+  - Classification: ${isCartoonLike ? 'Cartoon-like (<8%)' : isRealistic ? 'Photorealistic (≥10%)' : 'Borderline (8-10%)'}
+  - Result: ${isRealistic ? '✓ PASS' : isCartoonLike ? '✗ CARTOON' : '⚠️ BORDERLINE'}`);
     
     return {
       valid: isRealistic,
@@ -535,42 +536,48 @@ async function generateRealisticImage(
 
         console.log(`Successfully generated realistic image ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
         
-        // Validate the realistic image BEFORE returning
+        // PHASE 2: Validate the realistic image using the validation function results
         const realisticValidation = await validateRealisticImage(imageData);
-        const variance = realisticValidation.colorVariance;
         
-        if (variance < 15) {
-          // Clearly cartoon - reject and retry
-          console.error(`Realistic image validation failed for page ${pageIndex + 1}: CARTOON-LIKE (${variance.toFixed(1)}% variance)`);
+        // Handle validation results
+        if (realisticValidation.isCartoonLike) {
+          // Very flat cartoon-like (<8% variance)
+          console.error(`Realistic image validation: CARTOON-LIKE for page ${pageIndex + 1} (${realisticValidation.colorVariance.toFixed(1)}% variance)`);
           
           if (attempt < MAX_RETRIES) {
-            console.log(`Retrying realistic image generation (attempt ${attempt + 1}/${MAX_RETRIES}) with strengthened prompt...`);
+            console.log(`🔄 Retrying with strengthened photorealistic prompt (attempt ${attempt + 1}/${MAX_RETRIES})...`);
             
-            // STRENGTHEN the prompt by prepending explicit anti-cartoon instructions
+            // Strengthen the prompt
             const firstTextIndex = mergedContent.findIndex((part: any) => part.type === 'text');
             if (firstTextIndex >= 0) {
               mergedContent[firstTextIndex] = {
                 type: 'text',
-                text: `CRITICAL OVERRIDE: The previous attempt produced a cartoon/illustration (${variance.toFixed(1)}% variance). You MUST generate a REAL PHOTOGRAPH this time with natural lighting, realistic textures, and photographic depth. Aim for 30-40% color variance minimum.\n\n` + mergedContent[firstTextIndex].text
+                text: `CRITICAL: Previous was too flat/cartoon (${realisticValidation.colorVariance.toFixed(1)}%). Generate a REAL PHOTOGRAPH with natural lighting, realistic textures, photographic depth. Aim for 15-25% color variance.\n\n` + mergedContent[firstTextIndex].text
               };
             }
-            continue; // Retry with modified prompt
+            continue; // Retry
           }
           
-          throw new Error(`Realistic image generation failed: Too cartoon-like (${variance.toFixed(1)}% variance) after ${MAX_RETRIES} retries`);
+          // PHASE 4: On final attempt, accept with warning instead of throwing
+          console.warn(`⚠️ ACCEPTING cartoon-like image for page ${pageIndex + 1} after ${MAX_RETRIES} retries (${realisticValidation.colorVariance.toFixed(1)}% variance)`);
+          console.warn(`Line art conversion may be imperfect but page will complete.`);
+          // Fall through - accept it
           
-        } else if (variance < 18) {
-          // Borderline - accept on final attempt, retry earlier
+        } else if (!realisticValidation.valid) {
+          // Borderline (8-10% variance)
+          console.warn(`⚠️ Borderline realistic image for page ${pageIndex + 1} (${realisticValidation.colorVariance.toFixed(1)}% variance)`);
+          
           if (attempt < MAX_RETRIES) {
-            console.log(`Borderline realistic image (${variance.toFixed(1)}% variance) - retrying for better quality...`);
+            console.log(`Retrying for better quality (attempt ${attempt + 1}/${MAX_RETRIES})...`);
             continue;
           }
-          console.warn(`⚠️ Accepting borderline realistic image for page ${pageIndex + 1} (${variance.toFixed(1)}% variance) - may affect line art quality`);
+          
+          console.warn(`⚠️ ACCEPTING borderline image on final attempt - line art may be affected`);
           // Fall through - accept it
           
         } else {
-          // Good photorealism (>18%)
-          console.log(`✓ Realistic image validated successfully for page ${pageIndex + 1}/${totalPages}`);
+          // Good photorealism (≥10%)
+          console.log(`✓ Realistic image validated for page ${pageIndex + 1}/${totalPages} (${realisticValidation.colorVariance.toFixed(1)}% variance)`);
         }
 
         return imageData;
