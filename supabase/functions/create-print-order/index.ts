@@ -80,6 +80,22 @@ serve(async (req) => {
     const { bookId, shippingAddress }: PrintOrderRequest = await req.json();
 
     console.log('Creating print order for book:', bookId);
+    
+    // Check if user has already paid for this book
+    const { data: existingOrder } = await supabase
+      .from('orders')
+      .select('id, stripe_payment_id, price_paid, book_id')
+      .eq('user_id', user.id)
+      .eq('status', 'paid')
+      .not('stripe_payment_id', 'is', null)
+      .is('lulu_order_id', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (existingOrder?.stripe_payment_id) {
+      console.log('Found existing paid order:', existingOrder.id, '- will link to Lulu order');
+    }
 
     // Fetch book data
     const { data: book, error: bookError } = await supabase
@@ -323,20 +339,44 @@ serve(async (req) => {
     // Calculate price (Lulu provides this in their response)
     const pricePaid = luluOrder.line_items?.[0]?.total_cost?.amount || 19.99;
 
-    // Save order to database
-    const { data: order, error: orderError } = await supabase
-      .from('orders')
-      .insert({
-        user_id: user.id,
-        book_id: bookId,
-        lulu_order_id: luluOrder.id,
-        order_type: 'physical',
-        status: 'processing',
-        price_paid: pricePaid,
-        shipping_address: shippingAddress,
-      })
-      .select()
-      .single();
+    // Update existing paid order or create new one
+    let order;
+    let orderError;
+    
+    if (existingOrder?.id) {
+      console.log('Updating existing order with Lulu details');
+      const { data, error } = await supabase
+        .from('orders')
+        .update({
+          book_id: bookId,
+          lulu_order_id: luluOrder.id,
+          order_type: 'digital_and_physical',
+          status: 'processing',
+          shipping_address: shippingAddress,
+        })
+        .eq('id', existingOrder.id)
+        .select()
+        .single();
+      order = data;
+      orderError = error;
+    } else {
+      console.log('Creating new order record');
+      const { data, error } = await supabase
+        .from('orders')
+        .insert({
+          user_id: user.id,
+          book_id: bookId,
+          lulu_order_id: luluOrder.id,
+          order_type: 'physical',
+          status: 'processing',
+          price_paid: pricePaid,
+          shipping_address: shippingAddress,
+        })
+        .select()
+        .single();
+      order = data;
+      orderError = error;
+    }
 
     if (orderError) {
       console.error('Database error:', orderError);

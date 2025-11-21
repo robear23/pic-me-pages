@@ -70,6 +70,9 @@ serve(async (req) => {
     // Create checkout session
     const session = await stripe.checkout.sessions.create({
       customer: customerId,
+      shipping_address_collection: {
+        allowed_countries: ['US', 'GB', 'CA', 'AU', 'DE', 'FR', 'ES', 'IT', 'NL', 'BE', 'IE', 'CH', 'AT', 'SE', 'NO', 'DK', 'FI', 'PL', 'PT', 'NZ'],
+      },
       line_items: [
         {
           price_data: {

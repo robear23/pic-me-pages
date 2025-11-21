@@ -64,6 +64,24 @@ serve(async (req) => {
 
     console.log('Payment verified, creating order...');
 
+    // Extract shipping address from Stripe session
+    const shippingDetails = session.shipping_details;
+    let shippingAddress = null;
+
+    if (shippingDetails?.address) {
+      shippingAddress = {
+        name: shippingDetails.name || '',
+        street1: shippingDetails.address.line1 || '',
+        street2: shippingDetails.address.line2 || '',
+        city: shippingDetails.address.city || '',
+        state: shippingDetails.address.state || '',
+        postalCode: shippingDetails.address.postal_code || '',
+        country: shippingDetails.address.country || 'US',
+        phoneNumber: shippingDetails.phone || '',
+      };
+      console.log('Shipping address extracted from Stripe:', shippingAddress);
+    }
+
     // Create Supabase client with service role for order creation
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
@@ -100,6 +118,7 @@ serve(async (req) => {
         price_paid: session.amount_total! / 100, // Convert from cents
         status: 'paid',
         stripe_payment_id: session.payment_intent as string,
+        shipping_address: shippingAddress,
       })
       .select()
       .single();
