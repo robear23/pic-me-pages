@@ -26,6 +26,9 @@ export type Database = {
           created_at: string | null
           id: string
           interests: string[]
+          last_cover_attempt_at: string | null
+          missing_components: string[] | null
+          missing_covers: boolean | null
           pages: Json | null
           pdf_url: string | null
           photo_urls: string[]
@@ -49,6 +52,9 @@ export type Database = {
           created_at?: string | null
           id?: string
           interests: string[]
+          last_cover_attempt_at?: string | null
+          missing_components?: string[] | null
+          missing_covers?: boolean | null
           pages?: Json | null
           pdf_url?: string | null
           photo_urls: string[]
@@ -72,6 +78,9 @@ export type Database = {
           created_at?: string | null
           id?: string
           interests?: string[]
+          last_cover_attempt_at?: string | null
+          missing_components?: string[] | null
+          missing_covers?: boolean | null
           pages?: Json | null
           pdf_url?: string | null
           photo_urls?: string[]

@@ -508,11 +508,12 @@ export const GeneratingStep = () => {
         if (shouldGenerateCovers) {
           let coverAttempts = 0;
           const maxCoverAttempts = 3;
+          let coverGenerationError: string | null = null;
           
           while (coverAttempts < maxCoverAttempts && !coverImageUrl) {
             try {
               coverAttempts++;
-              console.log(`Cover generation attempt ${coverAttempts}/${maxCoverAttempts}`);
+              console.log(`🎨 Cover generation attempt ${coverAttempts}/${maxCoverAttempts}`);
               
               const successfulPages = finalPages.filter(p => p.imageUrl);
               const coverPage = successfulPages[0];
@@ -528,13 +529,16 @@ export const GeneratingStep = () => {
                 backCoverImageUrl = backCover;
                 setCoverImageUrl(frontCover);
                 setBackCoverImageUrl(backCover);
-                console.log('Front and back covers generated successfully');
+                console.log('✅ Front and back covers generated successfully');
+                coverGenerationError = null;
                 break;
               }
-            } catch (coverError) {
-              console.error(`Cover generation attempt ${coverAttempts} failed:`, coverError);
+            } catch (coverError: any) {
+              coverGenerationError = coverError.message || 'Unknown error';
+              console.error(`❌ Cover generation attempt ${coverAttempts} failed:`, coverError);
               
               if (coverAttempts < maxCoverAttempts) {
+                console.log(`⏳ Waiting before retry ${coverAttempts + 1}...`);
                 await new Promise(resolve => setTimeout(resolve, 1000 * coverAttempts));
               }
             }
@@ -542,22 +546,41 @@ export const GeneratingStep = () => {
           
           // If AI cover generation failed, use fallback covers
           if (!coverImageUrl) {
-            console.log('AI cover generation failed; creating fallback covers instead');
-            const { generateFallbackCovers } = await import('@/lib/fallbackCover');
-            const successfulPages = finalPages.filter(p => p.imageUrl);
-            const coverPage = successfulPages[0];
-            const sampleImage = coverPage?.imageUrl;
+            console.log('⚠️ AI cover generation failed after all attempts; creating fallback covers instead');
+            console.log('Last error:', coverGenerationError);
+            
+            try {
+              const { generateFallbackCovers } = await import('@/lib/fallbackCover');
+              const successfulPages = finalPages.filter(p => p.imageUrl);
+              const coverPage = successfulPages[0];
+              const sampleImage = coverPage?.imageUrl;
 
-            const { front, back } = await generateFallbackCovers(
-              characters.map(c => c.name).filter(Boolean).join(' and '),
-              sampleImage
-            );
+              const { front, back } = await generateFallbackCovers(
+                characters.map(c => c.name).filter(Boolean).join(' and '),
+                sampleImage
+              );
 
-            coverImageUrl = front;
-            backCoverImageUrl = back;
-            setCoverImageUrl(front);
-            setBackCoverImageUrl(back);
-            console.log('Fallback covers generated successfully');
+              coverImageUrl = front;
+              backCoverImageUrl = back;
+              setCoverImageUrl(front);
+              setBackCoverImageUrl(back);
+              console.log('✅ Fallback covers generated successfully');
+              
+              // Show info toast about using fallback covers
+              toast({
+                title: 'Using Fallback Covers',
+                description: 'AI cover generation failed, using simple covers instead. You can retry from the complete page.',
+                variant: 'default',
+              });
+            } catch (fallbackError) {
+              console.error('❌ Fallback cover generation also failed:', fallbackError);
+              // Don't throw - allow book to save without covers (partial)
+              toast({
+                title: 'Cover Generation Failed',
+                description: 'Unable to generate covers. Your book will be saved without covers - you can retry later.',
+                variant: 'default',
+              });
+            }
           }
         } else if (isReworkMode && existingBookId) {
           // Preserve existing covers in rework mode
