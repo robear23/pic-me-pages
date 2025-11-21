@@ -234,10 +234,61 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
     if (coverResponse.error) {
       console.error('Cover generation failed:', coverResponse.error);
       // Continue without cover - don't fail the entire job
-    } else if (coverResponse.data) {
-      coverImageUrl = coverResponse.data.coverImageUrl;
-      backCoverImageUrl = coverResponse.data.backCoverImageUrl;
-      console.log('Cover generated successfully');
+    } else if (coverResponse.data?.frontCover && coverResponse.data?.backCover) {
+      try {
+        console.log('Cover generated successfully, uploading to storage...');
+        
+        // Convert base64 data URLs to blobs
+        const frontCoverBlob = await fetch(coverResponse.data.frontCover).then(r => r.blob());
+        const backCoverBlob = await fetch(coverResponse.data.backCover).then(r => r.blob());
+        
+        // Generate unique filenames with timestamp
+        const timestamp = Date.now();
+        const frontCoverPath = `${job.user_id}/${timestamp}-cover.png`;
+        const backCoverPath = `${job.user_id}/${timestamp}-back-cover.png`;
+        
+        // Upload front cover
+        const { error: frontUploadError } = await supabase.storage
+          .from('generated-pages')
+          .upload(frontCoverPath, frontCoverBlob, {
+            contentType: 'image/png',
+            cacheControl: '3600',
+            upsert: false
+          });
+        
+        if (frontUploadError) {
+          console.error('Front cover upload failed:', frontUploadError);
+        } else {
+          const { data: frontUrlData } = supabase.storage
+            .from('generated-pages')
+            .getPublicUrl(frontCoverPath);
+          coverImageUrl = frontUrlData.publicUrl;
+          console.log('Front cover uploaded:', coverImageUrl);
+        }
+        
+        // Upload back cover
+        const { error: backUploadError } = await supabase.storage
+          .from('generated-pages')
+          .upload(backCoverPath, backCoverBlob, {
+            contentType: 'image/png',
+            cacheControl: '3600',
+            upsert: false
+          });
+        
+        if (backUploadError) {
+          console.error('Back cover upload failed:', backUploadError);
+        } else {
+          const { data: backUrlData } = supabase.storage
+            .from('generated-pages')
+            .getPublicUrl(backCoverPath);
+          backCoverImageUrl = backUrlData.publicUrl;
+          console.log('Back cover uploaded:', backCoverImageUrl);
+        }
+        
+      } catch (uploadError) {
+        console.error('Error uploading covers to storage:', uploadError);
+        // Continue without covers - don't fail the entire job
+      }
     }
 
     // Step 4: Save book to database
