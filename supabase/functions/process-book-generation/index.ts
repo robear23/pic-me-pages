@@ -200,10 +200,61 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
               continue;
             }
           } else if (imageResponse.data?.pages) {
-            generatedPages.push(...imageResponse.data.pages);
+            // Upload each page image to storage before saving to database
+            const pagesWithStorageUrls = [];
+            for (const page of imageResponse.data.pages) {
+              try {
+                if (page.imageUrl?.startsWith('data:')) {
+                  console.log(`  Uploading page ${page.pageNumber} to storage...`);
+                  
+                  // Convert base64 data URL to blob
+                  const blob = await fetch(page.imageUrl).then(r => r.blob());
+                  
+                  // Generate unique filename
+                  const timestamp = Date.now();
+                  const pagePath = `${job.user_id}/${timestamp}-page-${page.pageNumber}.png`;
+                  
+                  // Upload to storage
+                  const { error: uploadError } = await supabase.storage
+                    .from('generated-pages')
+                    .upload(pagePath, blob, {
+                      contentType: 'image/png',
+                      cacheControl: '3600',
+                      upsert: false
+                    });
+                  
+                  if (uploadError) {
+                    console.error(`  Failed to upload page ${page.pageNumber}:`, uploadError);
+                    // Keep original base64 URL as fallback
+                    pagesWithStorageUrls.push(page);
+                  } else {
+                    // Get public URL
+                    const { data: urlData } = supabase.storage
+                      .from('generated-pages')
+                      .getPublicUrl(pagePath);
+                    
+                    console.log(`  ✓ Page ${page.pageNumber} uploaded to storage`);
+                    // Replace with storage URL
+                    pagesWithStorageUrls.push({
+                      ...page,
+                      imageUrl: urlData.publicUrl
+                    });
+                  }
+                } else {
+                  // Already a storage URL
+                  pagesWithStorageUrls.push(page);
+                }
+              } catch (uploadError) {
+                console.error(`  Error uploading page ${page.pageNumber}:`, uploadError);
+                // Keep original URL as fallback
+                pagesWithStorageUrls.push(page);
+              }
+            }
+            
+            generatedPages.push(...pagesWithStorageUrls);
             batchSuccess = true;
             const batchTime = Date.now() - batchStartTime;
-            console.log(`  ✓ Batch ${batchIndex + 1} succeeded with ${imageResponse.data.pages.length} pages (${batchTime}ms)`);
+            console.log(`  ✓ Batch ${batchIndex + 1} succeeded with ${pagesWithStorageUrls.length} pages (${batchTime}ms)`);
             console.log(`  Progress: ${generatedPages.length}/${prompts.length} pages generated`);
           }
         } catch (error) {
