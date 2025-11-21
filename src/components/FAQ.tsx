@@ -8,9 +8,49 @@ import {
 
 const faqs = [
   {
-    question: 'How does it work?',
+    question: 'How does the photo personalization work?',
     answer:
-      'Simply upload 3 photos of your child, select their interests (like dinosaurs, space, or art), and our AI creates 12 unique coloring pages featuring them in scenarios they love. The whole process takes about 2 minutes!',
+      'Upload 1 clear photo of your child, and our AI learns their facial features to create consistent, recognizable illustrations throughout the entire book. Each page will feature your child in different adventures.',
+  },
+  {
+    question: 'Can I choose as many interests as I want?',
+    answer:
+      'Yes! Select as many interests as you\'d like. Our AI will create diverse pages incorporating your chosen themes—from dinosaurs and space to princesses and sports.',
+  },
+  {
+    question: 'What\'s the difference between interests and stories?',
+    answer:
+      'Interests let you pick topics your child loves (dinosaurs, space, etc.), and we\'ll create unique scenes around those themes. Stories are pre-written adventures we\'ll place your child in—like becoming a brave knight or exploring a magical forest.',
+  },
+  {
+    question: 'How long does it take to generate?',
+    answer:
+      'From upload to download, the entire process takes about 2-3 minutes. Our AI generates all pages in real-time, so you can start coloring right away!',
+  },
+  {
+    question: 'Can I include multiple children?',
+    answer:
+      'Currently, each book features one child. However, you can create separate books for siblings, and we offer sibling discounts on multiple book purchases!',
+  },
+  {
+    question: 'What if I don\'t like the results?',
+    answer:
+      'We want you to love your book! If you\'re not satisfied with the results, contact our support team within 7 days for a full refund or free regeneration with different settings.',
+  },
+  {
+    question: 'What\'s the best way to print the PDF?',
+    answer:
+      'You\'ll receive a high-quality PDF optimized for 8.5" x 11" printing. Print it at home on regular printer paper or take it to any print shop for professional results. For best quality, use cardstock or heavier paper.',
+  },
+  {
+    question: 'Do you offer refunds?',
+    answer:
+      'Yes! We offer a 7-day satisfaction guarantee. If you\'re not happy with your coloring book, contact us for a full refund—no questions asked.',
+  },
+  {
+    question: 'What are the different binding options?',
+    answer:
+      'For printed books, we offer coil binding (lays flat for easy coloring) and saddle-stitch binding (like a traditional book). Both are premium quality and shipped directly to your door.',
   },
   {
     question: 'What age is this appropriate for?',
@@ -18,34 +58,28 @@ const faqs = [
       'Our coloring books are designed for children ages 3-8, but kids of all ages enjoy seeing themselves as the stars of their own adventures! You can adjust the complexity level when creating your book.',
   },
   {
-    question: 'Can I print it at home?',
+    question: 'How many pages can I get?',
     answer:
-      'Absolutely! You will receive a high-quality PDF optimized for 8.5" x 11" printing. Print it at home or take it to any print shop. We also offer professional printed + bound books shipped directly to your door.',
+      'Standard books include 12 unique coloring pages. We also offer extended versions with 24 or 36 pages for longer adventures!',
   },
   {
-    question: 'How long does it take to create?',
+    question: 'Do I need to create an account?',
     answer:
-      'From upload to download, the entire process takes about 2-3 minutes. Our AI generates all 12 pages in real-time, so you can start coloring right away!',
-  },
-  {
-    question: 'Is my child\'s photo safe?',
-    answer:
-      'Yes! We take privacy seriously. Photos are only used to generate your coloring book and are never shared or used for any other purpose. You can delete them anytime from your account.',
+      'Yes, you\'ll need to sign in or create an account to generate and access your books. This allows you to save your creations, reorder, and access your books from any device.',
   },
 ];
 
 export const FAQ = () => {
   return (
-    <section className="py-16 px-4">
-      <div className="max-w-3xl mx-auto">
+    <section id="faq" className="relative py-20 bg-background">
+      <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
           className="text-center mb-12"
         >
-          <h2 className="text-4xl md:text-5xl font-black mb-4">
+          <h2 className="text-4xl md:text-5xl font-bold mb-4">
             Frequently Asked Questions
           </h2>
           <p className="text-xl text-muted-foreground">
@@ -57,16 +91,16 @@ export const FAQ = () => {
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="bg-card/40 backdrop-blur-lg border border-border rounded-2xl p-8"
+          transition={{ delay: 0.2 }}
+          className="bg-card border border-border rounded-2xl p-6 md:p-8 shadow-lg"
         >
           <Accordion type="single" collapsible className="w-full">
             {faqs.map((faq, index) => (
-              <AccordionItem key={index} value={`item-${index}`}>
-                <AccordionTrigger className="text-left text-lg font-semibold hover:text-primary">
+              <AccordionItem key={index} value={`item-${index}`} className="border-b border-border/50 last:border-0">
+                <AccordionTrigger className="text-left text-base md:text-lg font-semibold hover:text-primary py-4">
                   {faq.question}
                 </AccordionTrigger>
-                <AccordionContent className="text-base text-muted-foreground">
+                <AccordionContent className="text-base text-muted-foreground leading-relaxed pb-4">
                   {faq.answer}
                 </AccordionContent>
               </AccordionItem>
