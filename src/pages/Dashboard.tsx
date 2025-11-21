@@ -298,7 +298,7 @@ const Dashboard = () => {
 
   const handleDownloadPDF = async (pdfUrl: string, bookName: string) => {
     try {
-      toast.info('Preparing download...');
+      toast.info('Starting download...');
       
       // Fetch the PDF from Supabase Storage
       const response = await fetch(pdfUrl);
@@ -328,10 +328,25 @@ const Dashboard = () => {
         URL.revokeObjectURL(blobUrl);
       }, 100);
       
-      toast.success('Download started!');
+      toast.success('Download complete!');
     } catch (error: any) {
       console.error('Download error:', error);
-      toast.error('Failed to download PDF. Please try again.');
+      
+      // Better error messages
+      if (error.message?.includes('Failed to fetch')) {
+        toast.error('Unable to download. Please check your internet connection and try again.');
+      } else if (error.message?.includes('network')) {
+        toast.error('Network error. Please try again.');
+      } else {
+        toast.error('Failed to download PDF. Please try again or contact support.');
+      }
+      
+      // Offer retry option
+      setTimeout(() => {
+        if (window.confirm('Download failed. Would you like to retry?')) {
+          handleDownloadPDF(pdfUrl, bookName);
+        }
+      }, 1000);
     }
   };
 
@@ -769,10 +784,10 @@ const Dashboard = () => {
                             <Progress value={(pdfProgress.current / pdfProgress.total) * 100} />
                           </div>
                         )}
-                        {book.status === 'completed' ? (
+                         {book.status === 'completed' ? (
                           <div className="space-y-2">
                             <Button
-                              size="sm"
+                              size="default"
                               variant="default"
                               className="w-full"
                               onClick={(e) => {
@@ -781,12 +796,12 @@ const Dashboard = () => {
                               }}
                               disabled={isGeneratingPdf === book.id || downloadingBookId === book.id}
                             >
-                              <Download className="w-4 h-4 mr-1" />
-                              {downloadingBookId === book.id ? 'Downloading...' : isGeneratingPdf === book.id ? 'Generating...' : 'Download PDF'}
+                              <BookOpen className="w-4 h-4 mr-1" />
+                              {downloadingBookId === book.id ? 'Downloading...' : isGeneratingPdf === book.id ? 'Generating...' : 'Download Book (Interior)'}
                             </Button>
                             <Button
                               size="sm"
-                              variant="default"
+                              variant="outline"
                               className="w-full"
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -795,8 +810,12 @@ const Dashboard = () => {
                               disabled={!book.cover_url || downloadingBookId === book.id}
                             >
                               <FileText className="w-4 h-4 mr-1" />
-                              {downloadingBookId === book.id ? 'Downloading...' : 'Download Cover PDF'}
+                              {downloadingBookId === book.id ? 'Downloading...' : 'Download Cover (Printing)'}
                             </Button>
+                            {/* Helper text */}
+                            <p className="text-xs text-muted-foreground text-center pt-1">
+                              Interior for coloring • Cover for printing
+                            </p>
                             <OrderPhysicalBookDialog 
                               bookId={book.id}
                               bookTitle={`${book.character_name}'s Coloring Book`}
