@@ -27,7 +27,8 @@ class BookGenerationQueue {
   private readonly DAILY_LIMIT = 500;
   private readonly CALLS_PER_BOOK = 28; // Approximate
   private readonly STORAGE_KEY = 'book_generation_daily_usage';
-  private readonly PAGE_TIMEOUT_MS = 60000; // 60 seconds - tight for rework, still allows retries
+  private readonly PAGE_TIMEOUT_MS = 30000; // 30 seconds - faster timeouts
+  private readonly BATCH_SIZE = 2; // Process 2 pages at once
   
   constructor() {
     this.checkDailyReset();
@@ -37,11 +38,11 @@ class BookGenerationQueue {
     // No delay for small rework batches (<5 pages)
     if (totalPages < 5) return 0;
     
-    // 2s delay for medium batches
-    if (totalPages < 10) return 2000;
+    // 1s delay for medium batches (reduced from 2s)
+    if (totalPages < 10) return 1000;
     
-    // 3s delay for full books
-    return 3000;
+    // 1.5s delay for full books (reduced from 3s)
+    return 1500;
   }
   
   cancelCurrentJob() {
@@ -108,7 +109,7 @@ class BookGenerationQueue {
         // Use parallel generation for small batches (rework), sequential for large (full books)
         const results = job.prompts.length <= 3 
           ? await this.generateBookParallel(job)
-          : await this.generateBook(job);
+          : await this.generateBookBatched(job);
         job.resolve(results);
       } catch (error) {
         job.reject(error as Error);
@@ -163,6 +164,100 @@ class BookGenerationQueue {
     const allPages = await Promise.all(promises);
     
     job.onProgress(100, '✨ Rework complete!');
+    this.currentJobId = null;
+    return allPages;
+  }
+  
+  private async generateBookBatched(job: BookJob): Promise<GeneratedPage[]> {
+    const total = job.prompts.length;
+    const allPages: GeneratedPage[] = [];
+    this.currentJobId = job.id;
+    this.shouldCancel = false;
+    
+    job.onProgress(5, 'Preparing to generate your coloring pages...');
+    
+    // Process pages in batches for better performance
+    for (let i = 0; i < total; i += this.BATCH_SIZE) {
+      // Check for cancellation
+      if (this.shouldCancel) {
+        console.log('🛑 Generation cancelled by user');
+        this.shouldCancel = false;
+        this.currentJobId = null;
+        throw new Error('Generation cancelled by user');
+      }
+      
+      const batchEnd = Math.min(i + this.BATCH_SIZE, total);
+      const batchPrompts = job.prompts.slice(i, batchEnd);
+      const batchNum = Math.floor(i / this.BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(total / this.BATCH_SIZE);
+      
+      job.onProgress(
+        Math.round(((i + 0.5) / total) * 100),
+        `Creating pages ${i + 1}-${batchEnd} of ${total}... 🎨 (Batch ${batchNum}/${totalBatches})`
+      );
+      
+      try {
+        // Process batch in parallel
+        const batchPromises = batchPrompts.map(prompt => 
+          Promise.race([
+            this.callAPIWithRetry(
+              [prompt],
+              job.characters,
+              job.consistentCharacters,
+              job.complexity
+            ),
+            this.createTimeout(this.PAGE_TIMEOUT_MS, `Page ${prompt.pageNumber}`)
+          ])
+        );
+        
+        const batchResults = await Promise.allSettled(batchPromises);
+        
+        // Process results
+        batchResults.forEach((result, idx) => {
+          const prompt = batchPrompts[idx];
+          if (result.status === 'fulfilled' && result.value.pages?.[0]) {
+            allPages.push(result.value.pages[0]);
+            this.incrementDailyUsage();
+          } else {
+            const error = result.status === 'rejected' ? result.reason : 'Generation failed';
+            allPages.push({
+              pageNumber: prompt.pageNumber,
+              imageUrl: '',
+              prompt: prompt.prompt,
+              error: error.message || 'Generation failed'
+            });
+          }
+        });
+        
+        // Add delay between batches (except for the last batch)
+        if (batchEnd < total) {
+          const delayMs = this.getDelayForBatch(total);
+          if (delayMs > 0) {
+            job.onProgress(
+              Math.round(((batchEnd - 0.2) / total) * 100),
+              `Batch ${batchNum} complete! Taking a brief pause... ☕`
+            );
+            await this.delay(delayMs);
+          }
+        }
+        
+      } catch (error: any) {
+        console.error(`Failed to generate batch ${batchNum}:`, error);
+        // Add error pages for remaining prompts in batch
+        batchPrompts.forEach(prompt => {
+          if (!allPages.find(p => p.pageNumber === prompt.pageNumber)) {
+            allPages.push({
+              pageNumber: prompt.pageNumber,
+              imageUrl: '',
+              prompt: prompt.prompt,
+              error: error.message || 'Generation failed'
+            });
+          }
+        });
+      }
+    }
+    
+    job.onProgress(100, '✨ Your coloring book is ready!');
     this.currentJobId = null;
     return allPages;
   }

@@ -801,7 +801,7 @@ export const GeneratingStep = () => {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.3 }}
-      className="min-h-screen flex items-center justify-center px-6"
+      className="min-h-screen flex items-center justify-center px-6 pt-40"
     >
       <div className="max-w-2xl w-full">
         <motion.div
