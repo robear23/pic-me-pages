@@ -27,10 +27,14 @@ REQUIRED PHOTOGRAPHIC ELEMENTS (OPTIMIZED FOR LINE ART):
 ✓ Frontal or side lighting (NOT dramatic side lighting with deep shadows)
 ✓ Environmental context: Simple real setting with minimal clutter
 
-CHARACTER MATCHING:
-- Match reference photo EXACTLY: face, hair color/style, skin tone, eye color, age
-- Same person in a DIFFERENT real-world photo scenario
-- Think: passport photo, yearbook photo, bright studio portrait (NOT moody dramatic portrait)
+CHARACTER MATCHING (CRITICAL - AGE CONSISTENCY):
+- Match reference photo EXACTLY: face structure, AGE, hair color/style, skin tone, eye color, facial features
+- MAINTAIN THE EXACT AGE shown in reference photo - do NOT age up or down even slightly
+- Same person's face with IDENTICAL age and features in a different scenario
+- Think: same child in different yearbook photos from the SAME YEAR, NOT different years
+- Face shape, eye size/shape, nose, mouth, and most importantly AGE must be IDENTICAL to reference
+- If reference shows a 5-year-old, generate a 5-year-old (not 4, not 6, EXACTLY 5)
+- Age consistency is MORE IMPORTANT than pose variety
 
 SCENE COMPOSITION (ADAPT TO PROMPT):
 - WIDE SHOTS: Rich, detailed environment with character as part of scene

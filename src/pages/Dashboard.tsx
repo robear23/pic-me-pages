@@ -71,6 +71,8 @@ const Dashboard = () => {
   const [downloadingCoverId, setDownloadingCoverId] = useState<string | null>(null);
   const [autoFixAttempted, setAutoFixAttempted] = useState<Set<string>>(new Set());
   const [retryingCoverId, setRetryingCoverId] = useState<string | null>(null);
+  const [selectedPageImage, setSelectedPageImage] = useState<string | null>(null);
+  const [selectedPageIndex, setSelectedPageIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -1108,12 +1110,23 @@ const Dashboard = () => {
                 <p className="text-muted-foreground">Loading pages...</p>
               </div>
             ) : selectedBookPages?.map((page: any, index: number) => (
-              <div key={index} className="relative aspect-[3/4] rounded-lg overflow-hidden border border-border">
+              <div 
+                key={index} 
+                className="relative aspect-[3/4] rounded-lg overflow-hidden border border-border cursor-pointer hover:ring-2 hover:ring-primary transition-all group"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedPageImage(page.imageUrl || page);
+                  setSelectedPageIndex(index);
+                }}
+              >
                 <img
                   src={page.imageUrl || page}
                   alt={`Page ${index + 1}`}
                   className="w-full h-full object-cover"
                 />
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                  <Eye className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                </div>
                 <div className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm px-2 py-1 rounded text-xs font-medium">
                   Page {index + 1}
                 </div>
@@ -1142,6 +1155,50 @@ const Dashboard = () => {
               </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Image Preview Dialog */}
+      <Dialog open={!!selectedPageImage} onOpenChange={(open) => !open && setSelectedPageImage(null)}>
+        <DialogContent className="max-w-5xl">
+          <DialogHeader>
+            <DialogTitle>Page {(selectedPageIndex ?? 0) + 1} - Full View</DialogTitle>
+          </DialogHeader>
+          <div className="relative w-full max-h-[80vh] flex items-center justify-center bg-muted rounded-lg p-4">
+            <img 
+              src={selectedPageImage || ''} 
+              alt={`Page ${(selectedPageIndex ?? 0) + 1}`}
+              className="max-w-full max-h-[75vh] object-contain rounded"
+            />
+          </div>
+          <div className="flex gap-2 justify-between">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                if (selectedPageIndex !== null && selectedPageIndex > 0 && selectedBookPages) {
+                  setSelectedPageIndex(selectedPageIndex - 1);
+                  const prevPage = selectedBookPages[selectedPageIndex - 1];
+                  setSelectedPageImage(prevPage.imageUrl || prevPage);
+                }
+              }}
+              disabled={selectedPageIndex === null || selectedPageIndex === 0}
+            >
+              Previous
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                if (selectedPageIndex !== null && selectedBookPages && selectedPageIndex < selectedBookPages.length - 1) {
+                  setSelectedPageIndex(selectedPageIndex + 1);
+                  const nextPage = selectedBookPages[selectedPageIndex + 1];
+                  setSelectedPageImage(nextPage.imageUrl || nextPage);
+                }
+              }}
+              disabled={selectedPageIndex === null || !selectedBookPages || selectedPageIndex === selectedBookPages.length - 1}
+            >
+              Next
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
