@@ -32,9 +32,26 @@ CHARACTER MATCHING:
 - Same person in a DIFFERENT real-world photo scenario
 - Think: passport photo, yearbook photo, bright studio portrait (NOT moody dramatic portrait)
 
-SCENE COMPOSITION:
-- Clean, simple background (solid color backdrop preferred)
-- Natural pose appropriate for the described activity
+SCENE COMPOSITION (ADAPT TO PROMPT):
+- WIDE SHOTS: Rich, detailed environment with character as part of scene
+  * Include multiple colorable elements (trees, flowers, objects, patterns)
+  * Character is ONE element in a larger context
+  * Detailed background that tells a story
+  
+- MEDIUM SHOTS: Balance character and environment equally
+  * Show immediate surroundings with detail
+  * Character interacts with visible environmental elements
+  * Clear foreground and background
+  
+- CLOSE-UP SHOTS: Character prominent but with contextual background
+  * Character is main focus but environment visible
+  * Background provides context (room, outdoor setting, etc.)
+  * Include nearby objects or elements
+  
+ENVIRONMENT REQUIREMENTS:
+- Rich, colorable details appropriate to scene type
+- Multiple distinct elements for variety
+- Natural depth with foreground/background
 - Child-friendly and wholesome
 - MINIMAL shadows cast by subject
 - Bright, cheerful lighting
@@ -112,8 +129,7 @@ function simplifyPromptForRetry(originalPrompt: string, attemptNumber: number): 
     const activityMatch = originalPrompt.match(/(playing|sitting|holding|standing|walking|running|reading|drawing|building|eating|smiling)/i);
     if (activityMatch) {
       const activity = activityMatch[1].toLowerCase();
-      // Add brightness hint
-      return `${characterName} ${activity} indoors. Bright, even lighting. Simple background.`;
+      return `${characterName} ${activity} in a detailed scene. Bright, even lighting. Rich environment.`;
     }
     // Fallback: aggressively remove problematic words
     let simplified = originalPrompt;
@@ -121,17 +137,17 @@ function simplifyPromptForRetry(originalPrompt: string, attemptNumber: number): 
       const regex = new RegExp(`\\b${word}\\b`, 'gi');
       simplified = simplified.replace(regex, '');
     }
-    return simplified.replace(/\s+/g, ' ').trim().substring(0, 120) + '. Bright lighting, simple scene.';
+    return simplified.replace(/\s+/g, ' ').trim().substring(0, 120) + '. Bright lighting, detailed environment.';
   }
   
   if (attemptNumber === 2) {
-    // Second retry: Ultra-simple format with mandatory brightness
-    return `${characterName} in a bright, simple room. High-key lighting. Plain background.`;
+    // Second retry: Still keep environmental richness
+    return `${characterName} in a well-lit room with visible details. High-key lighting. Colorable background.`;
   }
   
-  // Final fallback: absolute minimum
+  // Final fallback: minimal but not blank
   console.log(`⚠️ Using minimal fallback prompt for attempt ${attemptNumber}`);
-  return `${characterName} portrait. Bright studio lighting. White background.`;
+  return `${characterName} in a bright scene. Studio lighting. Detailed background.`;
 }
 
 // Use Google's Gemini API directly - cheapest model with image generation
@@ -879,9 +895,19 @@ serve(async (req) => {
 
           // PHASE 3 & 5: Pre-filter and enhance prompt with brightness hints
           const filteredPrompt = preFilterPrompt(prompt.prompt);
+
+          // Determine composition guidance based on shot type (if available)
+          const shotType = (prompt as any).shotType || 'medium';
+          const compositionMap: Record<string, string> = {
+            wide: 'WIDE SHOT: Character is part of a larger detailed scene. Show full environment with rich details for coloring. Character occupies 20-40% of frame.',
+            medium: 'MEDIUM SHOT: Balance character and environment equally. Show character interacting with surroundings. Character occupies 40-60% of frame.',
+            close: 'CLOSE-UP: Character is prominent with detailed contextual background visible. Character occupies 60-80% of frame.'
+          };
+          const compositionGuidance = compositionMap[shotType] || compositionMap['medium'];
+
           const realisticPrompt = characterContext.length > 0 
-            ? `${filteredPrompt}\n\nMatch the person in the reference photo exactly. Bright, high-key lighting. Simple white or light-colored background. Well-lit scene. Child-appropriate.`
-            : `${filteredPrompt}\n\nBright, high-key lighting. Simple white or light-colored background. Well-lit scene. Child-appropriate.`;
+            ? `${compositionGuidance}\n\n${filteredPrompt}\n\nMatch the person in the reference photo exactly. Bright, high-key lighting. Detailed, colorable environment. Well-lit scene. Child-appropriate.`
+            : `${compositionGuidance}\n\n${filteredPrompt}\n\nBright, high-key lighting. Detailed, colorable environment. Well-lit scene. Child-appropriate.`;
 
           const contentParts = [
             ...characterContext, // Photos first for better matching

@@ -95,7 +95,7 @@ const initialState = {
   currentStep: 'hero' as BookStep,
   characters: [createDefaultCharacter()],
   consistentCharacters: true,
-  complexityLevel: 'simple' as ComplexityLevel, // LOCKED TO SIMPLE FOR TESTING
+  complexityLevel: 'medium' as ComplexityLevel, // Default to medium
   customPrompt: '',
   selectedInterests: [] as string[],
   generatedPages: [] as GeneratedPage[],

@@ -66,14 +66,42 @@ Each scene should feel unique and alive - the character should be doing somethin
       ? `Create scenes based on this custom theme/story: ${customPrompt}`
       : `Generate scenes related to these interests: ${interests.join(', ')}. ${interests.length === 1 ? 'Create diverse scenarios all related to this interest.' : 'Distribute scenes evenly across the interests.'}`;
 
-    const systemPrompt = `Generate ${targetPageCount} simple scene descriptions for ${characterNames}.
+    const systemPrompt = `Generate ${targetPageCount} diverse scene descriptions for ${characterNames}.
+
+COMPOSITION VARIETY (CRITICAL - Mix these shot types):
+1. WIDE SHOTS (30% of pages): Character is part of a larger scene
+   - Show full environment with character as one element
+   - Example: "Sarah exploring a colorful garden full of flowers and butterflies"
+   - Character occupies 20-40% of frame
+   
+2. MEDIUM SHOTS (40% of pages): Character and immediate surroundings
+   - Balance between character and environment
+   - Example: "Alex building a sandcastle on the beach with seagulls nearby"
+   - Character occupies 40-60% of frame
+   
+3. CLOSE-UP SHOTS (30% of pages): Character-focused with context
+   - Character is prominent but environment still visible
+   - Example: "Emma reading a book under a big tree"
+   - Character occupies 60-80% of frame
+
+ENVIRONMENT EMPHASIS:
+- Make backgrounds rich and detailed (trees, buildings, furniture, toys, animals, weather)
+- Include multiple colorable elements (flowers, clouds, stars, patterns, objects)
+- Create depth with foreground and background elements
+- Add contextual items related to the activity
+
+VARIETY REQUIREMENTS:
+- Different perspectives: front view, side view, three-quarter view, back view
+- Different positions: sitting, standing, lying down, jumping, reaching
+- Different distances: far away in scene, part of scene, close to viewer
+- Different contexts: indoors, outdoors, nature, urban, imaginative spaces
 
 REQUIREMENTS:
 - Natural, child-appropriate scenes
-- ${characterNames} doing simple activities
-- Clear, straightforward descriptions (1-2 sentences maximum)
-- Focus on the action and setting only
-${hasCharacterPhotos ? '- Character appears in different poses and activities' : ''}
+- ${characterNames} doing varied activities
+- Clear, straightforward descriptions (2-3 sentences maximum)
+- MUST specify shot type and environment detail level
+${hasCharacterPhotos ? '- Character appears in different poses, angles, and scene types' : ''}
 
 ${complexityGuidance}
 
@@ -83,7 +111,8 @@ Return JSON array with:
 {
   "pageNumber": 1-${targetPageCount},
   "interest": "the interest category",
-  "prompt": "Simple 1-2 sentence scene description"
+  "shotType": "wide|medium|close",
+  "prompt": "Detailed 2-3 sentence scene description with environment details"
 }`;
 
     console.log('Calling Lovable AI for prompt generation...');
