@@ -14,7 +14,8 @@ interface Character {
 interface GenerateCoverRequest {
   characterName: string;
   interests: string[];
-  pageImageUrl: string;
+  pageImageUrl?: string;
+  firstPageImageUrl?: string;
   characters?: Character[];
 }
 
@@ -40,10 +41,17 @@ serve(async (req) => {
       throw new Error('GOOGLE_API_KEY not configured');
     }
 
-    const { characterName, interests, pageImageUrl, characters }: GenerateCoverRequest = await req.json();
+    const { characterName, interests, pageImageUrl, firstPageImageUrl, characters }: GenerateCoverRequest = await req.json();
+    
+    // Use firstPageImageUrl if provided, otherwise pageImageUrl
+    const imageUrl = firstPageImageUrl || pageImageUrl;
 
     console.log('Generating front and back covers for:', characterName, interests);
-    console.log('Using page image for cover:', pageImageUrl);
+    console.log('Using page image for cover:', imageUrl);
+    
+    if (!imageUrl) {
+      throw new Error('No page image provided for cover generation');
+    }
 
     const interestsText = interests.slice(0, 3).join(', ');
     
@@ -63,8 +71,8 @@ CHARACTER NAME: Add the name "${characterName}" in a super stylized, fun, decora
 OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at 300 DPI.`;
 
     // Transform image to Google's native format
-    const base64Data = pageImageUrl.replace(/^data:image\/\w+;base64,/, '');
-    const mimeType = pageImageUrl.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/jpeg';
+    const base64Data = imageUrl.replace(/^data:image\/\w+;base64,/, '');
+    const mimeType = imageUrl.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/jpeg';
 
     const frontResponse = await fetch(
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',

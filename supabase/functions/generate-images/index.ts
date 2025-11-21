@@ -879,10 +879,15 @@ serve(async (req) => {
               for (const character of pageCharacters) {
                 if (character.photos && Array.isArray(character.photos) && character.photos.length > 0) {
                   for (const photoUrl of character.photos.slice(0, 1)) { // Use first photo only
-                    characterContext.push({
-                      type: 'image_url',
-                      image_url: { url: photoUrl }
-                    });
+                    // Validate that photoUrl is a string before using it
+                    if (photoUrl && typeof photoUrl === 'string') {
+                      characterContext.push({
+                        type: 'image_url',
+                        image_url: { url: photoUrl }
+                      });
+                    } else {
+                      console.warn(`Invalid photo URL for character ${character.name}:`, photoUrl);
+                    }
                   }
                 }
               }
