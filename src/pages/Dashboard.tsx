@@ -69,6 +69,7 @@ const Dashboard = () => {
   const [loadingPages, setLoadingPages] = useState(false);
   const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
   const [downloadingBookId, setDownloadingBookId] = useState<string | null>(null);
+  const [downloadingCoverId, setDownloadingCoverId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -454,7 +455,7 @@ const Dashboard = () => {
       return;
     }
     
-    setDownloadingBookId(book.id);
+    setDownloadingCoverId(book.id);
     try {
       toast.info('Preparing cover download...');
       
@@ -479,7 +480,7 @@ const Dashboard = () => {
       console.error('Error downloading cover PDF:', error);
       toast.error('Failed to download cover PDF');
     } finally {
-      setDownloadingBookId(null);
+      setDownloadingCoverId(null);
     }
   };
 
@@ -801,16 +802,16 @@ const Dashboard = () => {
                             </Button>
                             <Button
                               size="sm"
-                              variant="outline"
-                              className="w-full"
+                              variant="default"
+                              className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleDownloadCoverPDF(book);
                               }}
-                              disabled={!book.cover_url || downloadingBookId === book.id}
+                              disabled={!book.cover_url || downloadingCoverId === book.id}
                             >
                               <FileText className="w-4 h-4 mr-1" />
-                              {downloadingBookId === book.id ? 'Downloading...' : 'Download Cover (Printing)'}
+                              {downloadingCoverId === book.id ? 'Downloading...' : 'Download Cover (Printing)'}
                             </Button>
                             {/* Helper text */}
                             <p className="text-xs text-muted-foreground text-center pt-1">
