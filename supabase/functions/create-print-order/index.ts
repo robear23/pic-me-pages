@@ -140,6 +140,15 @@ serve(async (req) => {
     console.log(`Binding type: ${bindingType}`);
 
     // Get Lulu access token
+    console.log('Authenticating with Lulu...');
+    console.log('Using credentials:', {
+      hasApiKey: !!luluApiKey,
+      apiKeyLength: luluApiKey?.length || 0,
+      hasApiSecret: !!luluApiSecret,
+      apiSecretLength: luluApiSecret?.length || 0,
+      environment: luluEnvironment,
+    });
+    
     const luluAuthResponse = await fetch(`${luluBaseUrl}/auth/realms/glasstree/protocol/openid-connect/token`, {
       method: 'POST',
       headers: {
@@ -153,10 +162,27 @@ serve(async (req) => {
     });
 
     if (!luluAuthResponse.ok) {
-      throw new Error('Failed to authenticate with Lulu');
+      const errorText = await luluAuthResponse.text();
+      console.error('Lulu authentication failed:');
+      console.error('Status:', luluAuthResponse.status);
+      console.error('Response:', errorText);
+      
+      let errorMessage = 'Failed to authenticate with Lulu';
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error_description || errorJson.error || errorMessage;
+      } catch {
+        // Not JSON, use raw text if it's short enough
+        if (errorText.length < 200) {
+          errorMessage += `: ${errorText}`;
+        }
+      }
+      
+      throw new Error(`${errorMessage}. Please check your Lulu API credentials in Settings.`);
     }
 
     const { access_token } = await luluAuthResponse.json();
+    console.log('✓ Successfully authenticated with Lulu');
 
     // Get page count from book's selected_page_count or calculate from pages array
     let interiorPageCount = book.selected_page_count || (Array.isArray(book.pages) ? book.pages.length : 12);
