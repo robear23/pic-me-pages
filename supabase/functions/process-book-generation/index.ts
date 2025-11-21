@@ -27,6 +27,8 @@ interface GenerationJob {
   };
 }
 
+const FUNCTION_TIMEOUT_MS = 240000; // 4 minutes - leave buffer before edge function timeout
+
 Deno.serve(async (req) => {
   console.log('=== process-book-generation invoked ===');
   console.log('Method:', req.method);
@@ -78,8 +80,29 @@ Deno.serve(async (req) => {
       })
       .eq('id', job.id);
 
-    // Process the job
-    await processBookGeneration(supabase, job);
+    // Process the job with comprehensive error handling
+    const startTime = Date.now();
+    try {
+      await processBookGeneration(supabase, job, startTime);
+    } catch (processError) {
+      // ALWAYS mark job as failed if something goes wrong
+      console.error(`Job ${job.id} processing error:`, processError);
+      const errorMessage = processError instanceof Error ? processError.message : 'Unknown error during processing';
+      
+      await supabase
+        .from('book_generation_jobs')
+        .update({
+          status: 'failed',
+          error_message: errorMessage,
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', job.id);
+
+      return new Response(JSON.stringify({ error: errorMessage, jobId: job.id }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     return new Response(JSON.stringify({ success: true, jobId: job.id }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -95,7 +118,15 @@ Deno.serve(async (req) => {
   }
 });
 
-async function processBookGeneration(supabase: any, job: GenerationJob) {
+async function processBookGeneration(supabase: any, job: GenerationJob, startTime: number) {
+  // Check for timeout before starting
+  const checkTimeout = () => {
+    const elapsed = Date.now() - startTime;
+    if (elapsed > FUNCTION_TIMEOUT_MS) {
+      throw new Error(`Job timeout: exceeded ${FUNCTION_TIMEOUT_MS / 1000} seconds`);
+    }
+  };
+
   try {
     const { generation_data } = job;
     const { characters, interests, consistentCharacters, complexityLevel, selectedPageCount, isReworkMode, selectedPagesForRework, generatedBookId } = generation_data;
@@ -117,6 +148,8 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
     const prompts = promptsResponse.data.prompts;
 
     // Step 2: Generate images batch-by-batch to avoid CPU timeout
+    checkTimeout(); // Check before starting image generation
+    
     await updateJobProgress(supabase, job.id, { 
       currentStep: 'generating_images', 
       currentPage: 0, 
@@ -131,6 +164,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
 
     // Process each batch separately
     for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      checkTimeout(); // Check timeout before each batch
       const start = batchIndex * PAGES_PER_BATCH;
       const end = Math.min(start + PAGES_PER_BATCH, prompts.length);
       const batchPrompts = prompts.slice(start, end);
@@ -213,6 +247,8 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
     }
 
     // Step 3: Generate cover (only if we have pages)
+    checkTimeout(); // Check timeout before cover generation
+    
     await updateJobProgress(supabase, job.id, { currentStep: 'generating_cover', currentPage: selectedPageCount, totalPages: selectedPageCount });
     
     const characterName = characters[0]?.name || 'Child';
