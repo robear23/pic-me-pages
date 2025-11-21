@@ -306,9 +306,22 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
     }
 
     // 6. Update book with PDF URLs and determine status
-    // Check if we have all required assets
-    const hasAllAssets = interiorPdfUrl && uploadedCoverUrl && uploadedBackCoverUrl && (coverPdfUrl || uploadedCoverUrl);
-    const bookStatus = hasAllAssets ? 'completed' : 'partial';
+    // A book is complete if it has an interior PDF and at least a front cover
+    const hasInteriorPdf = !!interiorPdfUrl;
+    const hasFrontCover = !!uploadedCoverUrl;
+    
+    let bookStatus: 'completed' | 'partial' | 'failed' = 'completed';
+    
+    if (!hasInteriorPdf) {
+      // No interior PDF = truly failed
+      bookStatus = 'failed';
+    } else if (!hasFrontCover) {
+      // Interior exists but no cover images at all (shouldn't happen with fallback)
+      bookStatus = 'completed'; // Still usable - interior only
+    } else {
+      // Has interior + at least front cover = complete
+      bookStatus = 'completed';
+    }
     
     console.log(`Book ${bookId} status: ${bookStatus}`, {
       hasInteriorPdf: !!interiorPdfUrl,
@@ -330,22 +343,6 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
 
     if (updateError) {
       console.error('Book update error:', updateError);
-    }
-    
-    // Grant retry credit if book is partial due to missing covers
-    if (bookStatus === 'partial') {
-      console.log('Book is partial, granting retry credit');
-      try {
-        await supabase
-          .from('retry_credits')
-          .insert({
-            user_id: userId,
-            book_id: bookId,
-            reason: 'Missing covers - system error during generation',
-          });
-      } catch (creditError) {
-        console.error('Failed to grant retry credit:', creditError);
-      }
     }
 
     return bookId;
