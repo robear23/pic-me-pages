@@ -101,17 +101,44 @@ export const GeneratingStep = () => {
       }
 
       try {
+        // CRITICAL FIX: Convert File objects to base64 before storing
+        console.log('Processing character photos...');
+        const processedCharacters = await Promise.all(
+          characters.map(async (c) => ({
+            name: c.name,
+            photos: await Promise.all(
+              c.photos.map(async (photo) => {
+                if (!photo) return null;
+                return new Promise<string | null>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => {
+                    console.log(`✓ Converted photo to base64 (${(reader.result as string).length} chars)`);
+                    resolve(reader.result as string);
+                  };
+                  reader.onerror = () => {
+                    console.error('Failed to read photo file');
+                    resolve(null);
+                  };
+                  reader.readAsDataURL(photo);
+                });
+              })
+            )
+          }))
+        );
+
+        console.log('Processed characters:', processedCharacters.map(c => ({
+          name: c.name,
+          photoCount: c.photos.filter(p => p !== null).length
+        })));
+
         const { data: job, error: jobError } = await supabase
           .from('book_generation_jobs')
           .insert({
             user_id: user.id,
             book_id: isReworkMode ? (generatedBookId || null) : null,
             status: 'pending',
-            generation_data: JSON.parse(JSON.stringify({
-              characters: characters.map(c => ({
-                name: c.name,
-                photos: c.photos || []
-              })),
+            generation_data: {
+              characters: processedCharacters, // Now contains base64 strings
               interests: selectedInterests,
               consistentCharacters,
               complexityLevel,
@@ -119,7 +146,7 @@ export const GeneratingStep = () => {
               isReworkMode,
               selectedPagesForRework,
               generatedBookId,
-            })),
+            }
           })
           .select()
           .single();
