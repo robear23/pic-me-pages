@@ -440,40 +440,26 @@ export const CompleteStep = () => {
           </motion.div>
         )}
         
-        {/* Cover Preview Section */}
-        {bookData && (bookData.cover_image_url || bookData.back_cover_image_url) && (
+        {/* Cover Preview Section - Front Cover Only */}
+        {bookData?.cover_image_url && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.15 }}
             className="mb-8"
           >
-            <h3 className="text-2xl font-bold mb-4 text-center">Book Covers</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-4xl mx-auto">
-              {bookData.cover_image_url && (
-                <div className="relative aspect-[8.5/11] rounded-xl overflow-hidden border border-border">
-                  <img
-                    src={bookData.cover_image_url}
-                    alt="Front Cover"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute bottom-2 left-2 bg-background/80 backdrop-blur-sm px-3 py-1 rounded text-sm font-bold">
-                    Front Cover
-                  </div>
+            <h3 className="text-2xl font-bold mb-4 text-center">Front Cover Preview</h3>
+            <div className="flex justify-center max-w-2xl mx-auto">
+              <div className="relative aspect-[8.5/11] w-full max-w-md rounded-xl overflow-hidden border border-border shadow-2xl">
+                <img
+                  src={bookData.cover_image_url}
+                  alt="Front Cover"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute bottom-2 left-2 bg-background/80 backdrop-blur-sm px-3 py-1 rounded text-sm font-bold">
+                  Front Cover
                 </div>
-              )}
-              {bookData.back_cover_image_url && (
-                <div className="relative aspect-[8.5/11] rounded-xl overflow-hidden border border-border">
-                  <img
-                    src={bookData.back_cover_image_url}
-                    alt="Back Cover"
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute bottom-2 left-2 bg-background/80 backdrop-blur-sm px-3 py-1 rounded text-sm font-bold">
-                    Back Cover
-                  </div>
-                </div>
-              )}
+              </div>
             </div>
           </motion.div>
         )}
