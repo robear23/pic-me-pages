@@ -39,6 +39,8 @@ export const CompleteStep = () => {
   const [bookData, setBookData] = useState<any>(null);
   const [retryingCovers, setRetryingCovers] = useState(false);
   const [generatingPdfs, setGeneratingPdfs] = useState(false);
+  const [pdfGenerationError, setPdfGenerationError] = useState<string | null>(null);
+  const [pdfGenerationAttempted, setPdfGenerationAttempted] = useState(false);
   
   const characterNames = characters.map(c => c.name).filter(Boolean).join(' and ');
 
@@ -157,11 +159,18 @@ export const CompleteStep = () => {
               setReworkedPageNumbers(fetchedBook.reworked_page_numbers);
             }
 
-            // Check if PDFs need to be generated
+            // Check localStorage to see if generation was already attempted for this book
+            const generationKey = `pdf-generation-attempted-${generatedBookId}`;
+            const alreadyAttempted = localStorage.getItem(generationKey);
+            
+            // Only attempt PDF generation once per book, and only if not already attempted
             const needsPdfs = fetchedBook.status === 'completed' && (!fetchedBook.pdf_url || !fetchedBook.cover_url);
             const hasPages = Array.isArray(fetchedBook.pages) && fetchedBook.pages.length > 0;
-            if (needsPdfs && hasPages) {
+            
+            if (needsPdfs && hasPages && !alreadyAttempted && !pdfGenerationAttempted && !generatingPdfs) {
               console.log('📄 Book completed but missing PDFs, generating...');
+              setPdfGenerationAttempted(true);
+              localStorage.setItem(generationKey, Date.now().toString());
               await generateMissingPdfs(fetchedBook);
             }
           }
@@ -190,10 +199,22 @@ export const CompleteStep = () => {
       reworkedPageNumbers,
       maxReworksReached
     });
-  }, [generatedBookId, user]);
+  }, [generatedBookId, user]); // Removed dependencies that could cause re-runs
 
   const generateMissingPdfs = async (book: any) => {
+    if (generatingPdfs) {
+      console.log('⚠️ PDF generation already in progress, skipping...');
+      return;
+    }
+
     setGeneratingPdfs(true);
+    setPdfGenerationError(null);
+
+    // Create a timeout promise (2 minutes)
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('PDF generation timed out after 2 minutes')), 120000);
+    });
+
     try {
       toast({
         title: 'Generating PDFs',
@@ -205,7 +226,9 @@ export const CompleteStep = () => {
       // Generate interior PDF if missing
       const hasPages = Array.isArray(book.pages) && book.pages.length > 0;
       if (!book.pdf_url && hasPages) {
-        const interiorPdfUrl = await repairBookPdf(
+        console.log('📄 Generating interior PDF...');
+        
+        const interiorPromise = repairBookPdf(
           book.id,
           book.pages.map((p: any) => ({ imageUrl: p.imageUrl })),
           { 
@@ -215,22 +238,29 @@ export const CompleteStep = () => {
           }
         );
 
+        const interiorPdfUrl = await Promise.race([interiorPromise, timeoutPromise]) as string;
+
         await supabase
           .from('books')
           .update({ pdf_url: interiorPdfUrl })
           .eq('id', book.id);
 
         setBookData((prev: any) => ({ ...prev, pdf_url: interiorPdfUrl }));
+        console.log('✅ Interior PDF generated successfully');
       }
 
       // Generate cover PDF if missing
       if (!book.cover_url && book.cover_image_url && book.back_cover_image_url) {
-        const coverPdfUrl = await generateCoverWrapPdf(
+        console.log('📄 Generating cover PDF...');
+        
+        const coverPromise = generateCoverWrapPdf(
           book.id,
           book.cover_image_url,
           book.back_cover_image_url,
           book.selected_pod_package_id
         );
+
+        const coverPdfUrl = await Promise.race([coverPromise, timeoutPromise]) as string;
 
         await supabase
           .from('books')
@@ -238,6 +268,7 @@ export const CompleteStep = () => {
           .eq('id', book.id);
 
         setBookData((prev: any) => ({ ...prev, cover_url: coverPdfUrl }));
+        console.log('✅ Cover PDF generated successfully');
       }
 
       toast({
@@ -245,15 +276,31 @@ export const CompleteStep = () => {
         description: 'Your print-ready PDFs are now available!',
       });
     } catch (error: any) {
-      console.error('Error generating PDFs:', error);
+      console.error('❌ Error generating PDFs:', error);
+      const errorMessage = error.message || 'Failed to generate PDFs. Please try again.';
+      setPdfGenerationError(errorMessage);
+      
       toast({
         title: 'PDF Generation Failed',
-        description: error.message || 'Failed to generate PDFs. Please try again.',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
       setGeneratingPdfs(false);
     }
+  };
+
+  const handleManualPdfGeneration = () => {
+    if (!bookData) return;
+    
+    // Clear the localStorage flag to allow retry
+    const generationKey = `pdf-generation-attempted-${generatedBookId}`;
+    localStorage.removeItem(generationKey);
+    
+    // Reset state and retry
+    setPdfGenerationAttempted(false);
+    setPdfGenerationError(null);
+    generateMissingPdfs(bookData);
   };
 
   const handleDownload = async () => {
@@ -400,8 +447,62 @@ export const CompleteStep = () => {
                 <AlertDescription className="text-foreground">
                   <strong>Generating print-ready PDFs...</strong>
                   <p className="text-sm mt-1 text-muted-foreground">
-                    This will only take a moment.
+                    This may take up to 2 minutes. Please don't close this page.
                   </p>
+                </AlertDescription>
+              </Alert>
+            </motion.div>
+          )}
+
+          {/* PDF Generation Error */}
+          {pdfGenerationError && !generatingPdfs && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6"
+            >
+              <Alert className="border-destructive/50 bg-destructive/10">
+                <AlertCircle className="h-4 w-4 text-destructive" />
+                <AlertDescription className="text-foreground">
+                  <strong>PDF Generation Failed</strong>
+                  <p className="text-sm mt-1 text-muted-foreground">
+                    {pdfGenerationError}
+                  </p>
+                  <Button
+                    onClick={handleManualPdfGeneration}
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                  >
+                    Retry PDF Generation
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            </motion.div>
+          )}
+
+          {/* Missing PDFs - Manual Generation Option */}
+          {bookData && !generatingPdfs && !pdfGenerationError && (!bookData.pdf_url || !bookData.cover_url) && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6"
+            >
+              <Alert className="border-amber-500/50 bg-amber-500/10">
+                <AlertCircle className="h-4 w-4 text-amber-500" />
+                <AlertDescription className="text-foreground">
+                  <strong>Print-Ready PDFs Not Generated</strong>
+                  <p className="text-sm mt-1 text-muted-foreground">
+                    Your book is complete, but print-ready PDFs haven't been generated yet.
+                  </p>
+                  <Button
+                    onClick={handleManualPdfGeneration}
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                  >
+                    Generate Print PDFs
+                  </Button>
                 </AlertDescription>
               </Alert>
             </motion.div>

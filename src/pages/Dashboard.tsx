@@ -69,6 +69,7 @@ const Dashboard = () => {
   const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
   const [downloadingBookId, setDownloadingBookId] = useState<string | null>(null);
   const [downloadingCoverId, setDownloadingCoverId] = useState<string | null>(null);
+  const [autoFixAttempted, setAutoFixAttempted] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (user) {
@@ -81,34 +82,46 @@ const Dashboard = () => {
     }
   }, [user, retryCount]);
 
-  // Auto-generate PDFs for completed books missing them
+  // Auto-generate PDFs for completed books missing them (ONCE per book)
   useEffect(() => {
     const fixIncompleteBooks = async () => {
+      // Only process books that haven't been attempted yet
       const booksNeedingPdfs = books.filter(book => 
         book.status === 'completed' && 
         (!book.pdf_url || !book.cover_url) &&
         book.pages &&
         Array.isArray(book.pages) &&
         book.pages.length > 0 &&
-        !isGeneratingPdf // Don't trigger if already generating
+        !isGeneratingPdf && // Don't trigger if already generating
+        !autoFixAttempted.has(book.id) // Don't retry if already attempted
       );
 
       if (booksNeedingPdfs.length > 0) {
-        console.log(`🔧 Found ${booksNeedingPdfs.length} completed books missing PDFs, auto-fixing...`);
+        console.log(`🔧 Found ${booksNeedingPdfs.length} completed books missing PDFs`);
+        
+        // Mark all these books as attempted immediately to prevent retries
+        const newAttempted = new Set(autoFixAttempted);
+        booksNeedingPdfs.forEach(book => newAttempted.add(book.id));
+        setAutoFixAttempted(newAttempted);
         
         // Fix them one at a time to avoid overwhelming the system
         for (const book of booksNeedingPdfs) {
           try {
+            console.log(`🔧 Auto-fixing PDFs for book ${book.id}...`);
             await handleGeneratePdf(book, false);
           } catch (error) {
             console.error(`Failed to generate PDFs for book ${book.id}:`, error);
+            toast.error(`Failed to auto-generate PDFs for ${book.character_name}'s book`);
           }
         }
       }
     };
 
-    fixIncompleteBooks();
-  }, [books, isGeneratingPdf]);
+    // Only run if we have books and aren't currently generating
+    if (books.length > 0 && !isGeneratingPdf) {
+      fixIncompleteBooks();
+    }
+  }, [books]); // Only depend on books array, not isGeneratingPdf
 
   const loadBooks = async () => {
     if (!user) {
@@ -387,19 +400,36 @@ const Dashboard = () => {
       return null;
     }
 
+    // Prevent duplicate generation attempts
+    if (isGeneratingPdf === book.id) {
+      console.log('⚠️ PDF generation already in progress for this book');
+      return null;
+    }
+
     setIsGeneratingPdf(book.id);
     setPdfProgress({ current: 0, total: book.pages.length });
     
+    // Create a timeout promise (2 minutes)
+    const timeoutPromise = new Promise<null>((_, reject) => {
+      setTimeout(() => reject(new Error('PDF generation timed out after 2 minutes')), 120000);
+    });
+
     try {
       toast.info(quickPreview ? 'Generating quick preview PDF...' : 'Generating PDF with padding...');
       
-      const pdfUrl = await repairBookPdf(book.id, book.pages, {
+      const pdfPromise = repairBookPdf(book.id, book.pages, {
         minPages: quickPreview ? 0 : 24,
         pageCount: quickPreview ? book.pages.length : undefined,
         onProgress: (current, total) => {
           setPdfProgress({ current, total });
         }
       });
+
+      const pdfUrl = await Promise.race([pdfPromise, timeoutPromise]);
+      
+      if (!pdfUrl) {
+        throw new Error('PDF generation failed');
+      }
       
       // Update local state
       setBooks(prevBooks => 
@@ -409,8 +439,13 @@ const Dashboard = () => {
       toast.success('PDF generated successfully!');
       return pdfUrl;
     } catch (error: any) {
-      console.error('Error generating PDF:', error);
-      toast.error(error.message || 'Failed to generate PDF');
+      console.error('❌ Error generating PDF:', error);
+      
+      const errorMessage = error.message?.includes('timed out') 
+        ? 'PDF generation took too long. Please try again or contact support.'
+        : error.message || 'Failed to generate PDF';
+      
+      toast.error(errorMessage);
       return null;
     } finally {
       setIsGeneratingPdf(null);
