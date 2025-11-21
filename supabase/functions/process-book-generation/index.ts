@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
       .update({
         status: 'processing',
         started_at: new Date().toISOString(),
-        progress: { currentPage: 0, totalPages: job.generation_data.selectedPageCount, currentStep: 'generating_prompts' }
+        progress: { currentPage: 0, totalPages: job.generation_data.selectedPageCount, currentStep: 'Preparing generation' }
       })
       .eq('id', job.id);
 
@@ -134,7 +134,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     const { characters, interests, consistentCharacters, complexityLevel, selectedPageCount, isReworkMode, selectedPagesForRework, generatedBookId } = generation_data;
 
     // Step 1: Generate prompts
-    await updateJobProgress(supabase, job.id, { currentStep: 'generating_prompts', currentPage: 0, totalPages: selectedPageCount });
+    await updateJobProgress(supabase, job.id, { currentStep: 'Creating story prompts', currentPage: 0, totalPages: selectedPageCount });
     
     const promptsResponse = await supabase.functions.invoke('generate-prompts', {
       body: {
@@ -153,7 +153,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     checkTimeout(); // Check before starting image generation
     
     await updateJobProgress(supabase, job.id, { 
-      currentStep: 'generating_images', 
+      currentStep: 'Generating coloring pages', 
       currentPage: 0, 
       totalPages: selectedPageCount 
     });
@@ -290,7 +290,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       checkTimeout();
       console.log('\n=== Early Cover Generation (after first page) ===');
       await updateJobProgress(supabase, job.id, { 
-        currentStep: 'generating_cover', 
+        currentStep: 'Creating book cover', 
         currentPage: generatedPages.length, 
         totalPages: selectedPageCount 
       });
@@ -540,7 +540,7 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
     // Cover generation moved to after first page (above) - no separate step needed here
 
     // Step 4: Save book to database
-    await updateJobProgress(supabase, job.id, { currentStep: 'saving_book', currentPage: selectedPageCount, totalPages: selectedPageCount });
+    await updateJobProgress(supabase, job.id, { currentStep: 'Finalizing your book', currentPage: selectedPageCount, totalPages: selectedPageCount });
 
     // Determine book status based on generation results - include cover PDF check
     const hasCovers = !!(coverImageUrl && backCoverImageUrl);
