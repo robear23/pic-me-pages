@@ -7,7 +7,7 @@ import { useAdmin } from '@/hooks/useAdmin';
 import { useBookStore } from '@/store/bookStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap, AlertCircle } from 'lucide-react';
+import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap, AlertCircle, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import { OrderPhysicalBookDialog } from '@/components/OrderPhysicalBookDialog';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,7 @@ import { Progress } from '@/components/ui/progress';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { repairBookPdf, toDataUrl } from '@/lib/repairPdf';
 import { jsPDF } from 'jspdf';
+import { validateBookCompleteness, getMissingComponents, getBookStatusLabel, findIncompleteBooks as getIncompleteBooksList } from '@/lib/bookValidation';
 
 interface Book {
   id: string;
@@ -224,15 +225,7 @@ const Dashboard = () => {
   };
 
   const getIncompleteBooks = () => {
-    return books.filter(book => 
-      book.status === 'processing' || 
-      book.status === 'failed' ||
-      book.status === 'partial' ||
-      !book.pdf_url ||
-      !book.cover_image_url ||
-      !book.back_cover_image_url ||
-      (book.status === 'completed' && (!book.pdf_url || !book.cover_image_url || !book.cover_url))
-    );
+    return getIncompleteBooksList(books);
   };
   
   const getPartialBooks = () => {
@@ -829,10 +822,28 @@ const Dashboard = () => {
               {incompleteBooks.length > 0 && (
                 <Alert className="mb-6 bg-amber-50 dark:bg-amber-950/50 border-amber-500/50">
                   <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-                  <AlertTitle className="text-amber-900 dark:text-amber-200">Incomplete Books Found</AlertTitle>
+                  <AlertTitle className="text-amber-900 dark:text-amber-200">
+                    {incompleteBooks.length} Incomplete Book(s) Found
+                  </AlertTitle>
                   <AlertDescription className="text-amber-800 dark:text-amber-300">
-                    You have {incompleteBooks.length} incomplete book(s) that failed during generation or are missing required files. 
-                    These cannot be downloaded or ordered. Use "Clean Up" to remove them.
+                    <div className="space-y-2">
+                      <p>The following books have missing components:</p>
+                      <ul className="list-disc list-inside space-y-1 ml-2">
+                        {incompleteBooks.map(book => {
+                          const missing = getMissingComponents(book);
+                          return (
+                            <li key={book.id}>
+                              <strong>{book.character_name}'s Book</strong>: {missing.join(', ')}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                      <p className="mt-2">
+                        {incompleteBooks.some(b => !b.pdf_url || !b.cover_url) 
+                          ? "Books with missing PDFs can be auto-generated when you click download or use the 'Generate Missing Files' button." 
+                          : "These books cannot be downloaded or ordered until they are complete."}
+                      </p>
+                    </div>
                   </AlertDescription>
                 </Alert>
               )}
@@ -914,31 +925,34 @@ const Dashboard = () => {
                         alt={book.character_name}
                         className="w-full h-full object-cover"
                       />
+                      {(() => {
+                        const missing = getMissingComponents(book);
+                        return missing.length > 0 && (
+                          <div className="absolute top-2 right-2 bg-amber-500 text-white rounded-full p-1.5 shadow-lg">
+                            <AlertCircle className="w-4 h-4" />
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div className="p-4">
                       <div className="flex items-center justify-between mb-2">
                         <h3 className="text-lg font-semibold text-foreground">
                           {book.character_name}'s Coloring Book
                         </h3>
-                        <div className="flex gap-2">
+                        <div className="flex gap-1 flex-wrap justify-end">
                           {book.pages && (
-                            <Badge variant={book.pages.length === 12 ? "default" : "destructive"}>
+                            <Badge variant={book.pages.length === 12 ? "default" : "destructive"} className="text-xs">
                               {book.pages.length}/12
                             </Badge>
                           )}
-                          <Badge 
-                            variant={
-                              book.status === 'completed' && !book.missing_covers ? 'default' : 
-                              book.status === 'partial' || book.missing_covers ? 'secondary' :
-                              book.status === 'processing' ? 'secondary' : 
-                              'destructive'
-                            } 
-                            className="text-xs"
-                          >
-                            {book.missing_covers ? 'Missing Covers' : 
-                             book.status === 'partial' ? 'Partial' : 
-                             book.status.charAt(0).toUpperCase() + book.status.slice(1)}
-                          </Badge>
+                          {(() => {
+                            const status = getBookStatusLabel(book);
+                            return (
+                              <Badge variant={status.variant} className="text-xs">
+                                {status.label}
+                              </Badge>
+                            );
+                          })()}
                         </div>
                       </div>
                       <p className="text-sm text-muted-foreground mb-3">
@@ -974,22 +988,44 @@ const Dashboard = () => {
                             </div>
                             <Progress value={(pdfProgress.current / pdfProgress.total) * 100} />
                           </div>
-                        )}
-                         {book.status === 'completed' ? (
-                          <div className="space-y-2">
-                            <Button
-                              size="default"
-                              variant="default"
-                              className="w-full"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadOrGenerate(book);
-                              }}
-                              disabled={isGeneratingPdf === book.id || downloadingBookId === book.id}
-                            >
-                              <BookOpen className="w-4 h-4 mr-1" />
-                              {downloadingBookId === book.id ? 'Downloading...' : isGeneratingPdf === book.id ? 'Generating...' : 'Download Book (Interior)'}
-                            </Button>
+                         )}
+                         {(() => {
+                           const completeness = validateBookCompleteness(book);
+                           
+                           // Show "Generate Missing Files" button if book can be auto-fixed
+                           if (completeness.canAutoFix && !isGeneratingPdf) {
+                             return (
+                               <Button
+                                 size="sm"
+                                 variant="secondary"
+                                 className="w-full gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0"
+                                 onClick={async (e) => {
+                                   e.stopPropagation();
+                                   toast.info('Generating missing files...');
+                                   await handleGeneratePdf(book, false);
+                                 }}
+                               >
+                                 <Wrench className="w-4 h-4" />
+                                 Generate Missing Files
+                               </Button>
+                             );
+                           }
+                           
+                           return book.status === 'completed' ? (
+                             <div className="space-y-2">
+                               <Button
+                                 size="default"
+                                 variant="default"
+                                 className="w-full"
+                                 onClick={(e) => {
+                                   e.stopPropagation();
+                                   handleDownloadOrGenerate(book);
+                                 }}
+                                 disabled={isGeneratingPdf === book.id || downloadingBookId === book.id}
+                               >
+                                 <BookOpen className="w-4 h-4 mr-1" />
+                                 {downloadingBookId === book.id ? 'Downloading...' : isGeneratingPdf === book.id ? 'Generating...' : 'Download Book (Interior)'}
+                               </Button>
                             <Button
                               size="sm"
                               variant="default"
@@ -1007,41 +1043,42 @@ const Dashboard = () => {
                             <p className="text-xs text-muted-foreground text-center pt-1">
                               Interior for coloring • Cover for printing
                             </p>
-                            <OrderPhysicalBookDialog 
-                              bookId={book.id}
-                              bookTitle={`${book.character_name}'s Coloring Book`}
-                            />
-                          </div>
-                        ) : book.status === 'partial' || book.missing_covers ? (
-                          <Button 
-                            size="sm" 
-                            variant="default" 
-                            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                            onClick={(e) => handleRetryCoverGeneration(book, e)}
-                            disabled={retryingCoverId === book.id}
-                          >
-                            <Zap className="w-4 h-4 mr-1" />
-                            {retryingCoverId === book.id ? 'Generating Covers...' : 'Retry Cover Generation'}
-                          </Button>
-                        ) : book.status === 'failed' || (book.status === 'processing' && hasAssociatedOrders(book.id)) ? (
-                          <Button 
-                            size="sm" 
-                            variant="outline" 
-                            className="w-full border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRetryGeneration(book);
-                            }}
-                            disabled={isGeneratingPdf === book.id}
-                          >
-                            <Zap className="w-4 h-4 mr-1" />
-                            {isGeneratingPdf === book.id ? 'Retrying...' : 'Retry Generation'}
-                          </Button>
-                        ) : (
-                          <Button size="sm" variant="outline" className="w-full" disabled>
-                            Processing...
-                          </Button>
-                        )}
+                               <OrderPhysicalBookDialog 
+                                 bookId={book.id}
+                                 bookTitle={`${book.character_name}'s Coloring Book`}
+                               />
+                             </div>
+                           ) : book.status === 'partial' || book.missing_covers ? (
+                             <Button 
+                               size="sm" 
+                               variant="default" 
+                               className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                               onClick={(e) => handleRetryCoverGeneration(book, e)}
+                               disabled={retryingCoverId === book.id}
+                             >
+                               <Zap className="w-4 h-4 mr-1" />
+                               {retryingCoverId === book.id ? 'Generating Covers...' : 'Retry Cover Generation'}
+                             </Button>
+                           ) : book.status === 'failed' || (book.status === 'processing' && hasAssociatedOrders(book.id)) ? (
+                             <Button 
+                               size="sm" 
+                               variant="outline" 
+                               className="w-full border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50"
+                               onClick={(e) => {
+                                 e.stopPropagation();
+                                 handleRetryGeneration(book);
+                               }}
+                               disabled={isGeneratingPdf === book.id}
+                             >
+                               <Zap className="w-4 h-4 mr-1" />
+                               {isGeneratingPdf === book.id ? 'Retrying...' : 'Retry Generation'}
+                             </Button>
+                           ) : (
+                             <Button size="sm" variant="outline" className="w-full" disabled>
+                               Processing...
+                             </Button>
+                           );
+                         })()}
                         <Button
                           size="sm"
                           variant="outline"

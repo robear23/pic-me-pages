@@ -1,4 +1,5 @@
 import { supabase } from '@/integrations/supabase/client';
+import { validateBookCompleteness, type Book } from './bookValidation';
 
 export interface CleanupResult {
   duplicatesFound: number;
@@ -47,6 +48,7 @@ export async function findDuplicateBooks(userId: string) {
 
 /**
  * Find incomplete books (missing PDFs or covers, or status is processing/failed)
+ * Now uses shared validation logic for consistency
  */
 export async function findIncompleteBooks(userId: string) {
   const { data: books, error } = await supabase
@@ -59,14 +61,7 @@ export async function findIncompleteBooks(userId: string) {
     return [];
   }
 
-  return books.filter(book => 
-    book.status === 'processing' ||
-    book.status === 'failed' ||
-    book.status === 'partial' ||
-    !book.pdf_url ||
-    !book.cover_image_url ||
-    !book.back_cover_image_url
-  );
+  return books.filter(book => !validateBookCompleteness(book as Book).isComplete);
 }
 
 /**
