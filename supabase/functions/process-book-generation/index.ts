@@ -28,6 +28,10 @@ interface GenerationJob {
 }
 
 Deno.serve(async (req) => {
+  console.log('=== process-book-generation invoked ===');
+  console.log('Method:', req.method);
+  console.log('Time:', new Date().toISOString());
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -38,6 +42,7 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // Get next pending job
+    console.log('Fetching pending jobs...');
     const { data: jobs, error: fetchError } = await supabase
       .from('book_generation_jobs')
       .select('*')
@@ -54,13 +59,14 @@ Deno.serve(async (req) => {
     }
 
     if (!jobs || jobs.length === 0) {
+      console.log('No pending jobs found');
       return new Response(JSON.stringify({ message: 'No pending jobs' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     const job = jobs[0] as GenerationJob;
-    console.log(`Processing job ${job.id} for user ${job.user_id}`);
+    console.log(`Found pending job ${job.id} for user ${job.user_id}`);
 
     // Mark job as processing
     await supabase

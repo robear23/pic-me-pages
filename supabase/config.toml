@@ -1,5 +1,8 @@
 project_id = "yzcqvuidasgljeifvmxk"
 
+[functions.process-book-generation]
+verify_jwt = false
+
 [functions.generate-prompts]
 verify_jwt = false
 
