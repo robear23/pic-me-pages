@@ -10,45 +10,62 @@ const corsHeaders = {
 const BASE_DELAY = 1000;
 const FUNCTION_TIMEOUT = 140000; // 140 seconds (10s before hard limit)
 
-// Enhanced system message for Step 1 - Photorealistic requirement
-const REALISTIC_SYSTEM_MESSAGE = `ABSOLUTE REQUIREMENT: Generate a REAL CAMERA PHOTOGRAPH with actual depth, lighting, and texture.
+// Enhanced system message for Step 1 - Photorealistic with high-key lighting for line art conversion
+const REALISTIC_SYSTEM_MESSAGE = `ABSOLUTE REQUIREMENT: Generate a REAL CAMERA PHOTOGRAPH optimized for line art conversion.
 
 CRITICAL FORBIDDEN STYLES:
 ❌ NO cartoons, illustrations, anime, digital art, drawings, sketches, clipart, or 2D renders
 ❌ NO flat colors, sharp boundaries, or uniform shading
 ❌ NO artistic interpretations or stylized images
 
-REQUIRED PHOTOGRAPHIC ELEMENTS:
-✓ Natural camera depth of field (soft background blur)
-✓ Realistic skin texture with pores, subtle imperfections
-✓ Natural hair with individual strands and highlights
-✓ Soft shadows from natural/studio lighting
-✓ Subtle color gradients (not flat fills)
-✓ Environmental context (real room, outdoor scene, simple backdrop)
+REQUIRED PHOTOGRAPHIC ELEMENTS (OPTIMIZED FOR LINE ART):
+✓ HIGH-KEY LIGHTING: Bright, even, flat lighting with MINIMAL shadows
+✓ OVEREXPOSED style: Reduce dramatic shadows and dark areas
+✓ Simple, solid-color background (white, light gray, or single pastel color)
+✓ Clear subject separation: High contrast between subject and background
+✓ Minimal texture detail: Smooth rendering without excessive pores/wrinkles
+✓ Frontal or side lighting (NOT dramatic side lighting with deep shadows)
+✓ Environmental context: Simple real setting with minimal clutter
 
 CHARACTER MATCHING:
 - Match reference photo EXACTLY: face, hair color/style, skin tone, eye color, age
 - Same person in a DIFFERENT real-world photo scenario
-- Professional portrait photography quality
+- Think: passport photo, yearbook photo, bright studio portrait (NOT moody dramatic portrait)
 
 SCENE COMPOSITION:
-- Clean, simple background (solid color backdrop or simple real setting)
+- Clean, simple background (solid color backdrop preferred)
 - Natural pose appropriate for the described activity
 - Child-friendly and wholesome
+- MINIMAL shadows cast by subject
+- Bright, cheerful lighting
+
+LIGHTING STYLE (CRITICAL FOR SUCCESS):
+- Think "overcast day" or "ring light" - soft, diffused, even lighting
+- NOT "golden hour" or "window light" with dramatic shadows
+- Flat lighting reduces shading that needs removal in line art step
+- High contrast between dark (hair, clothing) and light (skin, background) areas
 
 VALIDATION: Your output will be analyzed for color variance. Photorealistic images have 25-50% variance. Cartoons have <15% variance. IF YOUR IMAGE TESTS BELOW 18% VARIANCE, IT WILL BE REJECTED.
 
-OUTPUT: A real photograph that could have been taken with a professional camera. Think: school photo, family portrait, candid snapshot - NOT illustration.`;
+OUTPUT: A bright, evenly-lit photograph that maintains realism but minimizes complex shading and shadows. Think: bright studio photo, high-key portrait, passport photo style - NOT dramatic moody photography.`;
 
-// Enhanced system message for Step 2 - Line art conversion
+// Enhanced system message for Step 2 - Line art conversion with shadow handling
 const LINE_ART_SYSTEM_MESSAGE = `CRITICAL: Convert the INPUT IMAGE ONLY to pure black and white line art. Do NOT regenerate the scene.
 
 CONVERSION REQUIREMENTS:
-- Transform EVERY gray pixel to either pure black (#000000) OR pure white (#FFFFFF)
-- ABSOLUTELY NO gray tones, shading, shadows, gradients, or photographic elements remaining
-- NO filled black areas - use hatching/crosshatching patterns for dark regions
+- Transform EVERY pixel to either pure black (#000000) OR pure white (#FFFFFF)
+- ABSOLUTELY NO gray tones, shading, shadows, gradients, or photographic elements
+- Convert soft shadows to white (remove them entirely)
+- Convert dark shadows to black outlines or white (depending on context)
+- NO filled black areas - use hatching/crosshatching for any remaining dark regions
 - Bold 2-4px outlines suitable for children to color
 - If you see ANY photographic elements remaining, you FAILED
+
+SHADOW HANDLING:
+- Soft/light shadows → Convert to WHITE (remove completely)
+- Medium shadows → Convert to light hatching lines
+- Hard edges of shadows → Convert to black outlines
+- Goal: Crisp outlines with minimal internal detail
 
 CHARACTER: Preserve recognizable facial features from the input image
 STYLE: Clean professional coloring book style with simple outlines
@@ -56,17 +73,16 @@ STYLE: Clean professional coloring book style with simple outlines
 VALIDATION CRITERIA (you will be checked):
 1. <8% of pixels can be gray (compression artifacts only)
 2. <4% of pixels can be mid-tone gray (50-200 range)
-3. >50% gray means COMPLETE FAILURE - image wasn't converted at all
+3. >50% gray means COMPLETE FAILURE
 4. Must look like a hand-drawn coloring book page
 
 CRITICAL RULES:
-1. Convert the PROVIDED IMAGE - do NOT create a new image from the text description
-2. Binary output only: each pixel must be either pure black OR pure white
-3. NO partial conversions - remove ALL photographic elements completely
+1. Convert the PROVIDED IMAGE - do NOT create new image from text
+2. Binary output only: pure black OR pure white pixels
+3. Remove ALL photographic shadows by converting them to white
 4. Must be printer-ready with crisp black lines on white background
 
-CRITICAL: A successful conversion has clear black outlines on white background with NO photographic traces.
-OUTPUT: Clean black and white line drawing ready for children to color with crayons.`;
+OUTPUT: Clean black and white line drawing with NO gray tones or photographic shadows.`;
 
 // Helper function to simplify prompts that might trigger safety filters
 function simplifyPromptForRetry(originalPrompt: string, attemptNumber: number): string {
@@ -172,9 +188,9 @@ async function validateLineArt(base64Image: string): Promise<{
       return { valid: false, grayPixelPercentage: grayPercentage, hasPhotographicElements: true };
     }
     
-    // Significantly relaxed thresholds - accept light shading and gradients suitable for coloring
-    const GRAY_THRESHOLD = 30; // Increased from 15% - allows light shading
-    const MID_GRAY_THRESHOLD = 18; // Increased from 8% - allows softer gradients
+    // Adjusted thresholds for high-key source images - more lenient with bright photos
+    const GRAY_THRESHOLD = 35; // Increased - bright source images may have more compression artifacts
+    const MID_GRAY_THRESHOLD = 20; // Increased - allows slightly more gray from bright photos
     
     const hasExcessiveGray = grayPercentage > GRAY_THRESHOLD;
     const hasExcessiveMidTones = nearGrayPercentage > MID_GRAY_THRESHOLD;
