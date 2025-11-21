@@ -38,6 +38,7 @@ export const CompleteStep = () => {
   const { toast } = useToast();
   const [bookData, setBookData] = useState<any>(null);
   const [retryingCovers, setRetryingCovers] = useState(false);
+  const [generatingPdfs, setGeneratingPdfs] = useState(false);
   
   const characterNames = characters.map(c => c.name).filter(Boolean).join(' and ');
 
@@ -155,6 +156,14 @@ export const CompleteStep = () => {
             if (fetchedBook.reworked_page_numbers) {
               setReworkedPageNumbers(fetchedBook.reworked_page_numbers);
             }
+
+            // Check if PDFs need to be generated
+            const needsPdfs = fetchedBook.status === 'completed' && (!fetchedBook.pdf_url || !fetchedBook.cover_url);
+            const hasPages = Array.isArray(fetchedBook.pages) && fetchedBook.pages.length > 0;
+            if (needsPdfs && hasPages) {
+              console.log('📄 Book completed but missing PDFs, generating...');
+              await generateMissingPdfs(fetchedBook);
+            }
           }
         } catch (error) {
           console.error('Error loading book:', error);
@@ -182,6 +191,70 @@ export const CompleteStep = () => {
       maxReworksReached
     });
   }, [generatedBookId, user]);
+
+  const generateMissingPdfs = async (book: any) => {
+    setGeneratingPdfs(true);
+    try {
+      toast({
+        title: 'Generating PDFs',
+        description: 'Creating print-ready PDFs for your book...',
+      });
+
+      const { repairBookPdf, generateCoverWrapPdf } = await import('@/lib/repairPdf');
+
+      // Generate interior PDF if missing
+      const hasPages = Array.isArray(book.pages) && book.pages.length > 0;
+      if (!book.pdf_url && hasPages) {
+        const interiorPdfUrl = await repairBookPdf(
+          book.id,
+          book.pages.map((p: any) => ({ imageUrl: p.imageUrl })),
+          { 
+            pageCount: book.selected_page_count || book.pages.length,
+            padWith: 'blank',
+            podPackageId: book.selected_pod_package_id
+          }
+        );
+
+        await supabase
+          .from('books')
+          .update({ pdf_url: interiorPdfUrl })
+          .eq('id', book.id);
+
+        setBookData((prev: any) => ({ ...prev, pdf_url: interiorPdfUrl }));
+      }
+
+      // Generate cover PDF if missing
+      if (!book.cover_url && book.cover_image_url && book.back_cover_image_url) {
+        const coverPdfUrl = await generateCoverWrapPdf(
+          book.id,
+          book.cover_image_url,
+          book.back_cover_image_url,
+          book.selected_pod_package_id
+        );
+
+        await supabase
+          .from('books')
+          .update({ cover_url: coverPdfUrl })
+          .eq('id', book.id);
+
+        setBookData((prev: any) => ({ ...prev, cover_url: coverPdfUrl }));
+      }
+
+      toast({
+        title: 'PDFs Generated',
+        description: 'Your print-ready PDFs are now available!',
+      });
+    } catch (error: any) {
+      console.error('Error generating PDFs:', error);
+      toast({
+        title: 'PDF Generation Failed',
+        description: error.message || 'Failed to generate PDFs. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setGeneratingPdfs(false);
+    }
+  };
 
   const handleDownload = async () => {
     setIsDownloading(true);
@@ -314,6 +387,25 @@ export const CompleteStep = () => {
             {characterNames ? `${characterNames}'s` : 'Your'} personalized coloring book with {pages.length} unique page{pages.length !== 1 ? 's' : ''}
           </p>
         </motion.div>
+
+          {/* PDF Generation Status */}
+          {generatingPdfs && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6"
+            >
+              <Alert className="border-primary/50 bg-primary/10">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                <AlertDescription className="text-foreground">
+                  <strong>Generating print-ready PDFs...</strong>
+                  <p className="text-sm mt-1 text-muted-foreground">
+                    This will only take a moment.
+                  </p>
+                </AlertDescription>
+              </Alert>
+            </motion.div>
+          )}
 
           {/* Action Buttons */}
           <motion.div
