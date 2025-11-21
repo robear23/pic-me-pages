@@ -70,9 +70,39 @@ CHARACTER NAME: Add the name "${characterName}" in a super stylized, fun, decora
 
 OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at 300 DPI.`;
 
-    // Transform image to Google's native format
-    const base64Data = imageUrl.replace(/^data:image\/\w+;base64,/, '');
-    const mimeType = imageUrl.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/jpeg';
+    // Transform image to Google's native format - handle both storage URLs and base64 data URLs
+    let base64Data: string;
+    let mimeType: string;
+    
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      // It's a public storage URL - fetch and convert to base64
+      console.log('Fetching image from storage URL:', imageUrl);
+      try {
+        const imageResponse = await fetch(imageUrl);
+        if (!imageResponse.ok) {
+          throw new Error(`Failed to fetch image from storage: ${imageResponse.status} ${imageResponse.statusText}`);
+        }
+        
+        const arrayBuffer = await imageResponse.arrayBuffer();
+        const uint8Array = new Uint8Array(arrayBuffer);
+        
+        // Convert to base64
+        base64Data = btoa(String.fromCharCode(...uint8Array));
+        mimeType = imageResponse.headers.get('content-type') || 'image/png';
+        
+        console.log(`Successfully fetched and converted image (${(arrayBuffer.byteLength / 1024).toFixed(2)} KB)`);
+      } catch (fetchError) {
+        console.error('Error fetching image from storage:', fetchError);
+        throw new Error(`Failed to fetch page image for cover generation: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
+      }
+    } else if (imageUrl.startsWith('data:')) {
+      // It's already a base64 data URL
+      console.log('Using provided base64 data URL');
+      base64Data = imageUrl.replace(/^data:image\/\w+;base64,/, '');
+      mimeType = imageUrl.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/jpeg';
+    } else {
+      throw new Error('Invalid image URL format - must be either a public URL (http/https) or base64 data URL');
+    }
 
     const frontResponse = await fetch(
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
