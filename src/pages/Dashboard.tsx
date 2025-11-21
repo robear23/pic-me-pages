@@ -7,7 +7,7 @@ import { useAdmin } from '@/hooks/useAdmin';
 import { useBookStore } from '@/store/bookStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap, AlertCircle, Wrench } from 'lucide-react';
+import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { OrderPhysicalBookDialog } from '@/components/OrderPhysicalBookDialog';
 import { Badge } from '@/components/ui/badge';
@@ -839,9 +839,7 @@ const Dashboard = () => {
                         })}
                       </ul>
                       <p className="mt-2">
-                        {incompleteBooks.some(b => !b.pdf_url || !b.cover_url) 
-                          ? "Books with missing PDFs can be auto-generated when you click download or use the 'Generate Missing Files' button." 
-                          : "These books cannot be downloaded or ordered until they are complete."}
+                        Books with missing PDFs will be auto-generated when you click download.
                       </p>
                     </div>
                   </AlertDescription>
@@ -992,25 +990,7 @@ const Dashboard = () => {
                          {(() => {
                            const completeness = validateBookCompleteness(book);
                            
-                           // Show "Generate Missing Files" button if book can be auto-fixed
-                           if (completeness.canAutoFix && !isGeneratingPdf) {
-                             return (
-                               <Button
-                                 size="sm"
-                                 variant="secondary"
-                                 className="w-full gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white border-0"
-                                 onClick={async (e) => {
-                                   e.stopPropagation();
-                                   toast.info('Generating missing files...');
-                                   await handleGeneratePdf(book, false);
-                                 }}
-                               >
-                                 <Wrench className="w-4 h-4" />
-                                 Generate Missing Files
-                               </Button>
-                             );
-                           }
-                           
+                           // Show download button for completed books
                            return book.status === 'completed' ? (
                              <div className="space-y-2">
                                <Button
