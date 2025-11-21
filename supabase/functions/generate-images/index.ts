@@ -105,17 +105,28 @@ CRITICAL RULES:
 
 OUTPUT: Clean black and white line drawing with NO gray tones or photographic shadows.`;
 
-// PHASE 5: Safety filter word blacklist
+// PHASE 5: Safety filter word blacklist + PHASE 2: Cartoon trigger words
 const SAFETY_FILTER_WORDS = [
   'magical', 'mystical', 'enchanted', 'admiring', 'gazing', 'wonder',
   'dramatic', 'artistic', 'creative', 'drawing', 'playful', 'teasing',
   'mysterious', 'ethereal', 'dreamy', 'fantastical', 'whimsical'
 ];
 
+// PHASE 2: Cartoon trigger words that cause illustrated/stylized outputs
+const CARTOON_TRIGGER_WORDS = [
+  'cartoon', 'animated', 'illustration', 'sketch', 'stylized',
+  'cute', 'adorable', 'charming', 'lovely', 'sweet',
+  'artistic', 'fantasy', 'imaginary', 'storybook', 'fairytale'
+];
+
+// Combined filter list
+const ALL_FILTER_WORDS = [...SAFETY_FILTER_WORDS, ...CARTOON_TRIGGER_WORDS];
+
 // PHASE 5: Pre-filter prompts to remove problematic words
+// PHASE 2: Enhanced to include cartoon trigger words
 function preFilterPrompt(prompt: string): string {
   let filtered = prompt;
-  for (const word of SAFETY_FILTER_WORDS) {
+  for (const word of ALL_FILTER_WORDS) {
     const regex = new RegExp(`\\b${word}\\b`, 'gi');
     filtered = filtered.replace(regex, '');
   }
@@ -161,15 +172,18 @@ const getModelForComplexity = (complexity?: string): string => {
 };
 
 // PHASE 4: Enhanced validation with brightness boost capability
+// PHASE 2: Added gradient detection and line quality measurement
 async function validateLineArt(base64Image: string, pageIndex?: number, totalPages?: number): Promise<{ 
   valid: boolean; 
   grayPixelPercentage: number;
   hasPhotographicElements: boolean;
+  hasGradients: boolean;
+  lineQuality: number;
 }> {
   try {
     const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
     if (!base64Data || base64Data.length < 100) {
-      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true };
+      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0 };
     }
 
     // Decode and validate image dimensions
@@ -179,12 +193,14 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
     // Safety check for valid dimensions
     if (image.width < 10 || image.height < 10) {
       console.error('Image dimensions too small:', image.width, 'x', image.height);
-      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true };
+      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0 };
     }
     
     let totalPixels = 0;
     let grayPixels = 0;
     let nearGrayPixels = 0;
+    let gradientPixels = 0; // PHASE 2: Count pixels that form gradients
+    let edgePixels = 0; // PHASE 2: Count crisp black/white edges (good line art)
     const threshold = 30;
     
     // Sample every 100th pixel for faster validation (optimized for performance)
@@ -199,15 +215,35 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
           const r = (color >> 24) & 0xFF;
           const g = (color >> 16) & 0xFF;
           const b = (color >> 8) & 0xFF;
+          const avg = (r + g + b) / 3;
           
           const isBlack = r <= threshold && g <= threshold && b <= threshold;
           const isWhite = r >= (255 - threshold) && g >= (255 - threshold) && b >= (255 - threshold);
           
           if (!isBlack && !isWhite) {
             grayPixels++;
-            const avg = (r + g + b) / 3;
             if (avg > 60 && avg < 195) {
               nearGrayPixels++;
+            }
+          }
+          
+          // PHASE 2: Detect gradients (smooth transitions indicate remaining photographic elements)
+          if (x < image.width - step && y < image.height - step) {
+            const neighborColor = image.getPixelAt(x + step, y + step);
+            const nR = (neighborColor >> 24) & 0xFF;
+            const nG = (neighborColor >> 16) & 0xFF;
+            const nB = (neighborColor >> 8) & 0xFF;
+            const nAvg = (nR + nG + nB) / 3;
+            
+            // Gradient: smooth color transition (10-80 intensity difference)
+            const diff = Math.abs(avg - nAvg);
+            if (diff > 10 && diff < 80 && !isBlack && !isWhite) {
+              gradientPixels++;
+            }
+            
+            // PHASE 2: Detect crisp edges (sharp black/white transitions = good line art)
+            if ((isBlack && nAvg > 200) || (isWhite && nAvg < 55)) {
+              edgePixels++;
             }
           }
         } catch (err) {
@@ -218,72 +254,91 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
     }
     
     if (totalPixels === 0) {
-      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true };
+      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0 };
     }
     
     const grayPercentage = (grayPixels / totalPixels) * 100;
     const nearGrayPercentage = (nearGrayPixels / totalPixels) * 100;
     const blackPercentage = ((totalPixels - grayPixels) / totalPixels) * 100;
     
+    // PHASE 2: Calculate gradient and line quality metrics
+    const gradientPercentage = (gradientPixels / totalPixels) * 100;
+    const edgePercentage = (edgePixels / totalPixels) * 100;
+    const lineQuality = edgePercentage / Math.max(gradientPercentage, 1); // Higher = better line art
+    
     // CRITICAL: Check for complete conversion failure
     if (grayPercentage > 50) {
       console.error(`CRITICAL: Image is ${grayPercentage.toFixed(1)}% gray - still a photo!`);
-      return { valid: false, grayPixelPercentage: grayPercentage, hasPhotographicElements: true };
+      return { valid: false, grayPixelPercentage: grayPercentage, hasPhotographicElements: true, hasGradients: true, lineQuality: 0 };
     }
     
     // PHASE 2: Relaxed thresholds for better success rate
     const GRAY_THRESHOLD = 45; // Increased from 35% - allow more compression artifacts
     const MID_GRAY_THRESHOLD = 25; // Increased from 20% - allow more anti-aliasing
+    const GRADIENT_THRESHOLD = 15; // PHASE 2: Max 15% gradients allowed
+    const MIN_LINE_QUALITY = 0.6; // PHASE 2: Minimum line quality score
     
     const hasExcessiveGray = grayPercentage > GRAY_THRESHOLD;
     const hasExcessiveMidTones = nearGrayPercentage > MID_GRAY_THRESHOLD;
+    const hasGradients = gradientPercentage > GRADIENT_THRESHOLD; // PHASE 2: Gradient check
+    const hasGoodLines = lineQuality >= MIN_LINE_QUALITY; // PHASE 2: Line quality check
     
-    // PHASE 2: Less strict photo-like detection - only fail if BOTH high gray AND photo elements
-    const hasPhotographicElements = nearGrayPercentage > MID_GRAY_THRESHOLD;
-    const isPhotoLike = hasPhotographicElements && grayPercentage > 50; // Increased from 40%
+    // PHASE 2: Enhanced photo-like detection including gradients
+    const hasPhotographicElements = nearGrayPercentage > MID_GRAY_THRESHOLD || hasGradients;
+    const isPhotoLike = hasPhotographicElements && grayPercentage > 50;
     
-    // PHASE 2: Validation bypass for borderline cases (35-45% gray with good black/white ratio)
+    // PHASE 2: Validation bypass for borderline cases (35-45% gray with good black/white ratio AND good lines)
     const isBorderline = grayPercentage >= 35 && grayPercentage <= GRAY_THRESHOLD && blackPercentage > 50;
-    const isValid = !hasExcessiveGray && !hasExcessiveMidTones && !isPhotoLike;
-    const acceptBorderline = isBorderline && !isPhotoLike;
+    const isValid = !hasExcessiveGray && !hasExcessiveMidTones && !isPhotoLike && !hasGradients && hasGoodLines;
+    const acceptBorderline = isBorderline && !isPhotoLike && hasGoodLines;
     
     // PHASE 1: Enhanced logging with detailed pixel analysis
+    // PHASE 2: Added gradient and line quality metrics
     const pageInfo = pageIndex !== undefined && totalPages !== undefined ? ` for page ${pageIndex + 1}/${totalPages}` : '';
     console.log(`[VALIDATION DETAIL] Line art validation${pageInfo}:
   - Gray pixels: ${grayPercentage.toFixed(2)}% (threshold: ${GRAY_THRESHOLD}%)
   - Mid-tone gray: ${nearGrayPercentage.toFixed(2)}% (threshold: ${MID_GRAY_THRESHOLD}%)
   - Black/White: ${blackPercentage.toFixed(2)}%
+  - Gradients: ${gradientPercentage.toFixed(2)}% (threshold: ${GRADIENT_THRESHOLD}%)
+  - Line quality: ${lineQuality.toFixed(2)} (min: ${MIN_LINE_QUALITY})
   - Photo-like: ${isPhotoLike ? 'Yes (>50% gray)' : 'No'}
   - Borderline: ${isBorderline ? 'Yes (accepting)' : 'No'}
   - Result: ${isValid || acceptBorderline ? '✓ PASS' : '✗ FAIL'}`);
     
     // PHASE 4: Accept borderline images with warning
     if (acceptBorderline && !isValid) {
-      console.warn(`⚠️ Accepting borderline line art (${grayPercentage.toFixed(1)}% gray) - black/white ratio is good`);
+      console.warn(`⚠️ Accepting borderline line art (${grayPercentage.toFixed(1)}% gray) - black/white ratio and lines are good`);
       return { 
         valid: true, // Accept it
         grayPixelPercentage: grayPercentage,
-        hasPhotographicElements: false // Override since we're accepting
+        hasPhotographicElements: false, // Override since we're accepting
+        hasGradients: false,
+        lineQuality: lineQuality
       };
     }
     
     return { 
       valid: isValid, 
       grayPixelPercentage: grayPercentage,
-      hasPhotographicElements: hasPhotographicElements
+      hasPhotographicElements: hasPhotographicElements,
+      hasGradients: hasGradients,
+      lineQuality: lineQuality
     };
     
   } catch (error) {
     console.error('Line art validation error:', error);
-    return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true };
+    return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0 };
   }
 }
 
 // Simplified photorealistic validation - detects cartoon/illustrated images
+// PHASE 2: Enhanced with uniform color and edge sharpness detection
 async function validateRealisticImage(base64Image: string): Promise<{
   valid: boolean;
   isCartoonLike: boolean;
   colorVariance: number;
+  hasUniformColors: boolean;
+  edgeSharpness: number;
 }> {
   try {
     const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
@@ -293,11 +348,13 @@ async function validateRealisticImage(base64Image: string): Promise<{
     // Safety check for valid dimensions
     if (image.width < 10 || image.height < 10) {
       console.error('Image dimensions too small:', image.width, 'x', image.height);
-      return { valid: false, isCartoonLike: true, colorVariance: 0 };
+      return { valid: false, isCartoonLike: true, colorVariance: 0, hasUniformColors: true, edgeSharpness: 1.0 };
     }
     
     let totalSamples = 0;
     let colorDifferences = 0;
+    let uniformColorRegions = 0; // PHASE 2: Count flat color areas (cartoon indicator)
+    let sharpEdges = 0; // PHASE 2: Count sharp color boundaries (cartoon indicator)
     
     // Sample every 60th pixel for faster validation
     const step = 60;
@@ -328,33 +385,53 @@ async function validateRealisticImage(base64Image: string): Promise<{
         if (diff > 10 && diff < 100) {
           colorDifferences++;
         }
+        
+        // PHASE 2: Detect uniform flat colors (cartoon indicator)
+        if (diff < 5) {
+          uniformColorRegions++;
+        }
+        
+        // PHASE 2: Detect sharp color boundaries (cartoon indicator)
+        if (diff > 100) {
+          sharpEdges++;
+        }
       }
     }
     
     if (totalSamples === 0) {
-      return { valid: false, isCartoonLike: true, colorVariance: 0 };
+      return { valid: false, isCartoonLike: true, colorVariance: 0, hasUniformColors: true, edgeSharpness: 1.0 };
     }
     
     const variancePercentage = (colorDifferences / totalSamples) * 100;
+    const uniformPercentage = (uniformColorRegions / totalSamples) * 100;
+    const edgeSharpness = (sharpEdges / totalSamples) * 100;
     
-    // PHASE 2: Much more lenient thresholds for high-key lighting style
-    const isRealistic = variancePercentage >= 10; // Accept anything 10% and above
-    const isCartoonLike = variancePercentage < 8; // Only reject very flat cartoon-like images
+    // PHASE 2: Enhanced cartoon detection with multiple indicators
+    const hasUniformColors = uniformPercentage > 40; // >40% flat colors = likely cartoon
+    const hasSharpEdges = edgeSharpness > 15; // >15% sharp boundaries = likely cartoon
+    
+    // PHASE 2: Multi-criteria validation
+    const isCartoonLike = variancePercentage < 8 || hasUniformColors || hasSharpEdges;
+    const isRealistic = variancePercentage >= 10 && !hasUniformColors && !hasSharpEdges;
     
     console.log(`[VALIDATION DETAIL] Realistic image:
   - Color variance: ${variancePercentage.toFixed(1)}%
-  - Classification: ${isCartoonLike ? 'Cartoon-like (<8%)' : isRealistic ? 'Photorealistic (≥10%)' : 'Borderline (8-10%)'}
+  - Uniform colors: ${uniformPercentage.toFixed(1)}% (threshold: 40%)
+  - Edge sharpness: ${edgeSharpness.toFixed(1)}% (threshold: 15%)
+  - Classification: ${isCartoonLike ? 'Cartoon-like' : isRealistic ? 'Photorealistic' : 'Borderline'}
   - Result: ${isRealistic ? '✓ PASS' : isCartoonLike ? '✗ CARTOON' : '⚠️ BORDERLINE'}`);
     
     return {
       valid: isRealistic,
       isCartoonLike: isCartoonLike,
-      colorVariance: variancePercentage
+      colorVariance: variancePercentage,
+      hasUniformColors: hasUniformColors,
+      edgeSharpness: edgeSharpness
     };
     
   } catch (error) {
     console.error('Realistic validation error:', error);
-    return { valid: false, isCartoonLike: true, colorVariance: 0 };
+    return { valid: false, isCartoonLike: true, colorVariance: 0, hasUniformColors: true, edgeSharpness: 1.0 };
   }
 }
 
@@ -459,7 +536,7 @@ async function generateRealisticImage(
             // Try to identify trigger word
             let triggerWord = 'unknown';
             const promptText = contentParts.find((p: any) => p.type === 'text')?.text || '';
-            for (const word of SAFETY_FILTER_WORDS) {
+            for (const word of ALL_FILTER_WORDS) {
               if (promptText.toLowerCase().includes(word.toLowerCase())) {
                 triggerWord = word;
                 break;
@@ -519,7 +596,7 @@ async function generateRealisticImage(
           
           // Try to identify trigger word
           let triggerWord = 'unknown';
-          for (const word of SAFETY_FILTER_WORDS) {
+          for (const word of ALL_FILTER_WORDS) {
             if (promptText.toLowerCase().includes(word.toLowerCase())) {
               triggerWord = word;
               break;
