@@ -50,9 +50,16 @@ serve(async (req) => {
     // OPTIMIZED: Combine coloring + border in ONE call (saves 33% on cover costs)
     console.log('Step 1: Generating front cover (colored + bordered)...');
     
-    const frontCoverPrompt = `Transform this coloring page into a vibrant book cover with border.
-COLOR: Fill with rich colors matching theme: ${interestsText}. Professional, age-appropriate.
-BORDER: Add playful decorative border (10-15% width) with theme elements. Eye-catching, child-friendly. NO text.
+    const frontCoverPrompt = `Transform this coloring page into a vibrant book cover with border and title.
+
+CRITICAL - PRESERVE CHARACTER: Keep the EXACT character appearance from the source image - especially hair color, facial features, skin tone, clothing, and ALL visual details EXACTLY as shown. DO NOT change hair color or any character features.
+
+COLOR: Fill with rich, vibrant colors matching theme: ${interestsText}. Professional, age-appropriate coloring.
+
+BORDER: Add playful decorative border (10-15% width) with theme elements (${interestsText}). Eye-catching, child-friendly design.
+
+CHARACTER NAME: Add the name "${characterName}" in a super stylized, fun, decorative font near the character. Make it prominent, playful, and integrated into the design. Use creative lettering that matches the book's theme.
+
 OUTPUT: High resolution 2000x2666 pixels complete front cover ready for print.`;
 
     // Transform image to Google's native format
@@ -113,8 +120,9 @@ OUTPUT: High resolution 2000x2666 pixels complete front cover ready for print.`;
     // STEP 2: Generate complementary back cover
     console.log('Step 2: Generating back cover...');
     
-    const backCoverPrompt = `Create high resolution 2000x2666 pixels back cover for children's book. Theme: ${interestsText}.
-Simple elegant design, complementary colors, matching border style. Space for text (NO actual text). Clean, professional, age-appropriate.`;
+    const backCoverPrompt = `Create a BLANK back cover for children's book printing.
+High resolution 2000x2666 pixels. Simple solid color background (soft pastel matching theme: ${interestsText}).
+Minimal or no decorative elements. Clean, professional, ready for text overlay if needed.`;
 
     const backCoverResponse = await fetch(
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
