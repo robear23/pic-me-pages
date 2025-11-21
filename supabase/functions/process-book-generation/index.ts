@@ -1,4 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.81.0';
+import jsPDF from 'https://esm.sh/jspdf@2.5.1';
+import { encode } from 'https://deno.land/std@0.190.0/encoding/base64.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -279,6 +281,206 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       });
     }
 
+    // PHASE 1: Generate covers EARLY (right after first page is ready)
+    let coverImageUrl = null;
+    let backCoverImageUrl = null;
+    let coverUrl = null;
+    
+    if (generatedPages.length > 0) {
+      checkTimeout();
+      console.log('\n=== Early Cover Generation (after first page) ===');
+      await updateJobProgress(supabase, job.id, { 
+        currentStep: 'generating_cover', 
+        currentPage: generatedPages.length, 
+        totalPages: selectedPageCount 
+      });
+      
+      try {
+        const googleApiKey = Deno.env.get('GOOGLE_API_KEY');
+        const characterName = characters[0]?.name || 'Child';
+        const interestsText = interests.slice(0, 3).join(', ');
+        const firstPageUrl = generatedPages[0]?.imageUrl;
+        
+        if (firstPageUrl && googleApiKey) {
+          // PHASE 2: Inline cover generation logic (no separate function call)
+          console.log('Fetching first page for cover generation...');
+          
+          // Fetch and convert first page to base64
+          let base64Data: string;
+          let mimeType: string;
+          
+          if (firstPageUrl.startsWith('http://') || firstPageUrl.startsWith('https://')) {
+            const imageResponse = await fetch(firstPageUrl);
+            if (imageResponse.ok) {
+              const arrayBuffer = await imageResponse.arrayBuffer();
+              base64Data = encode(arrayBuffer);
+              mimeType = imageResponse.headers.get('content-type') || 'image/png';
+              console.log(`✓ First page fetched (${(arrayBuffer.byteLength / 1024).toFixed(2)} KB)`);
+            } else {
+              throw new Error('Failed to fetch first page');
+            }
+          } else if (firstPageUrl.startsWith('data:')) {
+            base64Data = firstPageUrl.replace(/^data:image\/\w+;base64,/, '');
+            mimeType = firstPageUrl.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/png';
+          } else {
+            throw new Error('Invalid image URL format');
+          }
+          
+          // Generate front cover
+          console.log('Generating front cover with AI...');
+          const frontCoverPrompt = `Transform this coloring page into a vibrant book cover with border and title.
+
+CRITICAL - PRESERVE CHARACTER: Keep the EXACT character appearance from the source image - especially hair color, facial features, skin tone, clothing, and ALL visual details EXACTLY as shown. DO NOT change hair color or any character features.
+
+COLOR: Fill with rich, vibrant colors matching theme: ${interestsText}. Professional, age-appropriate coloring.
+
+BORDER: Add playful decorative border (10-15% width) with theme elements (${interestsText}). Eye-catching, child-friendly design.
+
+CHARACTER NAME: Add the name "${characterName}" in a super stylized, fun, decorative font near the character. Make it prominent, playful, and integrated into the design. Use creative lettering that matches the book's theme.
+
+OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at 300 DPI.`;
+
+          const frontResponse = await fetch(
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
+            {
+              method: 'POST',
+              headers: {
+                'x-goog-api-key': googleApiKey,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    { text: frontCoverPrompt },
+                    { inlineData: { mimeType, data: base64Data } }
+                  ]
+                }],
+                generationConfig: { responseModalities: ['IMAGE'] }
+              }),
+            }
+          );
+
+          if (frontResponse.ok) {
+            const frontData = await frontResponse.json();
+            const frontImagePart = frontData.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+            
+            if (frontImagePart?.inlineData?.data) {
+              const frontMimeType = frontImagePart.inlineData.mimeType || 'image/png';
+              const frontCoverBase64 = `data:${frontMimeType};base64,${frontImagePart.inlineData.data}`;
+              
+              // Upload front cover
+              const frontBlob = await fetch(frontCoverBase64).then(r => r.blob());
+              const timestamp = Date.now();
+              const frontPath = `${job.user_id}/${timestamp}-cover.png`;
+              
+              const { error: frontUploadError } = await supabase.storage
+                .from('generated-pages')
+                .upload(frontPath, frontBlob, { contentType: 'image/png' });
+              
+              if (!frontUploadError) {
+                const { data: frontUrlData } = supabase.storage
+                  .from('generated-pages')
+                  .getPublicUrl(frontPath);
+                coverImageUrl = frontUrlData.publicUrl;
+                console.log('✓ Front cover uploaded:', coverImageUrl);
+              }
+            }
+          }
+          
+          // Generate back cover
+          console.log('Generating back cover with AI...');
+          const backCoverPrompt = `Create a BLANK back cover for children's book printing.
+High resolution 2588x3375 pixels at 300 DPI. Simple solid color background (soft pastel matching theme: ${interestsText}).
+Minimal or no decorative elements. Clean, professional, ready for text overlay if needed.`;
+
+          const backResponse = await fetch(
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
+            {
+              method: 'POST',
+              headers: {
+                'x-goog-api-key': googleApiKey,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: backCoverPrompt }] }],
+                generationConfig: { responseModalities: ['IMAGE'] }
+              }),
+            }
+          );
+
+          if (backResponse.ok) {
+            const backData = await backResponse.json();
+            const backImagePart = backData.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
+            
+            if (backImagePart?.inlineData?.data) {
+              const backMimeType = backImagePart.inlineData.mimeType || 'image/png';
+              const backCoverBase64 = `data:${backMimeType};base64,${backImagePart.inlineData.data}`;
+              
+              // Upload back cover
+              const backBlob = await fetch(backCoverBase64).then(r => r.blob());
+              const timestamp = Date.now();
+              const backPath = `${job.user_id}/${timestamp}-back-cover.png`;
+              
+              const { error: backUploadError } = await supabase.storage
+                .from('generated-pages')
+                .upload(backPath, backBlob, { contentType: 'image/png' });
+              
+              if (!backUploadError) {
+                const { data: backUrlData } = supabase.storage
+                  .from('generated-pages')
+                  .getPublicUrl(backPath);
+                backCoverImageUrl = backUrlData.publicUrl;
+                console.log('✓ Back cover uploaded:', backCoverImageUrl);
+              }
+            }
+          }
+          
+          // PHASE 3: Generate cover PDF immediately after cover images
+          if (coverImageUrl && backCoverImageUrl) {
+            console.log('Generating print-ready cover PDF...');
+            
+            try {
+              const doc = new jsPDF({
+                orientation: 'landscape',
+                unit: 'in',
+                format: [17.176, 8.625], // Lulu cover wrap dimensions
+              });
+              
+              // Add back cover (left side)
+              doc.addImage(backCoverImageUrl, 'PNG', 0, 0, 8.588, 8.625);
+              
+              // Add front cover (right side)
+              doc.addImage(coverImageUrl, 'PNG', 8.588, 0, 8.588, 8.625);
+              
+              // Convert to blob and upload
+              const pdfOutput = doc.output('arraybuffer');
+              const pdfBlob = new Blob([pdfOutput], { type: 'application/pdf' });
+              const coverPdfPath = `${job.user_id}/${Date.now()}-cover.pdf`;
+              
+              const { error: pdfUploadError } = await supabase.storage
+                .from('pdfs')
+                .upload(coverPdfPath, pdfBlob, { contentType: 'application/pdf' });
+              
+              if (!pdfUploadError) {
+                const { data: pdfUrlData } = supabase.storage
+                  .from('pdfs')
+                  .getPublicUrl(coverPdfPath);
+                coverUrl = pdfUrlData.publicUrl;
+                console.log('✓ Cover PDF generated and uploaded:', coverUrl);
+              } else {
+                console.error('Cover PDF upload failed:', pdfUploadError);
+              }
+            } catch (pdfError) {
+              console.error('Cover PDF generation failed:', pdfError);
+            }
+          }
+        }
+      } catch (coverError) {
+        console.error('⚠️ Early cover generation failed:', coverError);
+        // Don't fail the entire job - covers can be retried later
+      }
+    }
+
     // Determine final status based on results
     const totalExpected = prompts.length;
     const totalGenerated = generatedPages.length;
@@ -297,121 +499,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       console.log(`✓ Complete generation: All ${totalGenerated} pages generated successfully`);
     }
 
-    // Step 3: Generate cover with retry logic (only if we have pages)
-    checkTimeout(); // Check timeout before cover generation
-    
-    await updateJobProgress(supabase, job.id, { currentStep: 'generating_cover', currentPage: selectedPageCount, totalPages: selectedPageCount });
-    
-    const characterName = characters[0]?.name || 'Child';
-    const firstPageImageUrl = generatedPages[0]?.imageUrl || null;
-    
-    let coverImageUrl = null;
-    let backCoverImageUrl = null;
-    let coverGenerationSuccess = false;
-    const MAX_COVER_RETRIES = 2;
-    
-    // Retry cover generation up to MAX_COVER_RETRIES times
-    for (let attempt = 1; attempt <= MAX_COVER_RETRIES && !coverGenerationSuccess; attempt++) {
-      try {
-        console.log(`\n=== Cover Generation Attempt ${attempt}/${MAX_COVER_RETRIES} ===`);
-        
-        const coverResponse = await supabase.functions.invoke('generate-cover', {
-          body: {
-            characterName,
-            interests,
-            photoUrl: characters[0]?.photos?.[0] || null,
-            pageCount: selectedPageCount,
-            firstPageImageUrl, // Pass first page image for cover generation
-          }
-        });
-
-        if (coverResponse.error) {
-          console.error(`Cover generation attempt ${attempt} failed:`, coverResponse.error);
-          if (attempt < MAX_COVER_RETRIES) {
-            console.log(`Retrying in 3 seconds...`);
-            await new Promise(resolve => setTimeout(resolve, 3000));
-          }
-          continue;
-        }
-        
-        if (coverResponse.data?.frontCover && coverResponse.data?.backCover) {
-          try {
-            console.log('Cover generated successfully, uploading to storage...');
-            
-            // Convert base64 data URLs to blobs
-            const frontCoverBlob = await fetch(coverResponse.data.frontCover).then(r => r.blob());
-            const backCoverBlob = await fetch(coverResponse.data.backCover).then(r => r.blob());
-            
-            // Generate unique filenames with timestamp
-            const timestamp = Date.now();
-            const frontCoverPath = `${job.user_id}/${timestamp}-cover.png`;
-            const backCoverPath = `${job.user_id}/${timestamp}-back-cover.png`;
-            
-            // Upload front cover
-            const { error: frontUploadError } = await supabase.storage
-              .from('generated-pages')
-              .upload(frontCoverPath, frontCoverBlob, {
-                contentType: 'image/png',
-                cacheControl: '3600',
-                upsert: false
-              });
-            
-            if (frontUploadError) {
-              console.error('Front cover upload failed:', frontUploadError);
-              throw new Error('Front cover upload failed');
-            }
-            
-            const { data: frontUrlData } = supabase.storage
-              .from('generated-pages')
-              .getPublicUrl(frontCoverPath);
-            coverImageUrl = frontUrlData.publicUrl;
-            console.log('✓ Front cover uploaded:', coverImageUrl);
-            
-            // Upload back cover
-            const { error: backUploadError } = await supabase.storage
-              .from('generated-pages')
-              .upload(backCoverPath, backCoverBlob, {
-                contentType: 'image/png',
-                cacheControl: '3600',
-                upsert: false
-              });
-            
-            if (backUploadError) {
-              console.error('Back cover upload failed:', backUploadError);
-              throw new Error('Back cover upload failed');
-            }
-            
-            const { data: backUrlData } = supabase.storage
-              .from('generated-pages')
-              .getPublicUrl(backCoverPath);
-            backCoverImageUrl = backUrlData.publicUrl;
-            console.log('✓ Back cover uploaded:', backCoverImageUrl);
-            
-            // Mark success - break out of retry loop
-            coverGenerationSuccess = true;
-            console.log(`✓ Cover generation successful on attempt ${attempt}`);
-            break;
-            
-          } catch (uploadError) {
-            console.error(`Error uploading covers (attempt ${attempt}):`, uploadError);
-            if (attempt < MAX_COVER_RETRIES) {
-              console.log(`Retrying in 3 seconds...`);
-              await new Promise(resolve => setTimeout(resolve, 3000));
-            }
-          }
-        }
-      } catch (error) {
-        console.error(`Cover generation attempt ${attempt} error:`, error);
-        if (attempt < MAX_COVER_RETRIES) {
-          console.log(`Retrying in 3 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        }
-      }
-    }
-    
-    if (!coverGenerationSuccess) {
-      console.warn('⚠️ Cover generation failed after all retry attempts');
-    }
+    // Cover generation moved to after first page (above) - no separate step needed here
 
     // Step 4: Save book to database
     await updateJobProgress(supabase, job.id, { currentStep: 'saving_book', currentPage: selectedPageCount, totalPages: selectedPageCount });
@@ -439,6 +527,8 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       console.error('❌ Book generation failed - no pages generated');
     }
 
+    const characterName = characters[0]?.name || 'Child';
+    
     const bookData: any = {
       user_id: job.user_id,
       character_name: characterName,
@@ -451,6 +541,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       status: bookStatus,
       cover_image_url: coverImageUrl,
       back_cover_image_url: backCoverImageUrl,
+      cover_url: coverUrl, // Cover PDF now generated in edge function
       missing_covers: !hasCovers,
       missing_components: missingComponents,
     };
