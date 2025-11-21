@@ -164,24 +164,39 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
       }
     }
 
-    // Step 3: Generate cover
+    // Validate that we have generated pages before proceeding
+    if (generatedPages.length === 0) {
+      throw new Error('Failed to generate any pages');
+    }
+    
+    console.log(`Successfully generated ${generatedPages.length}/${prompts.length} pages`);
+
+    // Step 3: Generate cover (only if we have pages)
     await updateJobProgress(supabase, job.id, { currentStep: 'generating_cover', currentPage: selectedPageCount, totalPages: selectedPageCount });
     
     const characterName = characters[0]?.name || 'Child';
+    const firstPageImageUrl = generatedPages[0]?.imageUrl || null;
+    
     const coverResponse = await supabase.functions.invoke('generate-cover', {
       body: {
         characterName,
         interests,
         photoUrl: characters[0]?.photos?.[0] || null,
         pageCount: selectedPageCount,
+        firstPageImageUrl, // Pass first page image for cover generation
       }
     });
 
     let coverImageUrl = null;
     let backCoverImageUrl = null;
-    if (!coverResponse.error && coverResponse.data) {
+
+    if (coverResponse.error) {
+      console.error('Cover generation failed:', coverResponse.error);
+      // Continue without cover - don't fail the entire job
+    } else if (coverResponse.data) {
       coverImageUrl = coverResponse.data.coverImageUrl;
       backCoverImageUrl = coverResponse.data.backCoverImageUrl;
+      console.log('Cover generated successfully');
     }
 
     // Step 4: Save book to database
