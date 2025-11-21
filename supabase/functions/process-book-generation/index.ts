@@ -438,25 +438,57 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
           // PHASE 3: Generate cover PDF immediately after cover images
           if (coverImageUrl && backCoverImageUrl) {
             console.log('Generating print-ready cover PDF...');
+            console.log('Cover image URL:', coverImageUrl);
+            console.log('Back cover URL:', backCoverImageUrl);
             
             try {
+              // Validate cover images are accessible
+              console.log('Validating cover images...');
+              const frontTest = await fetch(coverImageUrl);
+              if (!frontTest.ok) {
+                throw new Error(`Front cover not accessible: ${frontTest.status}`);
+              }
+              console.log('✓ Front cover accessible');
+              
+              const backTest = await fetch(backCoverImageUrl);
+              if (!backTest.ok) {
+                throw new Error(`Back cover not accessible: ${backTest.status}`);
+              }
+              console.log('✓ Back cover accessible');
+              
+              // Convert URLs to data URLs to avoid CORS issues
+              console.log('Converting cover images to data URLs...');
+              const frontArrayBuffer = await frontTest.arrayBuffer();
+              const frontBase64 = encode(frontArrayBuffer);
+              const frontDataUrl = `data:image/png;base64,${frontBase64}`;
+              
+              const backArrayBuffer = await backTest.arrayBuffer();
+              const backBase64 = encode(backArrayBuffer);
+              const backDataUrl = `data:image/png;base64,${backBase64}`;
+              
+              console.log('✓ Cover images converted to data URLs');
+              
               const doc = new jsPDF({
                 orientation: 'landscape',
                 unit: 'in',
                 format: [17.176, 8.625], // Lulu cover wrap dimensions
               });
               
+              console.log('Adding images to PDF...');
               // Add back cover (left side)
-              doc.addImage(backCoverImageUrl, 'PNG', 0, 0, 8.588, 8.625);
+              doc.addImage(backDataUrl, 'PNG', 0, 0, 8.588, 8.625);
               
               // Add front cover (right side)
-              doc.addImage(coverImageUrl, 'PNG', 8.588, 0, 8.588, 8.625);
+              doc.addImage(frontDataUrl, 'PNG', 8.588, 0, 8.588, 8.625);
+              
+              console.log('✓ Images added to PDF');
               
               // Convert to blob and upload
               const pdfOutput = doc.output('arraybuffer');
               const pdfBlob = new Blob([pdfOutput], { type: 'application/pdf' });
               const coverPdfPath = `${job.user_id}/${Date.now()}-cover.pdf`;
               
+              console.log('Uploading cover PDF to storage...');
               const { error: pdfUploadError } = await supabase.storage
                 .from('pdfs')
                 .upload(coverPdfPath, pdfBlob, { contentType: 'application/pdf' });
@@ -469,9 +501,15 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
                 console.log('✓ Cover PDF generated and uploaded:', coverUrl);
               } else {
                 console.error('Cover PDF upload failed:', pdfUploadError);
+                throw pdfUploadError;
               }
             } catch (pdfError) {
               console.error('Cover PDF generation failed:', pdfError);
+              console.error('Cover error details:', {
+                message: pdfError instanceof Error ? pdfError.message : 'Unknown error',
+                stack: pdfError instanceof Error ? pdfError.stack : undefined
+              });
+              // Don't set coverUrl so book will be marked as partial
             }
           }
         }
@@ -504,23 +542,30 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
     // Step 4: Save book to database
     await updateJobProgress(supabase, job.id, { currentStep: 'saving_book', currentPage: selectedPageCount, totalPages: selectedPageCount });
 
-    // Determine book status based on generation results
+    // Determine book status based on generation results - include cover PDF check
     const hasCovers = !!(coverImageUrl && backCoverImageUrl);
+    const hasCoverPdf = !!coverUrl;
     const hasPages = generatedPages.length > 0;
     
     let bookStatus: string;
     const missingComponents = [];
     
-    if (hasPages && hasCovers) {
-      // Everything generated successfully - ready for PDF generation
+    if (hasPages && hasCovers && hasCoverPdf) {
+      // Everything generated successfully - fully complete
       bookStatus = 'completed';
       console.log('✓ Book generation complete - all components present');
+    } else if (hasPages && hasCovers && !hasCoverPdf) {
+      // Pages and cover images but no cover PDF - partial
+      bookStatus = 'partial';
+      console.warn('⚠️ Partial book generation - missing cover PDF');
+      missingComponents.push('cover_pdf');
     } else if (hasPages && !hasCovers) {
       // Pages generated but covers failed - partial success
       bookStatus = 'partial';
       console.warn('⚠️ Partial book generation - pages complete but covers missing');
       if (!coverImageUrl) missingComponents.push('front_cover');
       if (!backCoverImageUrl) missingComponents.push('back_cover');
+      if (!hasCoverPdf) missingComponents.push('cover_pdf');
     } else {
       // No pages - this should not happen as we check earlier
       bookStatus = 'failed';
@@ -529,12 +574,63 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
 
     const characterName = characters[0]?.name || 'Child';
     
+    // Process character photos: upload base64 to storage
+    let photoUrls: string[] = [];
+    if (characters[0]?.photos && Array.isArray(characters[0].photos)) {
+      console.log('Processing character photos...');
+      for (let i = 0; i < characters[0].photos.length; i++) {
+        const photo = characters[0].photos[i];
+        if (!photo) continue;
+        
+        try {
+          // Check if it's a base64 data URL
+          if (typeof photo === 'string' && photo.startsWith('data:image')) {
+            console.log(`Uploading photo ${i + 1} to storage...`);
+            
+            // Convert base64 to blob
+            const blob = await fetch(photo).then(r => r.blob());
+            
+            // Generate unique filename
+            const timestamp = Date.now();
+            const photoPath = `${job.user_id}/${timestamp}-character-photo-${i}.png`;
+            
+            // Upload to storage
+            const { error: uploadError } = await supabase.storage
+              .from('user-photos')
+              .upload(photoPath, blob, {
+                contentType: 'image/png',
+                cacheControl: '3600',
+                upsert: false
+              });
+            
+            if (uploadError) {
+              console.error(`Failed to upload photo ${i + 1}:`, uploadError);
+            } else {
+              // Get public URL
+              const { data: urlData } = supabase.storage
+                .from('user-photos')
+                .getPublicUrl(photoPath);
+              
+              photoUrls.push(urlData.publicUrl);
+              console.log(`✓ Photo ${i + 1} uploaded:`, urlData.publicUrl);
+            }
+          } else if (typeof photo === 'string' && photo.startsWith('http')) {
+            // Already a URL
+            photoUrls.push(photo);
+          }
+        } catch (photoError) {
+          console.error(`Error processing photo ${i + 1}:`, photoError);
+        }
+      }
+      console.log(`Processed ${photoUrls.length} character photos`);
+    }
+    
     const bookData: any = {
       user_id: job.user_id,
       character_name: characterName,
       interests,
       pages: generatedPages,
-      photo_urls: characters[0]?.photos || [],
+      photo_urls: photoUrls, // Now contains storage URLs
       consistent_characters: consistentCharacters,
       complexity: complexityLevel,
       selected_page_count: selectedPageCount,
