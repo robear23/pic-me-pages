@@ -110,32 +110,51 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
     if (promptsResponse.error) throw new Error(`Prompt generation failed: ${promptsResponse.error.message}`);
     const prompts = promptsResponse.data.prompts;
 
-    // Step 2: Generate images
-    const generatedPages = [];
-    for (let i = 0; i < prompts.length; i++) {
-      await updateJobProgress(supabase, job.id, { 
-        currentStep: 'generating_images', 
-        currentPage: i + 1, 
-        totalPages: selectedPageCount 
-      });
+    // Step 2: Generate images (batch all prompts together with retry logic)
+    await updateJobProgress(supabase, job.id, { 
+      currentStep: 'generating_images', 
+      currentPage: 0, 
+      totalPages: selectedPageCount 
+    });
 
+    let generatedPages = [];
+    let attempts = 0;
+    const MAX_ATTEMPTS = 2;
+
+    while (attempts < MAX_ATTEMPTS && generatedPages.length < prompts.length) {
+      attempts++;
+      console.log(`Image generation attempt ${attempts}/${MAX_ATTEMPTS}`);
+      
       const imageResponse = await supabase.functions.invoke('generate-images', {
         body: {
-          prompts: [prompts[i]],
+          prompts: prompts, // Send ALL prompts at once
           characters,
           consistentCharacters,
           complexity: complexityLevel,
           isReworkMode: false,
+          batchSize: 2,
         }
       });
 
       if (imageResponse.error) {
-        console.error(`Failed to generate page ${i + 1}:`, imageResponse.error);
-        continue;
+        console.error(`Image generation attempt ${attempts} failed:`, imageResponse.error);
+        if (attempts < MAX_ATTEMPTS) {
+          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5s before retry
+          continue;
+        }
+        throw new Error(`Image generation failed after ${MAX_ATTEMPTS} attempts: ${imageResponse.error.message}`);
       }
 
-      if (imageResponse.data?.pages?.[0]) {
-        generatedPages.push(imageResponse.data.pages[0]);
+      if (imageResponse.data?.pages) {
+        generatedPages = imageResponse.data.pages;
+        console.log(`Generated ${generatedPages.length}/${prompts.length} pages`);
+      }
+      
+      if (generatedPages.length < prompts.length && attempts < MAX_ATTEMPTS) {
+        console.log(`Only ${generatedPages.length}/${prompts.length} pages generated, retrying...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      } else {
+        break;
       }
     }
 

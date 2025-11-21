@@ -46,6 +46,8 @@ export const GeneratingStep = () => {
   const [startTime] = useState(Date.now());
 
   useEffect(() => {
+    let pollInterval: NodeJS.Timeout | null = null;
+
     const createGenerationJob = async () => {
       if (jobId) return; // Job already created
 
@@ -112,10 +114,15 @@ export const GeneratingStep = () => {
         
         console.log('Job created:', job.id);
 
-        // Trigger the edge function to start processing (fire and forget)
-        supabase.functions.invoke('process-book-generation').catch(err => {
-          console.error('Failed to trigger processor:', err);
-        });
+        // Set up polling to trigger edge function every 5 seconds
+        pollInterval = setInterval(async () => {
+          console.log('Polling edge function...');
+          const { error: invokeError } = await supabase.functions.invoke('process-book-generation', {});
+          
+          if (invokeError) {
+            console.error('Error triggering edge function:', invokeError);
+          }
+        }, 5000);
 
       } catch (error: any) {
         console.error('Error creating job:', error);
@@ -128,6 +135,14 @@ export const GeneratingStep = () => {
     };
 
     createGenerationJob();
+
+    // Cleanup polling on unmount
+    return () => {
+      if (pollInterval) {
+        console.log('Cleaning up polling interval');
+        clearInterval(pollInterval);
+      }
+    };
   }, [user, jobId]);
 
   // Subscribe to job updates via Realtime
