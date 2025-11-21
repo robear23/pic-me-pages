@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { createPrintOrder, ShippingAddress } from '@/lib/api';
-import { Package, Book, Sparkles } from 'lucide-react';
+import { Package, Book, Sparkles, CheckCircle, Edit2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { generateCoverWrapPdf, repairBookPdf } from '@/lib/repairPdf';
 import type { BindingType, PageCount } from '@/types/bookOptions';
@@ -55,6 +55,8 @@ export function OrderPhysicalBookDialog({
   // Selected options (can be modified by user)
   const [selectedPageCount, setSelectedPageCount] = useState<PageCount>(12);
   const [selectedBinding, setSelectedBinding] = useState<BindingType>('premium');
+  const [hasExistingShipping, setHasExistingShipping] = useState(false);
+  const [isEditingAddress, setIsEditingAddress] = useState(false);
   
   const { toast } = useToast();
   
@@ -69,13 +71,13 @@ export function OrderPhysicalBookDialog({
     country: 'US',
   });
 
-  // Fetch book details when dialog opens
+  // Fetch book details and existing order when dialog opens
   useEffect(() => {
     if (open && bookId) {
-      const fetchBookDetails = async () => {
+      const fetchBookAndOrder = async () => {
         const { data: book } = await supabase
           .from('books')
-          .select('selected_page_count, selected_binding_type, selected_price')
+          .select('selected_page_count, selected_binding_type, selected_price, user_id')
           .eq('id', bookId)
           .single();
         
@@ -92,10 +94,32 @@ export function OrderPhysicalBookDialog({
           // Initialize selected options with book's current values
           setSelectedPageCount(pageCount);
           setSelectedBinding(bindingType);
+          
+          // Fetch existing paid order with shipping address
+          const { data: order } = await supabase
+            .from('orders')
+            .select('shipping_address, stripe_payment_id, price_paid')
+            .eq('user_id', book.user_id)
+            .eq('status', 'paid')
+            .not('stripe_payment_id', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          
+          // Pre-fill shipping address if available
+          if (order?.shipping_address) {
+            const savedAddress = order.shipping_address as unknown as ShippingAddress;
+            setShippingAddress(savedAddress);
+            setHasExistingShipping(true);
+            setIsEditingAddress(false);
+            console.log('Pre-filled shipping address from existing order');
+          } else {
+            setIsEditingAddress(true);
+          }
         }
       };
       
-      fetchBookDetails();
+      fetchBookAndOrder();
     }
   }, [open, bookId]);
   
@@ -281,7 +305,46 @@ export function OrderPhysicalBookDialog({
         )}
         
         <form onSubmit={handleSubmit} className="space-y-4 mt-6 border-t pt-4">
-          <h3 className="text-lg font-semibold mb-4">Shipping Information</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold">Shipping Information</h3>
+            {hasExistingShipping && !isEditingAddress && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsEditingAddress(true)}
+                className="gap-2"
+              >
+                <Edit2 className="w-4 h-4" />
+                Edit Address
+              </Button>
+            )}
+          </div>
+          
+          {hasExistingShipping && !isEditingAddress && (
+            <div className="rounded-lg border-2 border-green-500/50 bg-green-50 dark:bg-green-950/30 p-4 mb-4">
+              <div className="flex items-start gap-3">
+                <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-semibold text-green-800 dark:text-green-200 mb-1">Payment Already Received</p>
+                  <p className="text-sm text-green-700 dark:text-green-300 mb-3">
+                    Your shipping address has been saved. Review below and click confirm to place your order.
+                  </p>
+                  <div className="text-sm space-y-1 text-green-900 dark:text-green-100 bg-white/50 dark:bg-black/20 p-3 rounded border border-green-200 dark:border-green-800">
+                    <p className="font-medium">{shippingAddress.name}</p>
+                    {shippingAddress.phoneNumber && <p>{shippingAddress.phoneNumber}</p>}
+                    <p>{shippingAddress.street1}</p>
+                    {shippingAddress.street2 && <p>{shippingAddress.street2}</p>}
+                    <p>{shippingAddress.city}, {shippingAddress.state} {shippingAddress.postalCode}</p>
+                    <p>{shippingAddress.country}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {(isEditingAddress || !hasExistingShipping) && (
+            <>
           <div>
             <Label htmlFor="name">Full Name</Label>
             <Input
@@ -391,13 +454,15 @@ export function OrderPhysicalBookDialog({
               </Select>
             </div>
           </div>
+            </>
+          )}
           
           <div className="flex gap-3 pt-4">
             <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex-1">
               Cancel
             </Button>
             <Button type="submit" disabled={loading} className="flex-1">
-              {loading ? 'Processing...' : 'Place Order - $19.99'}
+              {loading ? 'Processing...' : hasExistingShipping ? 'Confirm Order' : `Place Order`}
             </Button>
           </div>
         </form>
