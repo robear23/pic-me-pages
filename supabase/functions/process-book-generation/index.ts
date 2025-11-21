@@ -297,7 +297,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       console.log(`✓ Complete generation: All ${totalGenerated} pages generated successfully`);
     }
 
-    // Step 3: Generate cover (only if we have pages)
+    // Step 3: Generate cover with retry logic (only if we have pages)
     checkTimeout(); // Check timeout before cover generation
     
     await updateJobProgress(supabase, job.id, { currentStep: 'generating_cover', currentPage: selectedPageCount, totalPages: selectedPageCount });
@@ -305,90 +305,138 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     const characterName = characters[0]?.name || 'Child';
     const firstPageImageUrl = generatedPages[0]?.imageUrl || null;
     
-    const coverResponse = await supabase.functions.invoke('generate-cover', {
-      body: {
-        characterName,
-        interests,
-        photoUrl: characters[0]?.photos?.[0] || null,
-        pageCount: selectedPageCount,
-        firstPageImageUrl, // Pass first page image for cover generation
-      }
-    });
-
     let coverImageUrl = null;
     let backCoverImageUrl = null;
-
-    if (coverResponse.error) {
-      console.error('Cover generation failed:', coverResponse.error);
-      // Continue without cover - don't fail the entire job
-    } else if (coverResponse.data?.frontCover && coverResponse.data?.backCover) {
+    let coverGenerationSuccess = false;
+    const MAX_COVER_RETRIES = 2;
+    
+    // Retry cover generation up to MAX_COVER_RETRIES times
+    for (let attempt = 1; attempt <= MAX_COVER_RETRIES && !coverGenerationSuccess; attempt++) {
       try {
-        console.log('Cover generated successfully, uploading to storage...');
+        console.log(`\n=== Cover Generation Attempt ${attempt}/${MAX_COVER_RETRIES} ===`);
         
-        // Convert base64 data URLs to blobs
-        const frontCoverBlob = await fetch(coverResponse.data.frontCover).then(r => r.blob());
-        const backCoverBlob = await fetch(coverResponse.data.backCover).then(r => r.blob());
-        
-        // Generate unique filenames with timestamp
-        const timestamp = Date.now();
-        const frontCoverPath = `${job.user_id}/${timestamp}-cover.png`;
-        const backCoverPath = `${job.user_id}/${timestamp}-back-cover.png`;
-        
-        // Upload front cover
-        const { error: frontUploadError } = await supabase.storage
-          .from('generated-pages')
-          .upload(frontCoverPath, frontCoverBlob, {
-            contentType: 'image/png',
-            cacheControl: '3600',
-            upsert: false
-          });
-        
-        if (frontUploadError) {
-          console.error('Front cover upload failed:', frontUploadError);
-        } else {
-          const { data: frontUrlData } = supabase.storage
-            .from('generated-pages')
-            .getPublicUrl(frontCoverPath);
-          coverImageUrl = frontUrlData.publicUrl;
-          console.log('Front cover uploaded:', coverImageUrl);
+        const coverResponse = await supabase.functions.invoke('generate-cover', {
+          body: {
+            characterName,
+            interests,
+            photoUrl: characters[0]?.photos?.[0] || null,
+            pageCount: selectedPageCount,
+            firstPageImageUrl, // Pass first page image for cover generation
+          }
+        });
+
+        if (coverResponse.error) {
+          console.error(`Cover generation attempt ${attempt} failed:`, coverResponse.error);
+          if (attempt < MAX_COVER_RETRIES) {
+            console.log(`Retrying in 3 seconds...`);
+            await new Promise(resolve => setTimeout(resolve, 3000));
+          }
+          continue;
         }
         
-        // Upload back cover
-        const { error: backUploadError } = await supabase.storage
-          .from('generated-pages')
-          .upload(backCoverPath, backCoverBlob, {
-            contentType: 'image/png',
-            cacheControl: '3600',
-            upsert: false
-          });
-        
-        if (backUploadError) {
-          console.error('Back cover upload failed:', backUploadError);
-        } else {
-          const { data: backUrlData } = supabase.storage
-            .from('generated-pages')
-            .getPublicUrl(backCoverPath);
-          backCoverImageUrl = backUrlData.publicUrl;
-          console.log('Back cover uploaded:', backCoverImageUrl);
+        if (coverResponse.data?.frontCover && coverResponse.data?.backCover) {
+          try {
+            console.log('Cover generated successfully, uploading to storage...');
+            
+            // Convert base64 data URLs to blobs
+            const frontCoverBlob = await fetch(coverResponse.data.frontCover).then(r => r.blob());
+            const backCoverBlob = await fetch(coverResponse.data.backCover).then(r => r.blob());
+            
+            // Generate unique filenames with timestamp
+            const timestamp = Date.now();
+            const frontCoverPath = `${job.user_id}/${timestamp}-cover.png`;
+            const backCoverPath = `${job.user_id}/${timestamp}-back-cover.png`;
+            
+            // Upload front cover
+            const { error: frontUploadError } = await supabase.storage
+              .from('generated-pages')
+              .upload(frontCoverPath, frontCoverBlob, {
+                contentType: 'image/png',
+                cacheControl: '3600',
+                upsert: false
+              });
+            
+            if (frontUploadError) {
+              console.error('Front cover upload failed:', frontUploadError);
+              throw new Error('Front cover upload failed');
+            }
+            
+            const { data: frontUrlData } = supabase.storage
+              .from('generated-pages')
+              .getPublicUrl(frontCoverPath);
+            coverImageUrl = frontUrlData.publicUrl;
+            console.log('✓ Front cover uploaded:', coverImageUrl);
+            
+            // Upload back cover
+            const { error: backUploadError } = await supabase.storage
+              .from('generated-pages')
+              .upload(backCoverPath, backCoverBlob, {
+                contentType: 'image/png',
+                cacheControl: '3600',
+                upsert: false
+              });
+            
+            if (backUploadError) {
+              console.error('Back cover upload failed:', backUploadError);
+              throw new Error('Back cover upload failed');
+            }
+            
+            const { data: backUrlData } = supabase.storage
+              .from('generated-pages')
+              .getPublicUrl(backCoverPath);
+            backCoverImageUrl = backUrlData.publicUrl;
+            console.log('✓ Back cover uploaded:', backCoverImageUrl);
+            
+            // Mark success - break out of retry loop
+            coverGenerationSuccess = true;
+            console.log(`✓ Cover generation successful on attempt ${attempt}`);
+            break;
+            
+          } catch (uploadError) {
+            console.error(`Error uploading covers (attempt ${attempt}):`, uploadError);
+            if (attempt < MAX_COVER_RETRIES) {
+              console.log(`Retrying in 3 seconds...`);
+              await new Promise(resolve => setTimeout(resolve, 3000));
+            }
+          }
         }
-        
-      } catch (uploadError) {
-        console.error('Error uploading covers to storage:', uploadError);
-        // Continue without covers - don't fail the entire job
+      } catch (error) {
+        console.error(`Cover generation attempt ${attempt} error:`, error);
+        if (attempt < MAX_COVER_RETRIES) {
+          console.log(`Retrying in 3 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
       }
+    }
+    
+    if (!coverGenerationSuccess) {
+      console.warn('⚠️ Cover generation failed after all retry attempts');
     }
 
     // Step 4: Save book to database
     await updateJobProgress(supabase, job.id, { currentStep: 'saving_book', currentPage: selectedPageCount, totalPages: selectedPageCount });
 
-    // Determine book status - book is 'processing' until client generates PDFs
-    // Client will update status to 'completed', 'partial', or 'failed' after PDF generation
+    // Determine book status based on generation results
     const hasCovers = !!(coverImageUrl && backCoverImageUrl);
-    const bookStatus = 'processing'; // Always processing until PDFs are generated client-side
+    const hasPages = generatedPages.length > 0;
+    
+    let bookStatus: string;
     const missingComponents = [];
-    if (!hasCovers) {
+    
+    if (hasPages && hasCovers) {
+      // Everything generated successfully - ready for PDF generation
+      bookStatus = 'completed';
+      console.log('✓ Book generation complete - all components present');
+    } else if (hasPages && !hasCovers) {
+      // Pages generated but covers failed - partial success
+      bookStatus = 'partial';
+      console.warn('⚠️ Partial book generation - pages complete but covers missing');
       if (!coverImageUrl) missingComponents.push('front_cover');
       if (!backCoverImageUrl) missingComponents.push('back_cover');
+    } else {
+      // No pages - this should not happen as we check earlier
+      bookStatus = 'failed';
+      console.error('❌ Book generation failed - no pages generated');
     }
 
     const bookData: any = {

@@ -70,6 +70,7 @@ const Dashboard = () => {
   const [downloadingBookId, setDownloadingBookId] = useState<string | null>(null);
   const [downloadingCoverId, setDownloadingCoverId] = useState<string | null>(null);
   const [autoFixAttempted, setAutoFixAttempted] = useState<Set<string>>(new Set());
+  const [retryingCoverId, setRetryingCoverId] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
@@ -498,6 +499,127 @@ const Dashboard = () => {
     }
   };
 
+  const handleRetryCoverGeneration = async (book: Book, e: React.MouseEvent) => {
+    e.stopPropagation();
+    
+    if (!book.pages || book.pages.length === 0) {
+      toast.error('Cannot generate covers without pages');
+      return;
+    }
+    
+    setRetryingCoverId(book.id);
+    
+    try {
+      toast.info('Retrying cover generation...');
+      
+      const firstPageImageUrl = book.pages[0]?.imageUrl;
+      if (!firstPageImageUrl) {
+        throw new Error('First page image not found');
+      }
+      
+      // Call generate-cover edge function
+      const { data, error } = await supabase.functions.invoke('generate-cover', {
+        body: {
+          characterName: book.character_name,
+          interests: book.interests,
+          photoUrl: null,
+          pageCount: book.pages.length,
+          firstPageImageUrl,
+        }
+      });
+      
+      if (error) {
+        throw new Error(error.message || 'Cover generation failed');
+      }
+      
+      if (!data?.frontCover || !data?.backCover) {
+        throw new Error('Cover generation did not return images');
+      }
+      
+      // Convert base64 to blobs and upload to storage
+      const frontCoverBlob = await fetch(data.frontCover).then(r => r.blob());
+      const backCoverBlob = await fetch(data.backCover).then(r => r.blob());
+      
+      const timestamp = Date.now();
+      const frontCoverPath = `${user!.id}/${timestamp}-cover.png`;
+      const backCoverPath = `${user!.id}/${timestamp}-back-cover.png`;
+      
+      // Upload front cover
+      const { error: frontUploadError } = await supabase.storage
+        .from('generated-pages')
+        .upload(frontCoverPath, frontCoverBlob, {
+          contentType: 'image/png',
+          cacheControl: '3600',
+          upsert: false
+        });
+      
+      if (frontUploadError) {
+        throw new Error('Front cover upload failed: ' + frontUploadError.message);
+      }
+      
+      const { data: frontUrlData } = supabase.storage
+        .from('generated-pages')
+        .getPublicUrl(frontCoverPath);
+      
+      // Upload back cover
+      const { error: backUploadError } = await supabase.storage
+        .from('generated-pages')
+        .upload(backCoverPath, backCoverBlob, {
+          contentType: 'image/png',
+          cacheControl: '3600',
+          upsert: false
+        });
+      
+      if (backUploadError) {
+        throw new Error('Back cover upload failed: ' + backUploadError.message);
+      }
+      
+      const { data: backUrlData } = supabase.storage
+        .from('generated-pages')
+        .getPublicUrl(backCoverPath);
+      
+      // Update book record with new covers
+      const { error: updateError } = await supabase
+        .from('books')
+        .update({
+          cover_image_url: frontUrlData.publicUrl,
+          back_cover_image_url: backUrlData.publicUrl,
+          missing_covers: false,
+          missing_components: [],
+          status: 'completed',
+        })
+        .eq('id', book.id);
+      
+      if (updateError) {
+        throw new Error('Failed to update book: ' + updateError.message);
+      }
+      
+      // Update local state
+      setBooks(prevBooks => 
+        prevBooks.map(b => 
+          b.id === book.id 
+            ? { 
+                ...b, 
+                cover_image_url: frontUrlData.publicUrl,
+                back_cover_image_url: backUrlData.publicUrl,
+                missing_covers: false,
+                missing_components: [],
+                status: 'completed'
+              } 
+            : b
+        )
+      );
+      
+      toast.success('Covers generated successfully! Book is now complete.');
+      
+    } catch (error: any) {
+      console.error('Error retrying cover generation:', error);
+      toast.error(error.message || 'Failed to generate covers');
+    } finally {
+      setRetryingCoverId(null);
+    }
+  };
+
   const handleDownloadOrGenerate = async (book: Book) => {
     setDownloadingBookId(book.id);
     try {
@@ -888,6 +1010,17 @@ const Dashboard = () => {
                               bookTitle={`${book.character_name}'s Coloring Book`}
                             />
                           </div>
+                        ) : book.status === 'partial' || book.missing_covers ? (
+                          <Button 
+                            size="sm" 
+                            variant="default" 
+                            className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
+                            onClick={(e) => handleRetryCoverGeneration(book, e)}
+                            disabled={retryingCoverId === book.id}
+                          >
+                            <Zap className="w-4 h-4 mr-1" />
+                            {retryingCoverId === book.id ? 'Generating Covers...' : 'Retry Cover Generation'}
+                          </Button>
                         ) : book.status === 'failed' || (book.status === 'processing' && hasAssociatedOrders(book.id)) ? (
                           <Button 
                             size="sm" 
