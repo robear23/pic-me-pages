@@ -116,60 +116,101 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
     if (promptsResponse.error) throw new Error(`Prompt generation failed: ${promptsResponse.error.message}`);
     const prompts = promptsResponse.data.prompts;
 
-    // Step 2: Generate images (batch all prompts together with retry logic)
+    // Step 2: Generate images batch-by-batch to avoid CPU timeout
     await updateJobProgress(supabase, job.id, { 
       currentStep: 'generating_images', 
       currentPage: 0, 
       totalPages: selectedPageCount 
     });
 
-    let generatedPages = [];
-    let attempts = 0;
-    const MAX_ATTEMPTS = 2;
+    const PAGES_PER_BATCH = 2; // Process 2 pages per batch to stay within CPU limit
+    const totalBatches = Math.ceil(prompts.length / PAGES_PER_BATCH);
+    const generatedPages = [];
+    
+    console.log(`Starting batch processing: ${totalBatches} batches, ${PAGES_PER_BATCH} pages per batch`);
 
-    while (attempts < MAX_ATTEMPTS && generatedPages.length < prompts.length) {
-      attempts++;
-      console.log(`Image generation attempt ${attempts}/${MAX_ATTEMPTS}`);
+    // Process each batch separately
+    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+      const start = batchIndex * PAGES_PER_BATCH;
+      const end = Math.min(start + PAGES_PER_BATCH, prompts.length);
+      const batchPrompts = prompts.slice(start, end);
       
-      const imageResponse = await supabase.functions.invoke('generate-images', {
-        body: {
-          prompts: prompts, // Send ALL prompts at once
-          characters,
-          consistentCharacters,
-          complexity: complexityLevel,
-          isReworkMode: false,
-          batchSize: 2,
+      const batchStartTime = Date.now();
+      console.log(`📦 Processing batch ${batchIndex + 1}/${totalBatches} (pages ${start + 1}-${end})`);
+
+      // Retry logic for this batch
+      let batchAttempts = 0;
+      const MAX_BATCH_ATTEMPTS = 2;
+      let batchSuccess = false;
+
+      while (batchAttempts < MAX_BATCH_ATTEMPTS && !batchSuccess) {
+        batchAttempts++;
+        console.log(`  Attempt ${batchAttempts}/${MAX_BATCH_ATTEMPTS} for batch ${batchIndex + 1}`);
+
+        try {
+          const imageResponse = await supabase.functions.invoke('generate-images', {
+            body: {
+              prompts: batchPrompts, // Only this batch's prompts
+              characters,
+              consistentCharacters,
+              complexity: complexityLevel,
+              isReworkMode: false,
+              batchSize: 2,
+            }
+          });
+
+          if (imageResponse.error) {
+            console.error(`  Batch ${batchIndex + 1} attempt ${batchAttempts} failed:`, imageResponse.error);
+            if (batchAttempts < MAX_BATCH_ATTEMPTS) {
+              await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3s before retry
+              continue;
+            }
+          } else if (imageResponse.data?.pages) {
+            generatedPages.push(...imageResponse.data.pages);
+            batchSuccess = true;
+            const batchTime = Date.now() - batchStartTime;
+            console.log(`  ✓ Batch ${batchIndex + 1} succeeded with ${imageResponse.data.pages.length} pages (${batchTime}ms)`);
+            console.log(`  Progress: ${generatedPages.length}/${prompts.length} pages generated`);
+          }
+        } catch (error) {
+          console.error(`  Batch ${batchIndex + 1} attempt ${batchAttempts} exception:`, error);
+          if (batchAttempts < MAX_BATCH_ATTEMPTS) {
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            continue;
+          }
         }
+      }
+
+      if (!batchSuccess) {
+        console.error(`  ❌ Batch ${batchIndex + 1} failed after ${MAX_BATCH_ATTEMPTS} attempts`);
+        // Continue to next batch instead of failing entire job
+      }
+
+      // Update progress after each batch
+      await updateJobProgress(supabase, job.id, {
+        currentStep: 'generating_images',
+        currentPage: generatedPages.length,
+        totalPages: selectedPageCount
       });
-
-      if (imageResponse.error) {
-        console.error(`Image generation attempt ${attempts} failed:`, imageResponse.error);
-        if (attempts < MAX_ATTEMPTS) {
-          await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5s before retry
-          continue;
-        }
-        throw new Error(`Image generation failed after ${MAX_ATTEMPTS} attempts: ${imageResponse.error.message}`);
-      }
-
-      if (imageResponse.data?.pages) {
-        generatedPages = imageResponse.data.pages;
-        console.log(`Generated ${generatedPages.length}/${prompts.length} pages`);
-      }
-      
-      if (generatedPages.length < prompts.length && attempts < MAX_ATTEMPTS) {
-        console.log(`Only ${generatedPages.length}/${prompts.length} pages generated, retrying...`);
-        await new Promise(resolve => setTimeout(resolve, 5000));
-      } else {
-        break;
-      }
     }
 
-    // Validate that we have generated pages before proceeding
-    if (generatedPages.length === 0) {
-      throw new Error('Failed to generate any pages');
+    // Determine final status based on results
+    const totalExpected = prompts.length;
+    const totalGenerated = generatedPages.length;
+
+    console.log(`\n=== Generation Summary ===`);
+    console.log(`Total pages generated: ${totalGenerated}/${totalExpected}`);
+    console.log(`Successful batches: ${Math.floor(totalGenerated / PAGES_PER_BATCH)}/${totalBatches}`);
+
+    if (totalGenerated === 0) {
+      throw new Error('Failed to generate any pages after processing all batches');
     }
     
-    console.log(`Successfully generated ${generatedPages.length}/${prompts.length} pages`);
+    if (totalGenerated < totalExpected) {
+      console.warn(`⚠️ Partial generation: ${totalGenerated}/${totalExpected} pages. Some batches failed.`);
+    } else {
+      console.log(`✓ Complete generation: All ${totalGenerated} pages generated successfully`);
+    }
 
     // Step 3: Generate cover (only if we have pages)
     await updateJobProgress(supabase, job.id, { currentStep: 'generating_cover', currentPage: selectedPageCount, totalPages: selectedPageCount });
@@ -235,18 +276,28 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
       if (updateError) throw new Error(`Failed to update book: ${updateError.message}`);
     }
 
-    // Mark job as completed
+    // Mark job as completed or partial based on results
+    const finalStatus = totalGenerated === totalExpected ? 'completed' : 'partial';
+    const errorMessage = totalGenerated < totalExpected 
+      ? `Generated ${totalGenerated}/${totalExpected} pages. Some batches failed.`
+      : null;
+
     await supabase
       .from('book_generation_jobs')
       .update({
-        status: 'completed',
+        status: finalStatus,
         book_id: bookId,
         completed_at: new Date().toISOString(),
-        progress: { currentStep: 'completed', currentPage: selectedPageCount, totalPages: selectedPageCount }
+        error_message: errorMessage,
+        progress: { 
+          currentStep: finalStatus, 
+          currentPage: totalGenerated, 
+          totalPages: totalExpected 
+        }
       })
       .eq('id', job.id);
 
-    console.log(`Job ${job.id} completed successfully. Book ID: ${bookId}`);
+    console.log(`Job ${job.id} ${finalStatus}. Book ID: ${bookId} (${totalGenerated}/${totalExpected} pages)`);
 
   } catch (error) {
     console.error(`Job ${job.id} failed:`, error);
