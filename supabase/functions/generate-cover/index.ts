@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
-import { decode } from "https://deno.land/x/imagescript@1.2.15/mod.ts";
+import { encode } from "https://deno.land/std@0.190.0/encoding/base64.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -84,13 +84,13 @@ OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at
         }
         
         const arrayBuffer = await imageResponse.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
         
-        // Convert to base64
-        base64Data = btoa(String.fromCharCode(...uint8Array));
+        // Use Deno's built-in base64 encoding - handles large files efficiently without stack overflow
+        base64Data = encode(arrayBuffer);
         mimeType = imageResponse.headers.get('content-type') || 'image/png';
         
         console.log(`Successfully fetched and converted image (${(arrayBuffer.byteLength / 1024).toFixed(2)} KB)`);
+        console.log(`Image dimensions: ~${Math.sqrt(arrayBuffer.byteLength / 3).toFixed(0)}px (estimated)`);
       } catch (fetchError) {
         console.error('Error fetching image from storage:', fetchError);
         throw new Error(`Failed to fetch page image for cover generation: ${fetchError instanceof Error ? fetchError.message : 'Unknown error'}`);
