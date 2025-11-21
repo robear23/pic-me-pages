@@ -153,12 +153,9 @@ serve(async (req) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${btoa(`${luluApiKey}:${luluApiSecret}`)}`,
       },
-      body: new URLSearchParams({
-        grant_type: 'client_credentials',
-        client_id: luluApiKey,
-        client_secret: luluApiSecret,
-      }),
+      body: 'grant_type=client_credentials',
     });
 
     if (!luluAuthResponse.ok) {
