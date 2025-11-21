@@ -81,6 +81,35 @@ const Dashboard = () => {
     }
   }, [user, retryCount]);
 
+  // Auto-generate PDFs for completed books missing them
+  useEffect(() => {
+    const fixIncompleteBooks = async () => {
+      const booksNeedingPdfs = books.filter(book => 
+        book.status === 'completed' && 
+        (!book.pdf_url || !book.cover_url) &&
+        book.pages &&
+        Array.isArray(book.pages) &&
+        book.pages.length > 0 &&
+        !isGeneratingPdf // Don't trigger if already generating
+      );
+
+      if (booksNeedingPdfs.length > 0) {
+        console.log(`🔧 Found ${booksNeedingPdfs.length} completed books missing PDFs, auto-fixing...`);
+        
+        // Fix them one at a time to avoid overwhelming the system
+        for (const book of booksNeedingPdfs) {
+          try {
+            await handleGeneratePdf(book, false);
+          } catch (error) {
+            console.error(`Failed to generate PDFs for book ${book.id}:`, error);
+          }
+        }
+      }
+    };
+
+    fixIncompleteBooks();
+  }, [books, isGeneratingPdf]);
+
   const loadBooks = async () => {
     if (!user) {
       console.log('[Dashboard] Cannot load books - no user');
