@@ -211,14 +211,23 @@ export const GeneratingStep = () => {
             setCurrentStep(step || 'Processing...');
           }
 
-          if (updatedJob.status === 'completed') {
+          if (updatedJob.status === 'completed' || updatedJob.status === 'partial') {
             setProgress(100);
-            setCurrentStep('Book completed!');
             
-            toast({
-              title: 'Book Ready!',
-              description: 'Your coloring book has been generated successfully.',
-            });
+            if (updatedJob.status === 'partial') {
+              setCurrentStep('Book partially completed');
+              toast({
+                title: 'Book Partially Completed',
+                description: 'Some pages generated successfully. Check your dashboard for details.',
+                variant: 'default',
+              });
+            } else {
+              setCurrentStep('Book completed!');
+              toast({
+                title: 'Book Ready!',
+                description: 'Your coloring book has been generated successfully.',
+              });
+            }
 
             // Navigate to dashboard after a brief delay
             setTimeout(() => {

@@ -7,16 +7,17 @@ import { useAdmin } from '@/hooks/useAdmin';
 import { useBookStore } from '@/store/bookStore';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap } from 'lucide-react';
+import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { OrderPhysicalBookDialog } from '@/components/OrderPhysicalBookDialog';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
-import { AlertCircle } from 'lucide-react';
 import { repairBookPdf, toDataUrl } from '@/lib/repairPdf';
 import { jsPDF } from 'jspdf';
+import { BookHealthStatus } from '@/components/BookHealthStatus';
+import { BookDiagnostics } from '@/components/BookDiagnostics';
 
 interface Book {
   id: string;
@@ -95,7 +96,7 @@ const Dashboard = () => {
     try {
       const { data, error } = await supabase
         .from('books')
-        .select('id, character_name, interests, pdf_url, cover_url, cover_image_url, status, created_at, user_id, pages, missing_covers, missing_components')
+        .select('id, character_name, interests, pdf_url, cover_url, cover_image_url, back_cover_image_url, status, created_at, user_id, pages, missing_covers, missing_components')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -180,12 +181,14 @@ const Dashboard = () => {
   };
 
   const getIncompleteBooks = () => {
-    // A book is truly incomplete only if it's processing, failed, or has no interior PDF
-    // Partial books with missing covers are NOT considered incomplete
     return books.filter(book => 
       book.status === 'processing' || 
       book.status === 'failed' ||
-      !book.pdf_url
+      book.status === 'partial' ||
+      !book.pdf_url ||
+      !book.cover_image_url ||
+      !book.back_cover_image_url ||
+      (book.status === 'completed' && (!book.pdf_url || !book.cover_image_url || !book.cover_url))
     );
   };
   
@@ -662,6 +665,13 @@ const Dashboard = () => {
           );
         })()}
 
+        {/* Book Health Status */}
+        {!loading && books.length > 0 && (
+          <div className="mb-6">
+            <BookHealthStatus books={books} retryCreditCount={retryCredits.length} />
+          </div>
+        )}
+
         {loading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
@@ -775,6 +785,12 @@ const Dashboard = () => {
                           </span>
                         ))}
                       </div>
+                      
+                      {/* Book Diagnostics */}
+                      <div className="mb-3" onClick={(e) => e.stopPropagation()}>
+                        <BookDiagnostics book={book} />
+                      </div>
+                      
                       <div className="space-y-2">
                         {isGeneratingPdf === book.id && pdfProgress && (
                           <div className="space-y-1 mb-2 p-3 bg-secondary/50 rounded-lg border border-border/50">

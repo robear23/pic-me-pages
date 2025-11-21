@@ -243,6 +243,16 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
     // Step 4: Save book to database
     await updateJobProgress(supabase, job.id, { currentStep: 'saving_book', currentPage: selectedPageCount, totalPages: selectedPageCount });
 
+    // Determine book status - book is 'processing' until client generates PDFs
+    // Client will update status to 'completed', 'partial', or 'failed' after PDF generation
+    const hasCovers = !!(coverImageUrl && backCoverImageUrl);
+    const bookStatus = 'processing'; // Always processing until PDFs are generated client-side
+    const missingComponents = [];
+    if (!hasCovers) {
+      if (!coverImageUrl) missingComponents.push('front_cover');
+      if (!backCoverImageUrl) missingComponents.push('back_cover');
+    }
+
     const bookData: any = {
       user_id: job.user_id,
       character_name: characterName,
@@ -252,9 +262,11 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
       consistent_characters: consistentCharacters,
       complexity: complexityLevel,
       selected_page_count: selectedPageCount,
-      status: generatedPages.length === selectedPageCount ? 'completed' : 'partial',
+      status: bookStatus,
       cover_image_url: coverImageUrl,
       back_cover_image_url: backCoverImageUrl,
+      missing_covers: !hasCovers,
+      missing_components: missingComponents,
     };
 
     let bookId = job.book_id;
@@ -276,11 +288,11 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
       if (updateError) throw new Error(`Failed to update book: ${updateError.message}`);
     }
 
-    // Mark job as completed or partial based on results
+    // Mark job as completed with message that client must generate PDFs
     const finalStatus = totalGenerated === totalExpected ? 'completed' : 'partial';
-    const errorMessage = totalGenerated < totalExpected 
-      ? `Generated ${totalGenerated}/${totalExpected} pages. Some batches failed.`
-      : null;
+    const statusMessage = totalGenerated < totalExpected 
+      ? `Generated ${totalGenerated}/${totalExpected} pages. Some batches failed. Client will generate PDFs.`
+      : 'Pages generated successfully. Client will generate PDFs.';
 
     await supabase
       .from('book_generation_jobs')
@@ -288,7 +300,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
         status: finalStatus,
         book_id: bookId,
         completed_at: new Date().toISOString(),
-        error_message: errorMessage,
+        error_message: totalGenerated < totalExpected ? statusMessage : null,
         progress: { 
           currentStep: finalStatus, 
           currentPage: totalGenerated, 
@@ -298,6 +310,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob) {
       .eq('id', job.id);
 
     console.log(`Job ${job.id} ${finalStatus}. Book ID: ${bookId} (${totalGenerated}/${totalExpected} pages)`);
+    console.log(`Note: Book status is 'processing' - client will generate PDFs and update to final status`);
 
   } catch (error) {
     console.error(`Job ${job.id} failed:`, error);
