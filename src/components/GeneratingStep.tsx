@@ -433,17 +433,34 @@ export const GeneratingStep = () => {
             
             if (permanentRefusedFailures.length > 0) {
               const refusedPages = permanentRefusedFailures.map(p => p.pageNumber).sort((a, b) => a - b).join(', ');
-              errorParts.push(`🚫 AI MODEL REFUSED (Pages ${refusedPages}):\nThe AI couldn't generate images for these prompts, possibly due to:\n• Complex or ambiguous scene descriptions\n• Certain word combinations that triggered safety filters\n• Conflicts between the reference photo and the requested scene\n\nTo fix this:\n• Use the Rework feature to regenerate with simpler prompts\n• Try different interests that are more straightforward (e.g., "playing with toys" instead of "doing magical activities")\n• Ensure reference photos are clear and well-lit\n• Avoid abstract or overly creative scenarios`);
+              // PHASE 1: Show actual error messages for refused pages
+              const errorExamples = permanentRefusedFailures.slice(0, 2).map(p => 
+                `  • Page ${p.pageNumber}: "${p.prompt.substring(0, 60)}..." - ${p.error?.substring(0, 100) || 'No details'}`
+              ).join('\n');
+              
+              errorParts.push(`🚫 AI MODEL REFUSED (Pages ${refusedPages}):\nThe AI couldn't generate images for these prompts, possibly due to:\n• Complex or ambiguous scene descriptions\n• Certain word combinations that triggered safety filters\n• Conflicts between the reference photo and the requested scene\n\nError details:\n${errorExamples}\n\nTo fix this:\n• Use the Rework feature to regenerate with simpler prompts\n• Try different interests that are more straightforward (e.g., "playing with toys" instead of "doing magical activities")\n• Ensure reference photos are clear and well-lit\n• Avoid abstract or overly creative scenarios`);
             }
             
             if (permanentStyleFailures.length > 0) {
               const stylePages = permanentStyleFailures.map(p => p.pageNumber).sort((a, b) => a - b).join(', ');
-              errorParts.push(`📸 PHOTO STYLE ISSUES (Pages ${stylePages}):\nThe AI generated illustrated/cartoon images instead of realistic photos.\n\nTry these fixes:\n• Use clearer, well-lit reference photos\n• Simplify prompts - avoid words like "drawing," "artistic," "creative"\n• Use the Rework feature to regenerate just these pages\n• Consider different character poses/photos for these scenes`);
+              // PHASE 1: Show validation details
+              const errorExamples = permanentStyleFailures.slice(0, 2).map(p => 
+                `  • Page ${p.pageNumber}: ${p.error?.substring(0, 80) || 'Style validation failed'}`
+              ).join('\n');
+              
+              errorParts.push(`📸 PHOTO STYLE ISSUES (Pages ${stylePages}):\nThe AI generated illustrated/cartoon images instead of realistic photos.\n\nDetails:\n${errorExamples}\n\nTry these fixes:\n• Use clearer, well-lit reference photos\n• Simplify prompts - avoid words like "drawing," "artistic," "creative"\n• Use the Rework feature to regenerate just these pages\n• Consider different character poses/photos for these scenes`);
             }
             
             if (permanentValidationFailures.length > 0) {
               const validationPages = permanentValidationFailures.map(p => p.pageNumber).sort((a, b) => a - b).join(', ');
-              errorParts.push(`🎨 LINE ART CONVERSION ISSUES (Pages ${validationPages}):\nPages couldn't be converted to clean line art - too photographic or excessive shading.\n\nTo fix this:\n• Use brighter, higher-contrast photos with fewer shadows\n• Avoid close-up or studio-style shots\n• Try simpler poses with clear lighting\n• Then use the Rework feature to regenerate just these pages`);
+              // PHASE 1: Show validation percentages if available
+              const errorExamples = permanentValidationFailures.slice(0, 2).map(p => {
+                const match = p.error?.match(/(\d+\.?\d*)% gray/);
+                const grayPercent = match ? match[1] + '% gray' : 'validation failed';
+                return `  • Page ${p.pageNumber}: ${grayPercent}`;
+              }).join('\n');
+              
+              errorParts.push(`🎨 LINE ART CONVERSION ISSUES (Pages ${validationPages}):\nPages couldn't be converted to clean line art - too photographic or excessive shading.\n\nDetails:\n${errorExamples}\n(Threshold: 45% gray maximum)\n\nTo fix this:\n• Use brighter, higher-contrast photos with fewer shadows\n• Avoid close-up or studio-style shots\n• Try simpler poses with clear lighting\n• Then use the Rework feature to regenerate just these pages`);
             }
             
             if (otherFailures.length > 0) {
@@ -785,9 +802,27 @@ export const GeneratingStep = () => {
               
               <div className="mb-8 p-4 bg-destructive/10 border border-destructive/30 rounded-lg text-left">
                 <h3 className="font-bold text-lg mb-2">Error Details:</h3>
-                <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words">
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap break-words max-h-96 overflow-y-auto">
                   {errorDetails}
                 </p>
+                {/* PHASE 1: Add expandable technical details */}
+                <details className="mt-4 text-xs">
+                  <summary className="cursor-pointer font-semibold text-muted-foreground hover:text-foreground">
+                    🔍 Show Technical Details (for support)
+                  </summary>
+                  <div className="mt-2 p-3 bg-muted/50 rounded border border-muted-foreground/20 font-mono text-xs overflow-x-auto">
+                    <div>Time: {new Date().toISOString()}</div>
+                    <div>Pages Attempted: {generatedPages?.length || 0}</div>
+                    <div>Pages Succeeded: {generatedPages?.filter(p => p.imageUrl).length || 0}</div>
+                    <div>Complexity: {complexityLevel || 'medium'}</div>
+                    <div>Consistent Characters: {consistentCharacters ? 'Yes' : 'No'}</div>
+                    {generatedPages && generatedPages.length > 0 && (
+                      <div className="mt-2">
+                        Failed Pages: {generatedPages.filter(p => !p.imageUrl).map(p => `#${p.pageNumber}`).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                </details>
               </div>
 
               {/* Show "Continue Anyway" option if some pages succeeded */}

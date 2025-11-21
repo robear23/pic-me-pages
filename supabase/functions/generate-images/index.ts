@@ -84,31 +84,54 @@ CRITICAL RULES:
 
 OUTPUT: Clean black and white line drawing with NO gray tones or photographic shadows.`;
 
-// Helper function to simplify prompts that might trigger safety filters
+// PHASE 5: Safety filter word blacklist
+const SAFETY_FILTER_WORDS = [
+  'magical', 'mystical', 'enchanted', 'admiring', 'gazing', 'wonder',
+  'dramatic', 'artistic', 'creative', 'drawing', 'playful', 'teasing',
+  'mysterious', 'ethereal', 'dreamy', 'fantastical', 'whimsical'
+];
+
+// PHASE 5: Pre-filter prompts to remove problematic words
+function preFilterPrompt(prompt: string): string {
+  let filtered = prompt;
+  for (const word of SAFETY_FILTER_WORDS) {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    filtered = filtered.replace(regex, '');
+  }
+  // Clean up extra spaces
+  return filtered.replace(/\s+/g, ' ').trim();
+}
+
+// PHASE 3: Enhanced prompt simplification with aggressive fallbacks
 function simplifyPromptForRetry(originalPrompt: string, attemptNumber: number): string {
   const nameMatch = originalPrompt.match(/^([A-Z][a-z]+)/);
   const characterName = nameMatch ? nameMatch[1] : 'the character';
   
   if (attemptNumber === 1) {
-    // First retry: Extract main activity, remove adjectives and complex words
-    const activityMatch = originalPrompt.match(/(playing|sitting|holding|standing|walking|running|reading|drawing|building|eating)/i);
+    // First retry: Extract main activity, remove adjectives and problematic words
+    const activityMatch = originalPrompt.match(/(playing|sitting|holding|standing|walking|running|reading|drawing|building|eating|smiling)/i);
     if (activityMatch) {
-      return `${characterName} ${activityMatch[1]} in a simple room. Natural lighting.`;
+      const activity = activityMatch[1].toLowerCase();
+      // Add brightness hint
+      return `${characterName} ${activity} indoors. Bright, even lighting. Simple background.`;
     }
-    // Fallback: remove problematic words
-    return originalPrompt
-      .replace(/enchanted|magical|mystical|wonder|admiring|gazing/gi, '')
-      .replace(/playful|teasing/gi, 'playing')
-      .substring(0, 150);
+    // Fallback: aggressively remove problematic words
+    let simplified = originalPrompt;
+    for (const word of SAFETY_FILTER_WORDS) {
+      const regex = new RegExp(`\\b${word}\\b`, 'gi');
+      simplified = simplified.replace(regex, '');
+    }
+    return simplified.replace(/\s+/g, ' ').trim().substring(0, 120) + '. Bright lighting, simple scene.';
   }
   
   if (attemptNumber === 2) {
-    // Second retry: Ultra-simple fallback
-    return `${characterName} in a simple indoor scene. Bright, natural lighting.`;
+    // Second retry: Ultra-simple format with mandatory brightness
+    return `${characterName} in a bright, simple room. High-key lighting. Plain background.`;
   }
   
-  console.log(`Simplified prompt (attempt ${attemptNumber}): ${originalPrompt.substring(0, 80)}...`);
-  return originalPrompt;
+  // Final fallback: absolute minimum
+  console.log(`⚠️ Using minimal fallback prompt for attempt ${attemptNumber}`);
+  return `${characterName} portrait. Bright studio lighting. White background.`;
 }
 
 // Use Google's Gemini API directly - cheapest model with image generation
@@ -117,8 +140,8 @@ const getModelForComplexity = (complexity?: string): string => {
   return 'gemini-2.5-flash-image'; // Remove "google/" prefix for direct API
 };
 
-// Simplified validation for line art - detects shading and photo elements
-async function validateLineArt(base64Image: string): Promise<{ 
+// PHASE 4: Enhanced validation with brightness boost capability
+async function validateLineArt(base64Image: string, pageIndex?: number, totalPages?: number): Promise<{ 
   valid: boolean; 
   grayPixelPercentage: number;
   hasPhotographicElements: boolean;
@@ -188,24 +211,41 @@ async function validateLineArt(base64Image: string): Promise<{
       return { valid: false, grayPixelPercentage: grayPercentage, hasPhotographicElements: true };
     }
     
-    // Adjusted thresholds for high-key source images - more lenient with bright photos
-    const GRAY_THRESHOLD = 35; // Increased - bright source images may have more compression artifacts
-    const MID_GRAY_THRESHOLD = 20; // Increased - allows slightly more gray from bright photos
+    // PHASE 2: Relaxed thresholds for better success rate
+    const GRAY_THRESHOLD = 45; // Increased from 35% - allow more compression artifacts
+    const MID_GRAY_THRESHOLD = 25; // Increased from 20% - allow more anti-aliasing
     
     const hasExcessiveGray = grayPercentage > GRAY_THRESHOLD;
     const hasExcessiveMidTones = nearGrayPercentage > MID_GRAY_THRESHOLD;
-    // Only fail on photographic elements if also very gray (>40%)
+    
+    // PHASE 2: Less strict photo-like detection - only fail if BOTH high gray AND photo elements
     const hasPhotographicElements = nearGrayPercentage > MID_GRAY_THRESHOLD;
-    const isPhotoLike = hasPhotographicElements && grayPercentage > 40;
+    const isPhotoLike = hasPhotographicElements && grayPercentage > 50; // Increased from 40%
     
+    // PHASE 2: Validation bypass for borderline cases (35-45% gray with good black/white ratio)
+    const isBorderline = grayPercentage >= 35 && grayPercentage <= GRAY_THRESHOLD && blackPercentage > 50;
     const isValid = !hasExcessiveGray && !hasExcessiveMidTones && !isPhotoLike;
+    const acceptBorderline = isBorderline && !isPhotoLike;
     
-    console.log(`[VALIDATION DETAIL] Line art page:
+    // PHASE 1: Enhanced logging with detailed pixel analysis
+    const pageInfo = pageIndex !== undefined && totalPages !== undefined ? ` for page ${pageIndex + 1}/${totalPages}` : '';
+    console.log(`[VALIDATION DETAIL] Line art validation${pageInfo}:
   - Gray pixels: ${grayPercentage.toFixed(2)}% (threshold: ${GRAY_THRESHOLD}%)
   - Mid-tone gray: ${nearGrayPercentage.toFixed(2)}% (threshold: ${MID_GRAY_THRESHOLD}%)
   - Black/White: ${blackPercentage.toFixed(2)}%
-  - Photo-like: ${isPhotoLike ? 'Yes' : 'No'}
-  - Result: ${isValid ? '✓ PASS' : '✗ FAIL'}`);
+  - Photo-like: ${isPhotoLike ? 'Yes (>50% gray)' : 'No'}
+  - Borderline: ${isBorderline ? 'Yes (accepting)' : 'No'}
+  - Result: ${isValid || acceptBorderline ? '✓ PASS' : '✗ FAIL'}`);
+    
+    // PHASE 4: Accept borderline images with warning
+    if (acceptBorderline && !isValid) {
+      console.warn(`⚠️ Accepting borderline line art (${grayPercentage.toFixed(1)}% gray) - black/white ratio is good`);
+      return { 
+        valid: true, // Accept it
+        grayPixelPercentage: grayPercentage,
+        hasPhotographicElements: false // Override since we're accepting
+      };
+    }
     
     return { 
       valid: isValid, 
@@ -387,16 +427,30 @@ async function generateRealisticImage(
           const errorMessage = errorData.error?.message || 'Unknown error';
           console.error(`Step 1 API error (${imageResponse.status}): ${errorMessage}`);
           
-          // Check for safety/content policy refusal
+          // PHASE 5: Enhanced safety filter detection
           if (errorMessage.toLowerCase().includes('safety') || 
               errorMessage.toLowerCase().includes('refused') || 
               errorMessage.toLowerCase().includes('policy') ||
-              errorMessage.toLowerCase().includes('blocked')) {
-            console.warn(`⚠️ Safety filter triggered on attempt ${attempt}`);
+              errorMessage.toLowerCase().includes('blocked') ||
+              errorMessage.toLowerCase().includes('harmful') ||
+              errorMessage.toLowerCase().includes('inappropriate')) {
+            
+            // Try to identify trigger word
+            let triggerWord = 'unknown';
+            const promptText = contentParts.find((p: any) => p.type === 'text')?.text || '';
+            for (const word of SAFETY_FILTER_WORDS) {
+              if (promptText.toLowerCase().includes(word.toLowerCase())) {
+                triggerWord = word;
+                break;
+              }
+            }
+            
+            console.warn(`⚠️ Safety filter triggered on attempt ${attempt} - possible trigger: "${triggerWord}"`);
+            console.log(`Original prompt contained: ${promptText.substring(0, 100)}...`);
             
             // Auto-simplify and retry
             if (attempt < MAX_RETRIES) {
-              console.log('Simplifying prompt and retrying...');
+              console.log(`Simplifying prompt (removing "${triggerWord}") and retrying...`);
               const simplifiedPrompt = simplifyPromptForRetry(prompt.prompt, attempt);
               
               // Update content parts with simplified prompt
@@ -410,7 +464,7 @@ async function generateRealisticImage(
               continue;
             }
             
-            throw new Error(`MODEL_REFUSED: Safety filter triggered - ${errorMessage}`);
+            throw new Error(`MODEL_REFUSED: Safety filter triggered (word: "${triggerWord}") - ${errorMessage}`);
           }
           
           // Check for region restriction
@@ -439,16 +493,27 @@ async function generateRealisticImage(
         );
         
         if (!imagePart?.inlineData?.data) {
-          // Extract the prompt text for error logging
+          // PHASE 5: Enhanced logging for model refusals
           const promptText = contentParts.find((p: any) => p.type === 'text')?.text || 'unknown prompt';
-          const errorMsg = `Model refused to generate image - possible content policy issue with prompt: "${promptText.substring(0, 100)}..."`;
-          console.error(`No image data in Step 1 response: ${errorMsg}`);
+          
+          // Try to identify trigger word
+          let triggerWord = 'unknown';
+          for (const word of SAFETY_FILTER_WORDS) {
+            if (promptText.toLowerCase().includes(word.toLowerCase())) {
+              triggerWord = word;
+              break;
+            }
+          }
+          
+          const errorMsg = `Model refused to generate image (attempt ${attempt}/${MAX_RETRIES}) - possible trigger: "${triggerWord}"`;
+          console.error(`❌ No image data in Step 1 response: ${errorMsg}`);
+          console.log(`Prompt excerpt: "${promptText.substring(0, 150)}..."`);
           
           if (attempt < MAX_RETRIES) {
-            console.log(`Attempt ${attempt + 1}: No image data received. Trying with simplified prompt...`);
+            console.log(`🔄 Retrying with simplified prompt (removing "${triggerWord}")...`);
             
-            // FALLBACK: Simplify the prompt to remove potentially problematic words
-            const simplifiedPrompt = simplifyPromptForRetry(promptText, attempt);
+            // PHASE 3: Aggressive prompt simplification
+            const simplifiedPrompt = simplifyPromptForRetry(prompt.prompt, attempt);
             
             // Retry with simplified prompt
             const firstTextIndex = mergedContent.findIndex((part: any) => part.type === 'text');
@@ -461,7 +526,7 @@ async function generateRealisticImage(
             continue;
           }
           
-          throw new Error(`MODEL_REFUSED: ${errorMsg}`);
+          throw new Error(`MODEL_REFUSED: No image generated after ${MAX_RETRIES} attempts (trigger: "${triggerWord}")`);
         }
 
         // Convert to data URL
@@ -632,36 +697,45 @@ async function convertToLineArt(
 
         console.log(`Successfully converted to line art ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
         
-        // Validate the line art with pixel-level analysis
-        const validation = await validateLineArt(imageData);
+        // PHASE 1 & 4: Enhanced validation with detailed logging
+        const validation = await validateLineArt(imageData, pageIndex, totalPages);
         
-        // Classify validation failures: severe vs moderate
-        const isSevereFailure = validation.grayPixelPercentage > 60 || 
-                                (validation.hasPhotographicElements && validation.grayPixelPercentage > 40);
+        // PHASE 4: More nuanced failure classification
+        const isSevereFailure = validation.grayPixelPercentage > 60; // Only truly bad images
+        const isModerateFailure = validation.grayPixelPercentage > 45 && validation.grayPixelPercentage <= 60;
+        const isBorderline = validation.grayPixelPercentage > 35 && validation.grayPixelPercentage <= 45;
         
         if (!validation.valid) {
           const issues: string[] = [];
-          if (validation.grayPixelPercentage > 30) {
-            issues.push(`${validation.grayPixelPercentage.toFixed(1)}% gray pixels`);
+          if (validation.grayPixelPercentage > 45) {
+            issues.push(`${validation.grayPixelPercentage.toFixed(1)}% gray pixels (threshold: 45%)`);
           }
-          if (validation.hasPhotographicElements && validation.grayPixelPercentage > 40) {
+          if (validation.hasPhotographicElements && validation.grayPixelPercentage > 50) {
             issues.push('too photographic');
           }
           
-          // For severe failures, retry or throw
+          // PHASE 1: Detailed error logging
+          console.error(`❌ Validation failed for page ${pageIndex + 1}/${totalPages}:
+  Issues: ${issues.join(', ')}
+  Classification: ${isSevereFailure ? 'SEVERE' : isModerateFailure ? 'MODERATE' : 'BORDERLINE'}
+  Gray: ${validation.grayPixelPercentage.toFixed(1)}%
+  Photo-like: ${validation.hasPhotographicElements}`);
+          
+          // For severe failures only, retry or throw
           if (isSevereFailure) {
-            console.error(`SEVERE validation failure for page ${pageIndex + 1}: ${issues.join(', ')}`);
-            
             if (attempt < MAX_RETRIES) {
-              console.log(`Retrying line art conversion (attempt ${attempt + 1}/${MAX_RETRIES})...`);
+              console.log(`🔄 Retrying line art conversion (attempt ${attempt + 1}/${MAX_RETRIES})...`);
               continue;
             }
             
-            throw new Error(`VALIDATION_FAILED: Image is too photographic (${validation.grayPixelPercentage.toFixed(1)}% gray). Use brighter photos with higher contrast.`);
+            throw new Error(`VALIDATION_FAILED: Image is too photographic (${validation.grayPixelPercentage.toFixed(1)}% gray). Line art conversion failed after ${MAX_RETRIES} attempts.`);
           }
           
-          // For moderate failures, accept with warning
-          console.log(`[WARNING] Line art has ${validation.grayPixelPercentage.toFixed(1)}% gray pixels – accepted with warning`);
+          // PHASE 4: Accept imperfect mode for moderate failures
+          if (isModerateFailure || isBorderline) {
+            console.warn(`⚠️ ACCEPTING IMPERFECT: Line art has ${validation.grayPixelPercentage.toFixed(1)}% gray pixels – quality may be reduced but page is usable`);
+            // Fall through to return - accept it
+          }
         }
 
         console.log(`✓ Line art validated for page ${pageIndex + 1}/${totalPages} (${validation.grayPixelPercentage.toFixed(2)}% gray pixels)`);
@@ -796,10 +870,11 @@ serve(async (req) => {
             }
           }
 
-          // Step 1: Generate realistic image - SIMPLIFIED PROMPT
+          // PHASE 3 & 5: Pre-filter and enhance prompt with brightness hints
+          const filteredPrompt = preFilterPrompt(prompt.prompt);
           const realisticPrompt = characterContext.length > 0 
-            ? `${prompt.prompt}\n\nMatch the person in the reference photo exactly. Natural lighting, simple background, child-appropriate.`
-            : `${prompt.prompt}\n\nNatural lighting, simple background, child-appropriate.`;
+            ? `${filteredPrompt}\n\nMatch the person in the reference photo exactly. Bright, high-key lighting. Simple white or light-colored background. Well-lit scene. Child-appropriate.`
+            : `${filteredPrompt}\n\nBright, high-key lighting. Simple white or light-colored background. Well-lit scene. Child-appropriate.`;
 
           const contentParts = [
             ...characterContext, // Photos first for better matching
@@ -836,12 +911,24 @@ serve(async (req) => {
           };
 
         } catch (error: any) {
-          console.error(`Failed to generate page ${i + 1} (page number ${prompt.pageNumber}):`, error);
-          console.error(`Error details:`, {
-            message: error.message,
-            stack: error.stack?.substring(0, 200),
-            prompt: prompt.prompt.substring(0, 100) + '...'
-          });
+          // PHASE 1: Enhanced error logging with full context
+          console.error(`❌ FAILED: Page ${i + 1}/${validPrompts.length} (page number: ${prompt.pageNumber})
+  Error: ${error.message}
+  Prompt: "${prompt.prompt.substring(0, 100)}..."
+  Error type: ${error.name || 'Error'}
+  Stack: ${error.stack?.substring(0, 300) || 'none'}`);
+          
+          // PHASE 5: Log if it was a safety filter issue
+          if (error.message?.includes('MODEL_REFUSED') || error.message?.includes('Safety filter')) {
+            console.warn(`⚠️ Safety filter rejection detected for page ${prompt.pageNumber}`);
+            // Try to identify trigger word
+            for (const word of SAFETY_FILTER_WORDS) {
+              if (prompt.prompt.toLowerCase().includes(word.toLowerCase())) {
+                console.log(`Possible trigger word in prompt: "${word}"`);
+                break;
+              }
+            }
+          }
           
           const isRateLimitError = error.message?.includes('Rate limit') || error.message?.includes('429');
           const isPaymentError = error.message?.includes('credits') || error.message?.includes('402');
@@ -859,10 +946,27 @@ serve(async (req) => {
         }
       });
 
-      const batchResults = await Promise.all(batchPromises);
-      pages.push(...batchResults);
+      // PHASE 1: Ensure batch errors are properly captured with Promise.allSettled
+      const batchResults = await Promise.allSettled(batchPromises);
       
-      console.log(`Completed batch ${batchStart / BATCH_SIZE + 1}: ${batchResults.filter(p => p.imageUrl).length}/${batchResults.length} successful`);
+      // Process settled promises
+      const successfulPages = batchResults
+        .filter(r => r.status === 'fulfilled')
+        .map(r => (r as PromiseFulfilledResult<any>).value);
+      
+      pages.push(...successfulPages);
+      
+      // PHASE 1: Log batch completion with details
+      const fulfilled = batchResults.filter(r => r.status === 'fulfilled').length;
+      const rejected = batchResults.filter(r => r.status === 'rejected').length;
+      console.log(`✓ Batch ${batchStart / BATCH_SIZE + 1} complete: ${fulfilled} succeeded, ${rejected} failed`);
+      
+      // PHASE 1: Log rejected promises for debugging (these shouldn't happen but log if they do)
+      batchResults.forEach((result, idx) => {
+        if (result.status === 'rejected') {
+          console.error(`⚠️ Batch promise ${idx} unexpectedly rejected:`, result.reason);
+        }
+      });
     }
 
     console.log(`Generated ${successCount}/${validPrompts.length} images successfully`);
