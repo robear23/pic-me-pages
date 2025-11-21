@@ -14,6 +14,56 @@ export type Database = {
   }
   public: {
     Tables: {
+      book_generation_jobs: {
+        Row: {
+          book_id: string | null
+          completed_at: string | null
+          created_at: string | null
+          error_message: string | null
+          generation_data: Json
+          id: string
+          progress: Json | null
+          started_at: string | null
+          status: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          book_id?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          generation_data: Json
+          id?: string
+          progress?: Json | null
+          started_at?: string | null
+          status?: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          book_id?: string | null
+          completed_at?: string | null
+          created_at?: string | null
+          error_message?: string | null
+          generation_data?: Json
+          id?: string
+          progress?: Json | null
+          started_at?: string | null
+          status?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "book_generation_jobs_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       books: {
         Row: {
           art_style: string | null
