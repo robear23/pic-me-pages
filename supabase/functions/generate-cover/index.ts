@@ -31,7 +31,7 @@ async function upscaleToHighResWithFallback(
   heightInches: number
 ): Promise<string> {
   // Try progressively lower DPI levels if memory errors occur
-  const dpiLevels = [200, 150]; // Start at 200 DPI (Lulu minimum)
+  const dpiLevels = [200, 150, 100]; // Progressive fallback to prevent stack overflow
   
   for (let i = 0; i < dpiLevels.length; i++) {
     const targetDPI = dpiLevels[i];
@@ -54,6 +54,12 @@ async function upscaleToHighResWithFallback(
       // Skip upscaling if already high enough resolution
       if (originalDPI >= 200) {
         console.log(`✓ Image already meets quality requirements (${originalDPI} DPI), skipping upscale`);
+        return base64Image;
+      }
+      
+      // Skip upscaling if close enough to target (within 10 DPI) to avoid unnecessary processing
+      if (Math.abs(originalDPI - targetDPI) <= 10) {
+        console.log(`✓ Image close enough to target (${originalDPI} DPI vs ${targetDPI} DPI), skipping upscale`);
         return base64Image;
       }
       
@@ -84,16 +90,23 @@ async function upscaleToHighResWithFallback(
                            error.name === 'RangeError';
       
       if (isMemoryError && i < dpiLevels.length - 1) {
-        console.warn(`⚠️ Memory error at ${targetDPI} DPI, trying lower quality (${dpiLevels[i + 1]} DPI)...`);
+        console.warn(`⚠️ ${error.name} at ${targetDPI} DPI, trying lower quality (${dpiLevels[i + 1]} DPI)...`);
         continue;
       }
       
-      // If it's the last attempt or not a memory error, throw
+      // Last resort: if all upscaling fails, return original image
+      if (i === dpiLevels.length - 1) {
+        console.error(`⚠️ All upscaling attempts failed, returning original image at ~${Math.round(base64Image.length / 1024)}KB`);
+        return base64Image;
+      }
+      
       throw error;
     }
   }
   
-  throw new Error('Failed to upscale image at any quality level');
+  // Fallback: return original if all else fails
+  console.warn('⚠️ Returning original image without upscaling');
+  return base64Image;
 }
 
 serve(async (req) => {
