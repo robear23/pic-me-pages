@@ -181,6 +181,47 @@ export const GeneratingStep = () => {
     };
   }, [jobId, jobStatus]);
 
+  // Client-side timeout: Mark job as failed after 12 minutes
+  useEffect(() => {
+    if (!jobId || jobStatus === 'completed' || jobStatus === 'failed') return;
+
+    const TIMEOUT_MS = 12 * 60 * 1000; // 12 minutes
+    
+    const timeoutId = setTimeout(async () => {
+      console.log('Client-side timeout triggered after 12 minutes');
+      
+      // Mark job as failed in database
+      const { error } = await supabase
+        .from('book_generation_jobs')
+        .update({
+          status: 'failed',
+          error_message: 'Generation timed out after 12 minutes. This appears to be a system issue. Please try again or contact support if the problem persists.',
+          completed_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', jobId);
+
+      if (error) {
+        console.error('Failed to update timeout status in DB:', error);
+      }
+
+      // Update UI state
+      setJobStatus('failed');
+      setErrorMessage('Generation timed out after 12 minutes. This appears to be a system issue. Please try again or contact support if the problem persists.');
+      setCanLeave(true);
+
+      toast({
+        title: 'Generation Timeout',
+        description: 'Your book generation took too long. Please try again.',
+        variant: 'destructive',
+      });
+    }, TIMEOUT_MS);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [jobId, jobStatus, toast]);
+
   // Subscribe to job updates via Realtime
   useEffect(() => {
     if (!jobId) return;
