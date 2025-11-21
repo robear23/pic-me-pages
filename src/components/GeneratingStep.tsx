@@ -45,11 +45,39 @@ export const GeneratingStep = () => {
   const [canLeave, setCanLeave] = useState(false);
   const [startTime] = useState(Date.now());
 
+  // Check for existing pending job on mount
   useEffect(() => {
-    let pollInterval: NodeJS.Timeout | null = null;
+    const checkExistingJob = async () => {
+      if (!user || jobId) return;
 
+      const { data: existingJobs } = await supabase
+        .from('book_generation_jobs')
+        .select('*')
+        .eq('user_id', user.id)
+        .in('status', ['pending', 'processing'])
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (existingJobs && existingJobs.length > 0) {
+        console.log('Found existing job:', existingJobs[0].id);
+        setJobId(existingJobs[0].id);
+        setJobStatus(existingJobs[0].status as 'pending' | 'processing' | 'completed' | 'failed');
+        setCanLeave(true);
+        if (existingJobs[0].progress) {
+          const prog = existingJobs[0].progress as any;
+          setProgress(Math.min((prog.currentPage || 0) / (prog.totalPages || 1) * 100, 95));
+          setCurrentStep(prog.currentStep || 'Processing...');
+        }
+      }
+    };
+
+    checkExistingJob();
+  }, [user, jobId]);
+
+  // Create job if needed
+  useEffect(() => {
     const createGenerationJob = async () => {
-      if (jobId) return; // Job already created
+      if (jobId) return;
 
       if (!user) {
         toast({
@@ -61,7 +89,6 @@ export const GeneratingStep = () => {
         return;
       }
 
-      // Security check: Verify payment or bypass (skip for rework mode)
       if (!isReworkMode && !paymentBypassed && !orderId) {
         console.error('No payment detected - redirecting to payment step');
         toast({
@@ -74,7 +101,6 @@ export const GeneratingStep = () => {
       }
 
       try {
-        // Create job in database
         const { data: job, error: jobError } = await supabase
           .from('book_generation_jobs')
           .insert({
@@ -111,18 +137,7 @@ export const GeneratingStep = () => {
         setJobId(job.id);
         setJobStatus('pending');
         setCanLeave(true);
-        
         console.log('Job created:', job.id);
-
-        // Set up polling to trigger edge function every 5 seconds
-        pollInterval = setInterval(async () => {
-          console.log('Polling edge function...');
-          const { error: invokeError } = await supabase.functions.invoke('process-book-generation', {});
-          
-          if (invokeError) {
-            console.error('Error triggering edge function:', invokeError);
-          }
-        }, 5000);
 
       } catch (error: any) {
         console.error('Error creating job:', error);
@@ -135,15 +150,36 @@ export const GeneratingStep = () => {
     };
 
     createGenerationJob();
+  }, [user, jobId]);
 
-    // Cleanup polling on unmount
-    return () => {
-      if (pollInterval) {
-        console.log('Cleaning up polling interval');
-        clearInterval(pollInterval);
+  // Set up polling when we have a jobId
+  useEffect(() => {
+    if (!jobId || jobStatus === 'completed' || jobStatus === 'failed') return;
+
+    console.log('Setting up polling for job:', jobId);
+
+    const triggerProcessor = async () => {
+      console.log('Triggering edge function...');
+      const { data, error } = await supabase.functions.invoke('process-book-generation', {});
+      
+      if (error) {
+        console.error('Error triggering edge function:', error);
+      } else {
+        console.log('Edge function response:', data);
       }
     };
-  }, [user, jobId]);
+
+    // Trigger immediately
+    triggerProcessor();
+
+    // Then poll every 5 seconds
+    const pollInterval = setInterval(triggerProcessor, 5000);
+
+    return () => {
+      console.log('Cleaning up polling interval');
+      clearInterval(pollInterval);
+    };
+  }, [jobId, jobStatus]);
 
   // Subscribe to job updates via Realtime
   useEffect(() => {
