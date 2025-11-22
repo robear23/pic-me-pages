@@ -667,13 +667,34 @@ const Dashboard = () => {
   };
 
   const handleRetryGeneration = async (book: Book) => {
-    if (!confirm(`Retry generating PDFs for "${book.character_name}'s Coloring Book"? This will attempt to complete the book generation.`)) {
+    // Check if retry credit is available for this book
+    const availableCredit = retryCredits.find(
+      credit => credit.book_id === book.id && !credit.used_at
+    );
+
+    if (!availableCredit) {
+      toast.error('No retry credit available for this book');
+      return;
+    }
+
+    if (!confirm(`Retry generating PDFs for "${book.character_name}'s Coloring Book"? This will use your free retry credit.`)) {
       return;
     }
     
     setIsGeneratingPdf(book.id);
     try {
-      toast.info('Retrying book generation...');
+      toast.info('Using retry credit to regenerate book...');
+      
+      // Mark retry credit as used
+      const { error: creditError } = await supabase
+        .from('retry_credits')
+        .update({ used_at: new Date().toISOString() })
+        .eq('id', availableCredit.id);
+      
+      if (creditError) {
+        console.error('Error marking credit as used:', creditError);
+        throw new Error('Failed to use retry credit');
+      }
       
       if (!book.pages || book.pages.length === 0) {
         throw new Error('Cannot retry: Book has no page data');
@@ -693,6 +714,7 @@ const Dashboard = () => {
         
         toast.success('Book generation completed successfully!');
         await loadBooks();
+        await loadRetryCredits(); // Refresh retry credits
       }
     } catch (error: any) {
       console.error('Error retrying generation:', error);
@@ -1039,25 +1061,37 @@ const Dashboard = () => {
                                <Zap className="w-4 h-4 mr-1" />
                                {retryingCoverId === book.id ? 'Generating Covers...' : 'Retry Cover Generation'}
                              </Button>
-                           ) : book.status === 'failed' || (book.status === 'processing' && hasAssociatedOrders(book.id)) ? (
-                             <Button 
-                               size="sm" 
-                               variant="outline" 
-                               className="w-full border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50"
-                               onClick={(e) => {
-                                 e.stopPropagation();
-                                 handleRetryGeneration(book);
-                               }}
-                               disabled={isGeneratingPdf === book.id}
-                             >
-                               <Zap className="w-4 h-4 mr-1" />
-                               {isGeneratingPdf === book.id ? 'Retrying...' : 'Retry Generation'}
-                             </Button>
-                           ) : (
-                             <Button size="sm" variant="outline" className="w-full" disabled>
-                               Processing...
-                             </Button>
-                           );
+                            ) : book.status === 'failed' || (book.status === 'processing' && hasAssociatedOrders(book.id)) ? (
+                              (() => {
+                                const hasRetryCredit = retryCredits.some(
+                                  credit => credit.book_id === book.id && !credit.used_at
+                                );
+                                
+                                return hasRetryCredit ? (
+                                  <Button 
+                                    size="sm" 
+                                    variant="outline" 
+                                    className="w-full border-green-500/50 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/50"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRetryGeneration(book);
+                                    }}
+                                    disabled={isGeneratingPdf === book.id}
+                                  >
+                                    <Zap className="w-4 h-4 mr-1" />
+                                    {isGeneratingPdf === book.id ? 'Retrying...' : 'Use Free Retry'}
+                                  </Button>
+                                ) : (
+                                  <div className="p-3 bg-amber-50 dark:bg-amber-950/50 border border-amber-500/50 rounded text-xs text-amber-700 dark:text-amber-300">
+                                    ⚠️ Book generation failed. Please contact support for assistance.
+                                  </div>
+                                );
+                              })()
+                            ) : (
+                              <Button size="sm" variant="outline" className="w-full" disabled>
+                                Processing...
+                              </Button>
+                            );
                          })()}
                         <Button
                           size="sm"
