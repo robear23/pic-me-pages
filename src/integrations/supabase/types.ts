@@ -20,9 +20,14 @@ export type Database = {
           completed_at: string | null
           created_at: string | null
           error_message: string | null
+          failure_reason: string | null
           generation_data: Json
           id: string
+          last_heartbeat: string | null
+          max_retries: number | null
+          processing_duration_ms: number | null
           progress: Json | null
+          retry_count: number | null
           started_at: string | null
           status: string
           updated_at: string | null
@@ -33,9 +38,14 @@ export type Database = {
           completed_at?: string | null
           created_at?: string | null
           error_message?: string | null
+          failure_reason?: string | null
           generation_data: Json
           id?: string
+          last_heartbeat?: string | null
+          max_retries?: number | null
+          processing_duration_ms?: number | null
           progress?: Json | null
+          retry_count?: number | null
           started_at?: string | null
           status?: string
           updated_at?: string | null
@@ -46,9 +56,14 @@ export type Database = {
           completed_at?: string | null
           created_at?: string | null
           error_message?: string | null
+          failure_reason?: string | null
           generation_data?: Json
           id?: string
+          last_heartbeat?: string | null
+          max_retries?: number | null
+          processing_duration_ms?: number | null
           progress?: Json | null
+          retry_count?: number | null
           started_at?: string | null
           status?: string
           updated_at?: string | null
@@ -332,6 +347,17 @@ export type Database = {
     }
     Functions: {
       cleanup_stale_book_generation_jobs: { Args: never; Returns: undefined }
+      cleanup_stale_jobs: { Args: never; Returns: undefined }
+      get_job_stats: {
+        Args: { time_window_hours?: number }
+        Returns: {
+          avg_duration_minutes: number
+          completed_count: number
+          failed_count: number
+          pending_count: number
+          processing_count: number
+        }[]
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
