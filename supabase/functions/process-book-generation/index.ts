@@ -12,6 +12,8 @@ interface GenerationJob {
   user_id: string;
   book_id: string | null;
   status: string;
+  created_at: string;
+  started_at: string | null;
   progress: {
     currentPage: number;
     totalPages: number;
@@ -31,6 +33,22 @@ interface GenerationJob {
 
 const FUNCTION_TIMEOUT_MS = 240000; // 4 minutes - leave buffer before edge function timeout
 
+// Heartbeat system to keep job alive
+function startHeartbeat(supabase: any, jobId: string): () => void {
+  const intervalId = setInterval(async () => {
+    await supabase
+      .from('book_generation_jobs')
+      .update({ 
+        last_heartbeat: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', jobId);
+    console.log(`💓 Heartbeat sent for job ${jobId}`);
+  }, 30000); // Every 30 seconds
+  
+  return () => clearInterval(intervalId);
+}
+
 Deno.serve(async (req) => {
   console.log('=== process-book-generation invoked ===');
   console.log('Method:', req.method);
@@ -45,7 +63,7 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get next pending job
+    // Get next pending job with atomic locking
     console.log('Fetching pending jobs...');
     const { data: jobs, error: fetchError } = await supabase
       .from('book_generation_jobs')
@@ -70,20 +88,40 @@ Deno.serve(async (req) => {
     }
 
     const job = jobs[0] as GenerationJob;
-    console.log(`Found pending job ${job.id} for user ${job.user_id}`);
+    console.log('=== Job Details ===');
+    console.log('Job ID:', job.id);
+    console.log('User ID:', job.user_id);
+    console.log('Created:', job.created_at);
+    console.log('Page count:', job.generation_data.selectedPageCount);
+    console.log('Complexity:', job.generation_data.complexityLevel);
 
-    // Mark job as processing
-    await supabase
+    // Atomically claim the job (prevents race conditions)
+    const { data: claimedJob, error: claimError } = await supabase
       .from('book_generation_jobs')
       .update({
         status: 'processing',
         started_at: new Date().toISOString(),
+        last_heartbeat: new Date().toISOString(),
         progress: { currentPage: 0, totalPages: job.generation_data.selectedPageCount, currentStep: 'Preparing generation' }
       })
-      .eq('id', job.id);
+      .eq('id', job.id)
+      .eq('status', 'pending') // Only claim if still pending (prevents race condition)
+      .select()
+      .single();
+
+    if (claimError || !claimedJob) {
+      console.log('Job was claimed by another instance');
+      return new Response(JSON.stringify({ message: 'Job already claimed' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    console.log(`✓ Successfully claimed job ${job.id}`);
 
     // Process the job with comprehensive error handling
     const startTime = Date.now();
+    const stopHeartbeat = startHeartbeat(supabase, job.id);
+    
     try {
       await processBookGeneration(supabase, job, startTime);
     } catch (processError) {
@@ -91,12 +129,20 @@ Deno.serve(async (req) => {
       console.error(`Job ${job.id} processing error:`, processError);
       const errorMessage = processError instanceof Error ? processError.message : 'Unknown error during processing';
       
+      // Determine if this is a system error (grant retry credit)
+      const isSystemError = errorMessage.includes('timeout') || 
+                            errorMessage.includes('Edge Function') ||
+                            errorMessage.includes('network') ||
+                            errorMessage.includes('fetch failed');
+      
       await supabase
         .from('book_generation_jobs')
         .update({
           status: 'failed',
           error_message: errorMessage,
+          failure_reason: isSystemError ? 'system_error' : 'generation_error',
           completed_at: new Date().toISOString(),
+          processing_duration_ms: Date.now() - startTime,
         })
         .eq('id', job.id);
 

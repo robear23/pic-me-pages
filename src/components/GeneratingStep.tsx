@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useBookStore } from '@/store/bookStore';
-import { Sparkles, Check, Loader2, Info, XCircle } from 'lucide-react';
+import { Sparkles, Check, Loader2, Info, XCircle, AlertCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
@@ -45,6 +45,8 @@ export const GeneratingStep = () => {
   const [canLeave, setCanLeave] = useState(false);
   const [startTime] = useState(Date.now());
   const [, setTick] = useState(0);
+  const [lastProgressUpdate, setLastProgressUpdate] = useState<number>(Date.now());
+  const [showStaleWarning, setShowStaleWarning] = useState(false);
 
   // Force re-render every 10 seconds to update elapsed time
   useEffect(() => {
@@ -56,6 +58,28 @@ export const GeneratingStep = () => {
     
     return () => clearInterval(timer);
   }, [jobStatus]);
+
+  // Check for stale progress (no updates for 2+ minutes)
+  useEffect(() => {
+    if (jobStatus === 'completed' || jobStatus === 'failed') return;
+    
+    const checkInterval = setInterval(() => {
+      const timeSinceUpdate = Date.now() - lastProgressUpdate;
+      if (timeSinceUpdate > 2 * 60 * 1000) { // 2 minutes
+        setShowStaleWarning(true);
+      }
+    }, 10000); // Check every 10 seconds
+    
+    return () => clearInterval(checkInterval);
+  }, [lastProgressUpdate, jobStatus]);
+
+  // Update last progress when job progress changes
+  useEffect(() => {
+    if (progress) {
+      setLastProgressUpdate(Date.now());
+      setShowStaleWarning(false);
+    }
+  }, [progress]);
 
   // Check for existing pending job on mount
   useEffect(() => {
@@ -220,23 +244,30 @@ export const GeneratingStep = () => {
     };
   }, [jobId, jobStatus]);
 
-  // Client-side timeout: Mark job as failed after 12 minutes
+  // Dynamic timeout based on book complexity
   useEffect(() => {
     if (!jobId || jobStatus === 'completed' || jobStatus === 'failed') return;
 
-    const TIMEOUT_MS = 12 * 60 * 1000; // 12 minutes
+    // Calculate timeout based on page count and complexity
+    const baseTime = 5 * 60 * 1000; // 5 minutes base
+    const perPageTime = 60 * 1000; // 1 minute per page
+    const complexityMultiplier = complexityLevel === 'detailed' ? 1.5 : 1;
+    const timeoutMs = baseTime + ((selectedPageCount || 12) * perPageTime * complexityMultiplier);
+    
+    console.log(`Setting dynamic timeout: ${timeoutMs / 1000 / 60} minutes`);
     
     const timeoutId = setTimeout(async () => {
-      console.log('Client-side timeout triggered after 12 minutes');
+      console.log('Client-side timeout triggered');
       
       // Mark job as failed in database
       const { error } = await supabase
         .from('book_generation_jobs')
         .update({
           status: 'failed',
-          error_message: 'Generation timed out after 12 minutes. This appears to be a system issue. Please try again or contact support if the problem persists.',
+          error_message: `Generation timed out after ${Math.round(timeoutMs / 1000 / 60)} minutes. This appears to be a system issue. Please try again or contact support if the problem persists.`,
           completed_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          failure_reason: 'client_timeout',
         })
         .eq('id', jobId);
 
@@ -246,7 +277,7 @@ export const GeneratingStep = () => {
 
       // Update UI state
       setJobStatus('failed');
-      setErrorMessage('Generation timed out after 12 minutes. This appears to be a system issue. Please try again or contact support if the problem persists.');
+      setErrorMessage(`Generation timed out after ${Math.round(timeoutMs / 1000 / 60)} minutes. This appears to be a system issue. Please try again or contact support if the problem persists.`);
       setCanLeave(true);
 
       toast({
@@ -254,12 +285,12 @@ export const GeneratingStep = () => {
         description: 'Your book generation took too long. Please try again.',
         variant: 'destructive',
       });
-    }, TIMEOUT_MS);
+    }, timeoutMs);
 
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [jobId, jobStatus, toast]);
+  }, [jobId, jobStatus, toast, selectedPageCount, complexityLevel]);
 
   // Subscribe to job updates via Realtime
   useEffect(() => {
@@ -438,6 +469,16 @@ export const GeneratingStep = () => {
                 {elapsedMinutes} min elapsed
                 {estimatedMinutes > 0 && jobStatus !== 'completed' && ` • ~${Math.max(0, estimatedMinutes - elapsedMinutes)} min remaining`}
               </p>
+
+              {/* Stale progress warning */}
+              {showStaleWarning && (
+                <Alert className="mb-4 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-500/50">
+                  <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                  <AlertDescription className="text-yellow-800 dark:text-yellow-200">
+                    No progress update for 2+ minutes. Your book is still processing, but it may be experiencing delays...
+                  </AlertDescription>
+                </Alert>
+              )}
 
               {/* Progress Bar */}
               <div className="mb-6">
