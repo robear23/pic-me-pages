@@ -2,6 +2,7 @@ project_id = "yzcqvuidasgljeifvmxk"
 
 [functions.process-book-generation]
 verify_jwt = false
+timeout_sec = 300
 
 [functions.generate-prompts]
 verify_jwt = false

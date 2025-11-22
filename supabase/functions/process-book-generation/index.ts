@@ -175,25 +175,52 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     }
   };
 
+  // Enhanced error logging function
+  const logError = async (step: string, error: any) => {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`❌ [${step}] Error:`, errorMessage);
+    console.error(`❌ [${step}] Stack:`, error instanceof Error ? error.stack : 'No stack trace');
+    
+    // Update job with error details
+    await supabase
+      .from('book_generation_jobs')
+      .update({
+        error_message: `${step}: ${errorMessage}`,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', job.id);
+  };
+
   try {
     const { generation_data } = job;
     const { characters, interests, consistentCharacters, complexityLevel, selectedPageCount, isReworkMode, selectedPagesForRework, generatedBookId } = generation_data;
 
-    // Step 1: Generate prompts
+    // Step 1: Generate prompts with error handling
+    console.log('📝 Starting prompt generation...');
     await updateJobProgress(supabase, job.id, { currentStep: 'Creating story prompts', currentPage: 0, totalPages: selectedPageCount });
     
-    const promptsResponse = await supabase.functions.invoke('generate-prompts', {
-      body: {
-        characters,
-        interests,
-        consistentCharacters,
-        targetPageCount: selectedPageCount,
-        complexityLevel,
-      }
-    });
+    let prompts;
+    try {
+      const promptsResponse = await supabase.functions.invoke('generate-prompts', {
+        body: {
+          characters,
+          interests,
+          consistentCharacters,
+          targetPageCount: selectedPageCount,
+          complexityLevel,
+        }
+      });
 
-    if (promptsResponse.error) throw new Error(`Prompt generation failed: ${promptsResponse.error.message}`);
-    const prompts = promptsResponse.data.prompts;
+      if (promptsResponse.error) {
+        await logError('Prompt Generation', promptsResponse.error);
+        throw new Error(`Prompt generation failed: ${promptsResponse.error.message}`);
+      }
+      prompts = promptsResponse.data.prompts;
+      console.log(`✓ Generated ${prompts.length} prompts`);
+    } catch (error) {
+      await logError('Prompt Generation', error);
+      throw error;
+    }
 
     // Step 2: Generate images batch-by-batch to avoid CPU timeout
     checkTimeout(); // Check before starting image generation
