@@ -1063,8 +1063,9 @@ const Dashboard = () => {
                              </Button>
                             ) : book.status === 'failed' || (book.status === 'processing' && hasAssociatedOrders(book.id)) ? (
                               (() => {
+                                // PHASE 1: Accept ANY unused credit (not just book-specific)
                                 const hasRetryCredit = retryCredits.some(
-                                  credit => credit.book_id === book.id && !credit.used_at
+                                  credit => !credit.used_at
                                 );
                                 
                                 return hasRetryCredit ? (
