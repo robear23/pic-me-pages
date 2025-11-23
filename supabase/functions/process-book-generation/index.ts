@@ -178,24 +178,32 @@ Deno.serve(async (req) => {
     }
 
     const job = jobs[0] as GenerationJob;
+    const wasOrphaned = job.status === 'processing';
+    
     console.log('=== Job Details ===');
     console.log('Job ID:', job.id);
     console.log('User ID:', job.user_id);
+    console.log('Status:', job.status, wasOrphaned ? '(ORPHANED - RECOVERING)' : '');
     console.log('Created:', job.created_at);
     console.log('Page count:', job.generation_data.selectedPageCount);
     console.log('Complexity:', job.generation_data.complexityLevel);
+    if (wasOrphaned) {
+      console.log('⚠️ Recovering orphaned job with progress:', job.progress);
+    }
 
     // Atomically claim the job (prevents race conditions)
+    // Now handles both pending and orphaned processing jobs
     const { data: claimedJob, error: claimError } = await supabase
       .from('book_generation_jobs')
       .update({
         status: 'processing',
         started_at: new Date().toISOString(),
         last_heartbeat: new Date().toISOString(),
-        progress: { currentPage: 0, totalPages: job.generation_data.selectedPageCount, currentStep: 'Preparing generation' }
+        progress: job.progress || { currentPage: 0, totalPages: job.generation_data.selectedPageCount, currentStep: 'Preparing generation' },
+        error_message: wasOrphaned ? 'Recovered from orphaned state' : null
       })
       .eq('id', job.id)
-      .eq('status', 'pending') // Only claim if still pending (prevents race condition)
+      .in('status', ['pending', 'processing']) // Accept both pending and processing (for orphaned jobs)
       .select()
       .single();
 
@@ -206,7 +214,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    console.log(`✓ Successfully claimed job ${job.id}`);
+    console.log(`✓ Successfully claimed job ${job.id}${wasOrphaned ? ' (recovered from orphaned state)' : ''}`);
+
 
     // Process the job with comprehensive error handling
     const startTime = Date.now();
