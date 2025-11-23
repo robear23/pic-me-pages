@@ -153,15 +153,15 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get next pending job OR orphaned processing job with stale heartbeat
-    console.log('Fetching pending or orphaned jobs...');
-    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
-    const { data: jobs, error: fetchError } = await supabase
-      .from('book_generation_jobs')
-      .select('*')
-      .or(`status.eq.pending,and(status.eq.processing,last_heartbeat.lt.${twoMinutesAgo})`)
-      .order('created_at', { ascending: true })
-      .limit(1);
+  // PHASE 4: Fetch pending or orphaned jobs (including jobs with NULL started_at)
+  console.log('Fetching pending or orphaned jobs...');
+  const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const { data: jobs, error: fetchError } = await supabase
+    .from('book_generation_jobs')
+    .select('*')
+    .or(`status.eq.pending,and(status.eq.processing,started_at.is.null),and(status.eq.processing,last_heartbeat.lt.${twoMinutesAgo})`)
+    .order('created_at', { ascending: true })
+    .limit(1);
 
     if (fetchError) {
       console.error('Error fetching jobs:', fetchError);
@@ -426,7 +426,9 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     for (let pageIndex = startPageIndex; pageIndex < Math.min(prompts.length, adjustedPageCount); pageIndex++) {
       checkTimeout();
       
-      // PHASE 2: Circuit breaker - exit after 3 pages to clear memory
+      // PHASE 5: CIRCUIT BREAKER DISABLED - causing more issues than it solves
+      // Will re-enable once orphaned job recovery is more reliable
+      /*
       if (pageIndex > 0 && (pageIndex - startPageIndex) >= PAGES_PER_FUNCTION) {
         console.log(`💤 Circuit breaker: Pausing after ${pageIndex - startPageIndex} pages to clear memory`);
         console.log(`Progress saved: ${generatedPages.length}/${adjustedPageCount} pages. Job will resume automatically.`);
@@ -440,6 +442,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
         // Exit - orphaned job detection will restart us
         return;
       }
+      */
       
       const pageStartTime = Date.now();
       const prompt = prompts[pageIndex];
