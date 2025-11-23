@@ -252,7 +252,11 @@ export const GeneratingStep = () => {
     const baseTime = 5 * 60 * 1000; // 5 minutes base
     const perPageTime = 60 * 1000; // 1 minute per page
     const complexityMultiplier = complexityLevel === 'detailed' ? 1.5 : 1;
-    const timeoutMs = baseTime + ((selectedPageCount || 12) * perPageTime * complexityMultiplier);
+    // PHASE 7: Cap frontend timeout at 10 minutes to fail faster if edge function is stuck
+    const timeoutMs = Math.min(
+      baseTime + ((selectedPageCount || 12) * perPageTime * complexityMultiplier),
+      10 * 60 * 1000 // Maximum 10 minutes
+    );
     
     console.log(`Setting dynamic timeout: ${timeoutMs / 1000 / 60} minutes`);
     
