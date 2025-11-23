@@ -444,7 +444,7 @@ async function generateRealisticImage(
   complexity?: string,
   maxRetries?: number
 ): Promise<string> {
-  const MAX_RETRIES = maxRetries || 2;
+  const MAX_RETRIES = 1; // PHASE 1: Reduce retries to save memory
   const selectedModel = getModelForComplexity(complexity);
   const MODELS = [selectedModel]; // Use only the selected model
   
@@ -633,49 +633,8 @@ async function generateRealisticImage(
 
         console.log(`Successfully generated realistic image ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
         
-        // PHASE 2: Validate the realistic image using the validation function results
-        const realisticValidation = await validateRealisticImage(imageData);
-        
-        // Handle validation results
-        if (realisticValidation.isCartoonLike) {
-          // Very flat cartoon-like (<8% variance)
-          console.error(`Realistic image validation: CARTOON-LIKE for page ${pageIndex + 1} (${realisticValidation.colorVariance.toFixed(1)}% variance)`);
-          
-          if (attempt < MAX_RETRIES) {
-            console.log(`🔄 Retrying with strengthened photorealistic prompt (attempt ${attempt + 1}/${MAX_RETRIES})...`);
-            
-            // Strengthen the prompt
-            const firstTextIndex = mergedContent.findIndex((part: any) => part.type === 'text');
-            if (firstTextIndex >= 0) {
-              mergedContent[firstTextIndex] = {
-                type: 'text',
-                text: `CRITICAL: Previous was too flat/cartoon (${realisticValidation.colorVariance.toFixed(1)}%). Generate a REAL PHOTOGRAPH with natural lighting, realistic textures, photographic depth. Aim for 15-25% color variance.\n\n` + mergedContent[firstTextIndex].text
-              };
-            }
-            continue; // Retry
-          }
-          
-          // PHASE 4: On final attempt, accept with warning instead of throwing
-          console.warn(`⚠️ ACCEPTING cartoon-like image for page ${pageIndex + 1} after ${MAX_RETRIES} retries (${realisticValidation.colorVariance.toFixed(1)}% variance)`);
-          console.warn(`Line art conversion may be imperfect but page will complete.`);
-          // Fall through - accept it
-          
-        } else if (!realisticValidation.valid) {
-          // Borderline (8-10% variance)
-          console.warn(`⚠️ Borderline realistic image for page ${pageIndex + 1} (${realisticValidation.colorVariance.toFixed(1)}% variance)`);
-          
-          if (attempt < MAX_RETRIES) {
-            console.log(`Retrying for better quality (attempt ${attempt + 1}/${MAX_RETRIES})...`);
-            continue;
-          }
-          
-          console.warn(`⚠️ ACCEPTING borderline image on final attempt - line art may be affected`);
-          // Fall through - accept it
-          
-        } else {
-          // Good photorealism (≥10%)
-          console.log(`✓ Realistic image validated for page ${pageIndex + 1}/${totalPages} (${realisticValidation.colorVariance.toFixed(1)}% variance)`);
-        }
+        // PHASE 1: Skip validation to save memory - accept first successful generation
+        console.log(`✓ Skipping validation (memory optimization) - accepting image ${pageIndex + 1}/${totalPages}`);
 
         return imageData;
         
@@ -700,7 +659,7 @@ async function convertToLineArt(
   complexity?: string,
   maxRetries?: number
 ): Promise<string> {
-  const MAX_RETRIES = maxRetries || 2;
+  const MAX_RETRIES = 1; // PHASE 1: Reduce retries to save memory
   const selectedModel = getModelForComplexity(complexity);
   const MODELS = [selectedModel]; // Use only the selected model
   
@@ -801,48 +760,8 @@ async function convertToLineArt(
 
         console.log(`Successfully converted to line art ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
         
-        // PHASE 1 & 4: Enhanced validation with detailed logging
-        const validation = await validateLineArt(imageData, pageIndex, totalPages);
-        
-        // PHASE 4: More nuanced failure classification
-        const isSevereFailure = validation.grayPixelPercentage > 60; // Only truly bad images
-        const isModerateFailure = validation.grayPixelPercentage > 45 && validation.grayPixelPercentage <= 60;
-        const isBorderline = validation.grayPixelPercentage > 35 && validation.grayPixelPercentage <= 45;
-        
-        if (!validation.valid) {
-          const issues: string[] = [];
-          if (validation.grayPixelPercentage > 45) {
-            issues.push(`${validation.grayPixelPercentage.toFixed(1)}% gray pixels (threshold: 45%)`);
-          }
-          if (validation.hasPhotographicElements && validation.grayPixelPercentage > 50) {
-            issues.push('too photographic');
-          }
-          
-          // PHASE 1: Detailed error logging
-          console.error(`❌ Validation failed for page ${pageIndex + 1}/${totalPages}:
-  Issues: ${issues.join(', ')}
-  Classification: ${isSevereFailure ? 'SEVERE' : isModerateFailure ? 'MODERATE' : 'BORDERLINE'}
-  Gray: ${validation.grayPixelPercentage.toFixed(1)}%
-  Photo-like: ${validation.hasPhotographicElements}`);
-          
-          // For severe failures only, retry or throw
-          if (isSevereFailure) {
-            if (attempt < MAX_RETRIES) {
-              console.log(`🔄 Retrying line art conversion (attempt ${attempt + 1}/${MAX_RETRIES})...`);
-              continue;
-            }
-            
-            throw new Error(`VALIDATION_FAILED: Image is too photographic (${validation.grayPixelPercentage.toFixed(1)}% gray). Line art conversion failed after ${MAX_RETRIES} attempts.`);
-          }
-          
-          // PHASE 4: Accept imperfect mode for moderate failures
-          if (isModerateFailure || isBorderline) {
-            console.warn(`⚠️ ACCEPTING IMPERFECT: Line art has ${validation.grayPixelPercentage.toFixed(1)}% gray pixels – quality may be reduced but page is usable`);
-            // Fall through to return - accept it
-          }
-        }
-
-        console.log(`✓ Line art validated for page ${pageIndex + 1}/${totalPages} (${validation.grayPixelPercentage.toFixed(2)}% gray pixels)`);
+        // PHASE 1: Skip validation to save memory - accept first successful conversion
+        console.log(`✓ Skipping validation (memory optimization) - accepting line art ${pageIndex + 1}/${totalPages}`);
         return imageData;
         
       } catch (error) {
@@ -867,6 +786,21 @@ serve(async (req) => {
 
   try {
     console.log('[HEALTH] generate-images called at', new Date().toISOString());
+    
+    // PHASE 4: Check memory before processing
+    const memUsage = Deno.memoryUsage();
+    const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
+    const heapTotalMB = memUsage.heapTotal / 1024 / 1024;
+    
+    console.log(`📊 Memory at function start: ${heapUsedMB.toFixed(1)}MB / ${heapTotalMB.toFixed(1)}MB (${((heapUsedMB/heapTotalMB)*100).toFixed(1)}%)`);
+    
+    if (heapUsedMB > 180) {
+      console.error(`🚨 Memory critical: ${heapUsedMB}MB, aborting before crash`);
+      return new Response(JSON.stringify({ error: 'Memory limit exceeded, please retry' }), {
+        status: 507,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     
     const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     if (!GOOGLE_API_KEY) {

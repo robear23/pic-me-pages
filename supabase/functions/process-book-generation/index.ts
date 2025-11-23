@@ -43,6 +43,7 @@ interface GenerationJob {
   status: string;
   created_at: string;
   started_at: string | null;
+  retry_count: number; // PHASE 5: Track retries for graceful degradation
   progress: {
     currentPage: number;
     totalPages: number;
@@ -387,6 +388,13 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     let generatedPages = [];
     let startPageIndex = 0;
     
+    // PHASE 5: Graceful degradation - reduce page count on retry
+    let adjustedPageCount = selectedPageCount;
+    if (job.retry_count >= 2) {
+      adjustedPageCount = Math.min(6, selectedPageCount);
+      console.warn(`⚠️ Retry #${job.retry_count}: Reducing page count from ${selectedPageCount} to ${adjustedPageCount} pages to avoid memory exhaustion`);
+    }
+    
     if (job.book_id && job.progress?.currentPage > 0) {
       console.log(`🔄 Resuming orphaned job from page ${job.progress.currentPage}...`);
       
@@ -404,16 +412,35 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       }
     }
     
-    console.log(`Starting page-by-page generation: ${prompts.length} total pages (starting from page ${startPageIndex + 1})`);
+    console.log(`Starting page-by-page generation: ${Math.min(prompts.length, adjustedPageCount)} total pages (starting from page ${startPageIndex + 1})`);
     logMemoryUsage('Before Image Generation');
 
     // ============================================
+    // PHASE 2: Circuit Breaker - Exit every 3 pages to clear memory
     // PHASE 3 & 4: Process ONE page at a time
     // Save progress incrementally, clear memory
     // ============================================
     
-    for (let pageIndex = startPageIndex; pageIndex < prompts.length; pageIndex++) {
+    const PAGES_PER_FUNCTION = 3; // PHASE 2: Restart edge function every 3 pages
+    
+    for (let pageIndex = startPageIndex; pageIndex < Math.min(prompts.length, adjustedPageCount); pageIndex++) {
       checkTimeout();
+      
+      // PHASE 2: Circuit breaker - exit after 3 pages to clear memory
+      if (pageIndex > 0 && (pageIndex - startPageIndex) >= PAGES_PER_FUNCTION) {
+        console.log(`💤 Circuit breaker: Pausing after ${pageIndex - startPageIndex} pages to clear memory`);
+        console.log(`Progress saved: ${generatedPages.length}/${adjustedPageCount} pages. Job will resume automatically.`);
+        
+        await updateJobProgress(supabase, job.id, {
+          currentStep: 'pausing_for_memory_cleanup',
+          currentPage: generatedPages.length,
+          totalPages: adjustedPageCount
+        });
+        
+        // Exit - orphaned job detection will restart us
+        return;
+      }
+      
       const pageStartTime = Date.now();
       const prompt = prompts[pageIndex];
       
@@ -517,6 +544,9 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
                 .eq('id', job.book_id);
               console.log(`  💾 Progress saved to database: ${generatedPages.length}/${prompts.length} pages`);
             }
+            
+            // PHASE 2: Aggressive memory cleanup after each page
+            generatedPages[pageIndex] = null as any; // Clear from memory
             
             // Force garbage collection hint (Deno may or may not honor this)
             if ((globalThis as any).gc) {
