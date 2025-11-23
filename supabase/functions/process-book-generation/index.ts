@@ -2,6 +2,35 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.81.0';
 import jsPDF from 'https://esm.sh/jspdf@2.5.1';
 import { encode } from 'https://deno.land/std@0.190.0/encoding/base64.ts';
 
+// ============================================
+// PHASE 1: EMERGENCY ERROR RECOVERY
+// ============================================
+
+// Catch process termination signals
+Deno.addSignalListener("SIGTERM", () => {
+  console.error("🛑 SIGTERM received - edge function being terminated");
+  console.error("Stack trace:", new Error().stack);
+});
+
+// Catch unhandled promise rejections
+globalThis.addEventListener("unhandledrejection", (e) => {
+  console.error("🚨 UNHANDLED PROMISE REJECTION:", e.reason);
+  console.error("Promise:", e.promise);
+  if (e.reason instanceof Error) {
+    console.error("Stack:", e.reason.stack);
+  }
+});
+
+// Catch uncaught errors
+globalThis.addEventListener("error", (e) => {
+  console.error("🚨 UNCAUGHT ERROR:", e.error || e.message);
+  console.error("Filename:", e.filename);
+  console.error("Line:", e.lineno, "Col:", e.colno);
+  if (e.error instanceof Error) {
+    console.error("Stack:", e.error.stack);
+  }
+});
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -33,30 +62,90 @@ interface GenerationJob {
 
 const FUNCTION_TIMEOUT_MS = 840000; // 14 minutes (leave 1 min buffer before 15 min edge function timeout)
 
+// ============================================
+// PHASE 2: API TIMEOUT WRAPPER
+// ============================================
+
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    console.error(`⏱️ Timeout after ${timeoutMs}ms for ${url}`);
+    controller.abort();
+  }, timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeoutMs}ms: ${url}`);
+    }
+    throw error;
+  }
+}
+
+// ============================================
+// PHASE 5: MEMORY MONITORING
+// ============================================
+
+function logMemoryUsage(label: string) {
+  try {
+    const memUsage = Deno.memoryUsage();
+    const rss = (memUsage.rss / 1024 / 1024).toFixed(2);
+    const heapTotal = (memUsage.heapTotal / 1024 / 1024).toFixed(2);
+    const heapUsed = (memUsage.heapUsed / 1024 / 1024).toFixed(2);
+    const external = (memUsage.external / 1024 / 1024).toFixed(2);
+    
+    console.log(`📊 [${label}] Memory: RSS=${rss}MB, Heap=${heapUsed}/${heapTotal}MB, External=${external}MB`);
+    
+    // Warn if memory usage is high
+    if (memUsage.heapUsed / memUsage.heapTotal > 0.9) {
+      console.warn(`⚠️ [${label}] High memory usage: ${(memUsage.heapUsed / memUsage.heapTotal * 100).toFixed(1)}%`);
+    }
+  } catch (e) {
+    console.warn(`Could not get memory usage for ${label}:`, e);
+  }
+}
+
 // Heartbeat system to keep job alive
 function startHeartbeat(supabase: any, jobId: string): () => void {
   const intervalId = setInterval(async () => {
-    await supabase
-      .from('book_generation_jobs')
-      .update({ 
-        last_heartbeat: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', jobId);
-    console.log(`💓 Heartbeat sent for job ${jobId}`);
+    try {
+      await supabase
+        .from('book_generation_jobs')
+        .update({ 
+          last_heartbeat: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', jobId);
+      console.log(`💓 Heartbeat sent for job ${jobId}`);
+    } catch (error) {
+      console.error(`❌ Heartbeat failed for job ${jobId}:`, error);
+    }
   }, 30000); // Every 30 seconds
   
-  return () => clearInterval(intervalId);
+  return () => {
+    clearInterval(intervalId);
+    console.log(`💔 Heartbeat stopped for job ${jobId}`);
+  };
 }
 
 Deno.serve(async (req) => {
   console.log('=== process-book-generation invoked ===');
   console.log('Method:', req.method);
   console.log('Time:', new Date().toISOString());
+  logMemoryUsage('Function Start');
 
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
+
+  let stopHeartbeat: (() => void) | null = null;
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -120,10 +209,10 @@ Deno.serve(async (req) => {
 
     // Process the job with comprehensive error handling
     const startTime = Date.now();
-    const stopHeartbeat = startHeartbeat(supabase, job.id);
+    stopHeartbeat = startHeartbeat(supabase, job.id);
     
     try {
-      // PHASE 3: Add timeout recovery with Promise.race
+      // Add timeout recovery with Promise.race
       const timeoutPromise = new Promise((_, reject) => {
         setTimeout(() => reject(new Error('Edge function timeout - exceeded 14 minutes')), FUNCTION_TIMEOUT_MS);
       });
@@ -134,6 +223,7 @@ Deno.serve(async (req) => {
       ]);
       
       console.log(`✓ Job ${job.id} completed successfully`);
+      logMemoryUsage('Job Completed');
       
     } catch (processError) {
       // ALWAYS mark job as failed if something goes wrong
@@ -144,7 +234,10 @@ Deno.serve(async (req) => {
       const isSystemError = errorMessage.includes('timeout') || 
                             errorMessage.includes('Edge Function') ||
                             errorMessage.includes('network') ||
-                            errorMessage.includes('fetch failed');
+                            errorMessage.includes('crashed') ||
+                            errorMessage.includes('fetch failed') ||
+                            errorMessage.includes('SIGTERM') ||
+                            errorMessage.includes('unhandled');
       
       await supabase
         .from('book_generation_jobs')
@@ -157,14 +250,33 @@ Deno.serve(async (req) => {
         })
         .eq('id', job.id);
 
+      // Grant retry credit if system error
+      if (isSystemError) {
+        try {
+          await supabase
+            .from('retry_credits')
+            .insert({
+              user_id: job.user_id,
+              book_id: job.book_id,
+              reason: `System error: ${errorMessage}`,
+            });
+          console.log('✓ Retry credit granted for system error');
+        } catch (creditError) {
+          console.error('Failed to grant retry credit:', creditError);
+        }
+      }
+
+      logMemoryUsage('Job Failed');
+
       return new Response(JSON.stringify({ error: errorMessage, jobId: job.id }), {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     } finally {
-      // PHASE 1 (CRITICAL FIX): Always stop heartbeat in finally block
-      stopHeartbeat();
-      console.log(`💔 Heartbeat stopped for job ${job.id}`);
+      // CRITICAL: Always stop heartbeat in finally block
+      if (stopHeartbeat) {
+        stopHeartbeat();
+      }
     }
 
     return new Response(JSON.stringify({ success: true, jobId: job.id }), {
@@ -174,6 +286,14 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('Error in process-book-generation:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    // Stop heartbeat if error occurred before finally block
+    if (stopHeartbeat) {
+      stopHeartbeat();
+    }
+    
+    logMemoryUsage('Function Error');
+    
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -195,6 +315,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error(`❌ [${step}] Error:`, errorMessage);
     console.error(`❌ [${step}] Stack:`, error instanceof Error ? error.stack : 'No stack trace');
+    logMemoryUsage(`Error at ${step}`);
     
     // Update job with error details
     await supabase
@@ -212,10 +333,12 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
 
     // Step 1: Generate prompts with error handling
     console.log('📝 Starting prompt generation...');
+    logMemoryUsage('Before Prompts');
     await updateJobProgress(supabase, job.id, { currentStep: 'Creating story prompts', currentPage: 0, totalPages: selectedPageCount });
     
     let prompts;
     try {
+      const promptStartTime = Date.now();
       const promptsResponse = await supabase.functions.invoke('generate-prompts', {
         body: {
           characters,
@@ -231,14 +354,15 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
         throw new Error(`Prompt generation failed: ${promptsResponse.error.message}`);
       }
       prompts = promptsResponse.data.prompts;
-      console.log(`✓ Generated ${prompts.length} prompts`);
+      console.log(`✓ Generated ${prompts.length} prompts in ${Date.now() - promptStartTime}ms`);
+      logMemoryUsage('After Prompts');
     } catch (error) {
       await logError('Prompt Generation', error);
       throw error;
     }
 
-    // Step 2: Generate images batch-by-batch to avoid CPU timeout
-    checkTimeout(); // Check before starting image generation
+    // Step 2: Generate images one-by-one with timeout protection
+    checkTimeout();
     
     await updateJobProgress(supabase, job.id, { 
       currentStep: 'Generating coloring pages', 
@@ -246,140 +370,150 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       totalPages: selectedPageCount 
     });
 
-    const PAGES_PER_BATCH = 2; // Process 2 pages per batch to stay within CPU limit
-    const totalBatches = Math.ceil(prompts.length / PAGES_PER_BATCH);
     const generatedPages = [];
     
-    console.log(`Starting batch processing: ${totalBatches} batches, ${PAGES_PER_BATCH} pages per batch`);
+    console.log(`Starting page-by-page generation: ${prompts.length} pages`);
+    logMemoryUsage('Before Image Generation');
 
-    // Process each batch separately
-    for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
-      checkTimeout(); // Check timeout before each batch
-      const start = batchIndex * PAGES_PER_BATCH;
-      const end = Math.min(start + PAGES_PER_BATCH, prompts.length);
-      const batchPrompts = prompts.slice(start, end);
+    // ============================================
+    // PHASE 3 & 4: Process ONE page at a time
+    // Save progress incrementally, clear memory
+    // ============================================
+    
+    for (let pageIndex = 0; pageIndex < prompts.length; pageIndex++) {
+      checkTimeout();
+      const pageStartTime = Date.now();
+      const prompt = prompts[pageIndex];
       
-      const batchStartTime = Date.now();
-      // PHASE 6: Enhanced monitoring
-      console.log(`[${Date.now() - startTime}ms] 📦 Processing batch ${batchIndex + 1}/${totalBatches} (pages ${start + 1}-${end})`);
+      console.log(`\n📄 [${Date.now() - startTime}ms] Processing page ${pageIndex + 1}/${prompts.length}`);
+      console.log(`📊 Progress: ${((pageIndex / prompts.length) * 100).toFixed(1)}% complete`);
+      logMemoryUsage(`Before Page ${pageIndex + 1}`);
 
-      // Retry logic for this batch
-      let batchAttempts = 0;
-      const MAX_BATCH_ATTEMPTS = 2;
-      let batchSuccess = false;
+      let pageSuccess = false;
+      const MAX_PAGE_ATTEMPTS = 2;
 
-      while (batchAttempts < MAX_BATCH_ATTEMPTS && !batchSuccess) {
-        batchAttempts++;
-        console.log(`  Attempt ${batchAttempts}/${MAX_BATCH_ATTEMPTS} for batch ${batchIndex + 1}`);
-
+      for (let attempt = 1; attempt <= MAX_PAGE_ATTEMPTS && !pageSuccess; attempt++) {
         try {
-          const imageResponse = await supabase.functions.invoke('generate-images', {
-            body: {
-              prompts: batchPrompts, // Only this batch's prompts
-              characters,
-              consistentCharacters,
-              complexity: complexityLevel,
-              isReworkMode: false,
-              batchSize: 2,
-            }
-          });
+          console.log(`  Attempt ${attempt}/${MAX_PAGE_ATTEMPTS} for page ${pageIndex + 1}`);
+          
+          // PHASE 2: Use timeout wrapper for image generation (60 second timeout)
+          const imageResponse = await Promise.race([
+            supabase.functions.invoke('generate-images', {
+              body: {
+                prompts: [prompt], // ONLY this one page
+                characters,
+                consistentCharacters,
+                complexity: complexityLevel,
+                isReworkMode: false,
+                batchSize: 1,
+              }
+            }),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error(`Image generation timeout for page ${pageIndex + 1}`)), 60000)
+            )
+          ]) as any;
 
           if (imageResponse.error) {
-            console.error(`  Batch ${batchIndex + 1} attempt ${batchAttempts} failed:`, imageResponse.error);
-            if (batchAttempts < MAX_BATCH_ATTEMPTS) {
-              await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3s before retry
+            console.error(`  Page ${pageIndex + 1} attempt ${attempt} failed:`, imageResponse.error);
+            if (attempt < MAX_PAGE_ATTEMPTS) {
+              await new Promise(resolve => setTimeout(resolve, 2000));
               continue;
             }
-          } else if (imageResponse.data?.pages) {
-            // Upload each page image to storage before saving to database
-            const pagesWithStorageUrls = [];
-            for (const page of imageResponse.data.pages) {
-              try {
-                if (page.imageUrl?.startsWith('data:')) {
-                  console.log(`  Uploading page ${page.pageNumber} to storage...`);
-                  
-                  // Convert base64 data URL to blob
-                  const blob = await fetch(page.imageUrl).then(r => r.blob());
-                  
-                  // Generate unique filename
-                  const timestamp = Date.now();
-                  const pagePath = `${job.user_id}/${timestamp}-page-${page.pageNumber}.png`;
-                  
-                  // Upload to storage
-                  const { error: uploadError } = await supabase.storage
-                    .from('generated-pages')
-                    .upload(pagePath, blob, {
-                      contentType: 'image/png',
-                      cacheControl: '3600',
-                      upsert: false
-                    });
-                  
-                  if (uploadError) {
-                    console.error(`  Failed to upload page ${page.pageNumber}:`, uploadError);
-                    // Keep original base64 URL as fallback
-                    pagesWithStorageUrls.push(page);
-                  } else {
-                    // Get public URL
-                    const { data: urlData } = supabase.storage
-                      .from('generated-pages')
-                      .getPublicUrl(pagePath);
-                    
-                    console.log(`  ✓ Page ${page.pageNumber} uploaded to storage`);
-                    // Replace with storage URL
-                    pagesWithStorageUrls.push({
-                      ...page,
-                      imageUrl: urlData.publicUrl
-                    });
-                  }
-                } else {
-                  // Already a storage URL
-                  pagesWithStorageUrls.push(page);
-                }
-              } catch (uploadError) {
-                console.error(`  Error uploading page ${page.pageNumber}:`, uploadError);
-                // Keep original URL as fallback
-                pagesWithStorageUrls.push(page);
+            throw imageResponse.error;
+          }
+
+          if (imageResponse.data?.pages?.[0]) {
+            const page = imageResponse.data.pages[0];
+            
+            // PHASE 4: Upload immediately and clear from memory
+            if (page.imageUrl?.startsWith('data:')) {
+              console.log(`  ⬆️ Uploading page ${pageIndex + 1} to storage...`);
+              
+              const blob = await fetch(page.imageUrl).then(r => r.blob());
+              const timestamp = Date.now();
+              const pagePath = `${job.user_id}/${timestamp}-page-${pageIndex + 1}.png`;
+              
+              const { error: uploadError } = await supabase.storage
+                .from('generated-pages')
+                .upload(pagePath, blob, {
+                  contentType: 'image/png',
+                  cacheControl: '3600',
+                  upsert: false
+                });
+              
+              if (uploadError) {
+                console.error(`  Failed to upload page ${pageIndex + 1}:`, uploadError);
+                generatedPages.push(page);
+              } else {
+                const { data: urlData } = supabase.storage
+                  .from('generated-pages')
+                  .getPublicUrl(pagePath);
+                
+                console.log(`  ✅ Page ${pageIndex + 1} uploaded`);
+                
+                // Clear base64 data from memory immediately
+                generatedPages.push({
+                  pageNumber: page.pageNumber,
+                  prompt: page.prompt,
+                  imageUrl: urlData.publicUrl
+                });
               }
+            } else {
+              generatedPages.push(page);
             }
             
-            generatedPages.push(...pagesWithStorageUrls);
-            batchSuccess = true;
-            const batchTime = Date.now() - batchStartTime;
-            // PHASE 6: Enhanced monitoring
-            console.log(`[${Date.now() - startTime}ms] ✓ Batch ${batchIndex + 1} completed (${batchTime}ms)`);
-            console.log(`[${Date.now() - startTime}ms] Progress: ${generatedPages.length}/${prompts.length} pages generated`);
+            pageSuccess = true;
+            const pageTime = Date.now() - pageStartTime;
+            console.log(`  ✅ Page ${pageIndex + 1} complete in ${pageTime}ms`);
+            logMemoryUsage(`After Page ${pageIndex + 1}`);
+            
+            // PHASE 3: Save progress to database immediately after each page
+            await updateJobProgress(supabase, job.id, {
+              currentStep: 'generating_images',
+              currentPage: generatedPages.length,
+              totalPages: selectedPageCount
+            });
+            
+            // Update book record with current progress (incremental save)
+            if (job.book_id) {
+              await supabase
+                .from('books')
+                .update({ 
+                  pages: generatedPages,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', job.book_id);
+              console.log(`  💾 Progress saved to database: ${generatedPages.length}/${prompts.length} pages`);
+            }
+            
+            // Force garbage collection hint (Deno may or may not honor this)
+            if ((globalThis as any).gc) {
+              (globalThis as any).gc();
+            }
           }
         } catch (error) {
-          console.error(`  Batch ${batchIndex + 1} attempt ${batchAttempts} exception:`, error);
-          if (batchAttempts < MAX_BATCH_ATTEMPTS) {
-            await new Promise(resolve => setTimeout(resolve, 3000));
+          console.error(`  ❌ Page ${pageIndex + 1} attempt ${attempt} exception:`, error);
+          if (attempt < MAX_PAGE_ATTEMPTS) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
             continue;
           }
+          // Don't fail entire job, continue to next page
+          console.error(`  ⚠️ Skipping page ${pageIndex + 1} after ${MAX_PAGE_ATTEMPTS} attempts`);
         }
       }
-
-      if (!batchSuccess) {
-        console.error(`  ❌ Batch ${batchIndex + 1} failed after ${MAX_BATCH_ATTEMPTS} attempts`);
-        // Continue to next batch instead of failing entire job
-      }
-
-      // Update progress after each batch
-      await updateJobProgress(supabase, job.id, {
-        currentStep: 'generating_images',
-        currentPage: generatedPages.length,
-        totalPages: selectedPageCount
-      });
     }
 
-    // PHASE 1: Generate covers EARLY (right after first page is ready)
+    logMemoryUsage('After All Images');
+
+    // Generate covers (if we have at least one page)
     let coverImageUrl = null;
     let backCoverImageUrl = null;
     let coverUrl = null;
     
     if (generatedPages.length > 0) {
       checkTimeout();
-      // PHASE 6: Enhanced monitoring
-      console.log(`[${Date.now() - startTime}ms] === Cover Generation Starting ===`);
+      console.log(`\n[${Date.now() - startTime}ms] === Cover Generation Starting ===`);
+      logMemoryUsage('Before Covers');
       await updateJobProgress(supabase, job.id, { 
         currentStep: 'Creating book cover', 
         currentPage: generatedPages.length, 
@@ -393,15 +527,14 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
         const firstPageUrl = generatedPages[0]?.imageUrl;
         
         if (firstPageUrl && googleApiKey) {
-          // PHASE 2: Inline cover generation logic (no separate function call)
           console.log('Fetching first page for cover generation...');
           
-          // Fetch and convert first page to base64
           let base64Data: string;
           let mimeType: string;
           
           if (firstPageUrl.startsWith('http://') || firstPageUrl.startsWith('https://')) {
-            const imageResponse = await fetch(firstPageUrl);
+            // PHASE 2: Use timeout for fetching first page (30 second timeout)
+            const imageResponse = await fetchWithTimeout(firstPageUrl, {}, 30000);
             if (imageResponse.ok) {
               const arrayBuffer = await imageResponse.arrayBuffer();
               base64Data = encode(arrayBuffer);
@@ -417,7 +550,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
             throw new Error('Invalid image URL format');
           }
           
-          // Generate front cover
+          // Generate front cover with 90-second timeout
           console.log('Generating front cover with AI...');
           const frontCoverPrompt = `Transform this coloring page into a vibrant book cover with border and title.
 
@@ -431,7 +564,9 @@ CHARACTER NAME: Add the name "${characterName}" in a super stylized, fun, decora
 
 OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at 300 DPI.`;
 
-          const frontResponse = await fetch(
+          const frontCoverStartTime = Date.now();
+          // PHASE 2: Use timeout wrapper for front cover (90 second timeout)
+          const frontResponse = await fetchWithTimeout(
             'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
             {
               method: 'POST',
@@ -448,7 +583,8 @@ OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at
                 }],
                 generationConfig: { responseModalities: ['IMAGE'] }
               }),
-            }
+            },
+            90000 // 90 second timeout
           );
 
           if (frontResponse.ok) {
@@ -459,7 +595,6 @@ OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at
               const frontMimeType = frontImagePart.inlineData.mimeType || 'image/png';
               const frontCoverBase64 = `data:${frontMimeType};base64,${frontImagePart.inlineData.data}`;
               
-              // Upload front cover
               const frontBlob = await fetch(frontCoverBase64).then(r => r.blob());
               const timestamp = Date.now();
               const frontPath = `${job.user_id}/${timestamp}-cover.png`;
@@ -473,18 +608,20 @@ OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at
                   .from('generated-pages')
                   .getPublicUrl(frontPath);
                 coverImageUrl = frontUrlData.publicUrl;
-                console.log('✓ Front cover uploaded:', coverImageUrl);
+                console.log(`✅ Front cover uploaded in ${Date.now() - frontCoverStartTime}ms`);
               }
             }
           }
           
-          // Generate back cover
+          // Generate back cover with 90-second timeout
           console.log('Generating back cover with AI...');
           const backCoverPrompt = `Create a BLANK back cover for children's book printing.
 High resolution 2588x3375 pixels at 300 DPI. Simple solid color background (soft pastel matching theme: ${interestsText}).
 Minimal or no decorative elements. Clean, professional, ready for text overlay if needed.`;
 
-          const backResponse = await fetch(
+          const backCoverStartTime = Date.now();
+          // PHASE 2: Use timeout wrapper for back cover (90 second timeout)
+          const backResponse = await fetchWithTimeout(
             'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
             {
               method: 'POST',
@@ -496,7 +633,8 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
                 contents: [{ parts: [{ text: backCoverPrompt }] }],
                 generationConfig: { responseModalities: ['IMAGE'] }
               }),
-            }
+            },
+            90000 // 90 second timeout
           );
 
           if (backResponse.ok) {
@@ -507,7 +645,6 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
               const backMimeType = backImagePart.inlineData.mimeType || 'image/png';
               const backCoverBase64 = `data:${backMimeType};base64,${backImagePart.inlineData.data}`;
               
-              // Upload back cover
               const backBlob = await fetch(backCoverBase64).then(r => r.blob());
               const timestamp = Date.now();
               const backPath = `${job.user_id}/${timestamp}-back-cover.png`;
@@ -521,34 +658,26 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
                   .from('generated-pages')
                   .getPublicUrl(backPath);
                 backCoverImageUrl = backUrlData.publicUrl;
-                console.log('✓ Back cover uploaded:', backCoverImageUrl);
+                console.log(`✅ Back cover uploaded in ${Date.now() - backCoverStartTime}ms`);
               }
             }
           }
           
-          // PHASE 3: Generate cover PDF immediately after cover images
+          // Generate cover PDF if we have both covers
           if (coverImageUrl && backCoverImageUrl) {
             console.log('Generating print-ready cover PDF...');
-            console.log('Cover image URL:', coverImageUrl);
-            console.log('Back cover URL:', backCoverImageUrl);
             
             try {
-              // Validate cover images are accessible
-              console.log('Validating cover images...');
-              const frontTest = await fetch(coverImageUrl);
+              const frontTest = await fetchWithTimeout(coverImageUrl, {}, 30000);
               if (!frontTest.ok) {
                 throw new Error(`Front cover not accessible: ${frontTest.status}`);
               }
-              console.log('✓ Front cover accessible');
               
-              const backTest = await fetch(backCoverImageUrl);
+              const backTest = await fetchWithTimeout(backCoverImageUrl, {}, 30000);
               if (!backTest.ok) {
                 throw new Error(`Back cover not accessible: ${backTest.status}`);
               }
-              console.log('✓ Back cover accessible');
               
-              // Convert URLs to data URLs to avoid CORS issues
-              console.log('Converting cover images to data URLs...');
               const frontArrayBuffer = await frontTest.arrayBuffer();
               const frontBase64 = encode(frontArrayBuffer);
               const frontDataUrl = `data:image/png;base64,${frontBase64}`;
@@ -557,29 +686,19 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
               const backBase64 = encode(backArrayBuffer);
               const backDataUrl = `data:image/png;base64,${backBase64}`;
               
-              console.log('✓ Cover images converted to data URLs');
-              
               const doc = new jsPDF({
                 orientation: 'landscape',
                 unit: 'in',
-                format: [17.176, 8.625], // Lulu cover wrap dimensions
+                format: [17.176, 8.625],
               });
               
-              console.log('Adding images to PDF...');
-              // Add back cover (left side)
               doc.addImage(backDataUrl, 'PNG', 0, 0, 8.588, 8.625);
-              
-              // Add front cover (right side)
               doc.addImage(frontDataUrl, 'PNG', 8.588, 0, 8.588, 8.625);
               
-              console.log('✓ Images added to PDF');
-              
-              // Convert to blob and upload
               const pdfOutput = doc.output('arraybuffer');
               const pdfBlob = new Blob([pdfOutput], { type: 'application/pdf' });
               const coverPdfPath = `${job.user_id}/${Date.now()}-cover.pdf`;
               
-              console.log('Uploading cover PDF to storage...');
               const { error: pdfUploadError } = await supabase.storage
                 .from('pdfs')
                 .upload(coverPdfPath, pdfBlob, { contentType: 'application/pdf' });
@@ -589,51 +708,46 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
                   .from('pdfs')
                   .getPublicUrl(coverPdfPath);
                 coverUrl = pdfUrlData.publicUrl;
-                console.log('✓ Cover PDF generated and uploaded:', coverUrl);
-              } else {
-                console.error('Cover PDF upload failed:', pdfUploadError);
-                throw pdfUploadError;
+                console.log('✅ Cover PDF generated and uploaded');
               }
             } catch (pdfError) {
-              console.error('Cover PDF generation failed:', pdfError);
-              console.error('Cover error details:', {
-                message: pdfError instanceof Error ? pdfError.message : 'Unknown error',
-                stack: pdfError instanceof Error ? pdfError.stack : undefined
-              });
-              // Don't set coverUrl so book will be marked as partial
+              console.error('⚠️ Cover PDF generation failed:', pdfError);
             }
           }
         }
       } catch (coverError) {
-        console.error('⚠️ Early cover generation failed:', coverError);
-        // Don't fail the entire job - covers can be retried later
+        console.error('⚠️ Cover generation failed:', coverError);
       }
+      
+      logMemoryUsage('After Covers');
     }
 
-    // Determine final status based on results
+    // Determine final status
     const totalExpected = prompts.length;
     const totalGenerated = generatedPages.length;
 
     console.log(`\n=== Generation Summary ===`);
     console.log(`Total pages generated: ${totalGenerated}/${totalExpected}`);
-    console.log(`Successful batches: ${Math.floor(totalGenerated / PAGES_PER_BATCH)}/${totalBatches}`);
+    console.log(`Success rate: ${(totalGenerated / totalExpected * 100).toFixed(1)}%`);
+    console.log(`Total time: ${((Date.now() - startTime) / 1000 / 60).toFixed(2)} minutes`);
 
     if (totalGenerated === 0) {
-      throw new Error('Failed to generate any pages after processing all batches');
+      throw new Error('Failed to generate any pages');
     }
     
     if (totalGenerated < totalExpected) {
-      console.warn(`⚠️ Partial generation: ${totalGenerated}/${totalExpected} pages. Some batches failed.`);
+      console.warn(`⚠️ Partial generation: ${totalGenerated}/${totalExpected} pages`);
     } else {
-      console.log(`✓ Complete generation: All ${totalGenerated} pages generated successfully`);
+      console.log(`✅ Complete generation: All ${totalGenerated} pages generated successfully`);
     }
 
-    // Cover generation moved to after first page (above) - no separate step needed here
+    // Save final book to database
+    await updateJobProgress(supabase, job.id, { 
+      currentStep: 'Finalizing your book', 
+      currentPage: selectedPageCount, 
+      totalPages: selectedPageCount 
+    });
 
-    // Step 4: Save book to database
-    await updateJobProgress(supabase, job.id, { currentStep: 'Finalizing your book', currentPage: selectedPageCount, totalPages: selectedPageCount });
-
-    // Determine book status based on generation results - include cover PDF check
     const hasCovers = !!(coverImageUrl && backCoverImageUrl);
     const hasCoverPdf = !!coverUrl;
     const hasPages = generatedPages.length > 0;
@@ -642,50 +756,38 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
     const missingComponents = [];
     
     if (hasPages && hasCovers && hasCoverPdf) {
-      // Everything generated successfully - fully complete
       bookStatus = 'completed';
-      console.log('✓ Book generation complete - all components present');
+      console.log('✅ Book generation complete - all components present');
     } else if (hasPages && hasCovers && !hasCoverPdf) {
-      // Pages and cover images but no cover PDF - partial
       bookStatus = 'partial';
       console.warn('⚠️ Partial book generation - missing cover PDF');
       missingComponents.push('cover_pdf');
     } else if (hasPages && !hasCovers) {
-      // Pages generated but covers failed - partial success
       bookStatus = 'partial';
       console.warn('⚠️ Partial book generation - pages complete but covers missing');
       if (!coverImageUrl) missingComponents.push('front_cover');
       if (!backCoverImageUrl) missingComponents.push('back_cover');
       if (!hasCoverPdf) missingComponents.push('cover_pdf');
     } else {
-      // No pages - this should not happen as we check earlier
       bookStatus = 'failed';
       console.error('❌ Book generation failed - no pages generated');
     }
 
     const characterName = characters[0]?.name || 'Child';
     
-    // Process character photos: upload base64 to storage
+    // Process character photos
     let photoUrls: string[] = [];
     if (characters[0]?.photos && Array.isArray(characters[0].photos)) {
-      console.log('Processing character photos...');
       for (let i = 0; i < characters[0].photos.length; i++) {
         const photo = characters[0].photos[i];
         if (!photo) continue;
         
         try {
-          // Check if it's a base64 data URL
           if (typeof photo === 'string' && photo.startsWith('data:image')) {
-            console.log(`Uploading photo ${i + 1} to storage...`);
-            
-            // Convert base64 to blob
             const blob = await fetch(photo).then(r => r.blob());
-            
-            // Generate unique filename
             const timestamp = Date.now();
             const photoPath = `${job.user_id}/${timestamp}-character-photo-${i}.png`;
             
-            // Upload to storage
             const { error: uploadError } = await supabase.storage
               .from('user-photos')
               .upload(photoPath, blob, {
@@ -694,26 +796,19 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
                 upsert: false
               });
             
-            if (uploadError) {
-              console.error(`Failed to upload photo ${i + 1}:`, uploadError);
-            } else {
-              // Get public URL
+            if (!uploadError) {
               const { data: urlData } = supabase.storage
                 .from('user-photos')
                 .getPublicUrl(photoPath);
-              
               photoUrls.push(urlData.publicUrl);
-              console.log(`✓ Photo ${i + 1} uploaded:`, urlData.publicUrl);
             }
           } else if (typeof photo === 'string' && photo.startsWith('http')) {
-            // Already a URL
             photoUrls.push(photo);
           }
         } catch (photoError) {
           console.error(`Error processing photo ${i + 1}:`, photoError);
         }
       }
-      console.log(`Processed ${photoUrls.length} character photos`);
     }
     
     const bookData: any = {
@@ -721,14 +816,14 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
       character_name: characterName,
       interests,
       pages: generatedPages,
-      photo_urls: photoUrls, // Now contains storage URLs
+      photo_urls: photoUrls,
       consistent_characters: consistentCharacters,
       complexity: complexityLevel,
       selected_page_count: selectedPageCount,
       status: bookStatus,
       cover_image_url: coverImageUrl,
       back_cover_image_url: backCoverImageUrl,
-      cover_url: coverUrl, // Cover PDF now generated in edge function
+      cover_url: coverUrl,
       missing_covers: !hasCovers,
       missing_components: missingComponents,
     };
@@ -752,11 +847,11 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
       if (updateError) throw new Error(`Failed to update book: ${updateError.message}`);
     }
 
-    // Mark job as completed with message that client must generate PDFs
+    // Mark job as completed
     const finalStatus = totalGenerated === totalExpected ? 'completed' : 'partial';
     const statusMessage = totalGenerated < totalExpected 
-      ? `Generated ${totalGenerated}/${totalExpected} pages. Some batches failed. Client will generate PDFs.`
-      : 'Pages generated successfully. Client will generate PDFs.';
+      ? `Generated ${totalGenerated}/${totalExpected} pages. Some pages failed.`
+      : null;
 
     await supabase
       .from('book_generation_jobs')
@@ -764,7 +859,8 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
         status: finalStatus,
         book_id: bookId,
         completed_at: new Date().toISOString(),
-        error_message: totalGenerated < totalExpected ? statusMessage : null,
+        processing_duration_ms: Date.now() - startTime,
+        error_message: statusMessage,
         progress: { 
           currentStep: finalStatus, 
           currentPage: totalGenerated, 
@@ -773,11 +869,11 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
       })
       .eq('id', job.id);
 
-    console.log(`Job ${job.id} ${finalStatus}. Book ID: ${bookId} (${totalGenerated}/${totalExpected} pages)`);
-    console.log(`Note: Book status is 'processing' - client will generate PDFs and update to final status`);
+    console.log(`✅ Job ${job.id} ${finalStatus}. Book ID: ${bookId} (${totalGenerated}/${totalExpected} pages)`);
+    logMemoryUsage('Final');
 
   } catch (error) {
-    console.error(`Job ${job.id} failed:`, error);
+    console.error(`❌ Job ${job.id} failed:`, error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     
     await supabase
@@ -786,8 +882,11 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
         status: 'failed',
         error_message: errorMessage,
         completed_at: new Date().toISOString(),
+        processing_duration_ms: Date.now() - startTime,
       })
       .eq('id', job.id);
+    
+    throw error;
   }
 }
 
