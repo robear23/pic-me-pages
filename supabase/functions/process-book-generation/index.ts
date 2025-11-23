@@ -152,12 +152,13 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Get next pending job with atomic locking
-    console.log('Fetching pending jobs...');
+    // Get next pending job OR orphaned processing job with stale heartbeat
+    console.log('Fetching pending or orphaned jobs...');
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
     const { data: jobs, error: fetchError } = await supabase
       .from('book_generation_jobs')
       .select('*')
-      .eq('status', 'pending')
+      .or(`status.eq.pending,and(status.eq.processing,last_heartbeat.lt.${twoMinutesAgo})`)
       .order('created_at', { ascending: true })
       .limit(1);
 
@@ -370,9 +371,31 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       totalPages: selectedPageCount 
     });
 
-    const generatedPages = [];
+    // ============================================
+    // PHASE 2: Check if job was orphaned and has partial progress
+    // Resume from last saved page instead of starting over
+    // ============================================
+    let generatedPages = [];
+    let startPageIndex = 0;
     
-    console.log(`Starting page-by-page generation: ${prompts.length} pages`);
+    if (job.book_id && job.progress?.currentPage > 0) {
+      console.log(`🔄 Resuming orphaned job from page ${job.progress.currentPage}...`);
+      
+      // Load previously generated pages from database
+      const { data: bookData } = await supabase
+        .from('books')
+        .select('pages')
+        .eq('id', job.book_id)
+        .single();
+      
+      if (bookData?.pages && Array.isArray(bookData.pages)) {
+        generatedPages = bookData.pages;
+        startPageIndex = generatedPages.length;
+        console.log(`✅ Recovered ${generatedPages.length} pages, resuming from page ${startPageIndex + 1}`);
+      }
+    }
+    
+    console.log(`Starting page-by-page generation: ${prompts.length} total pages (starting from page ${startPageIndex + 1})`);
     logMemoryUsage('Before Image Generation');
 
     // ============================================
@@ -380,7 +403,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     // Save progress incrementally, clear memory
     // ============================================
     
-    for (let pageIndex = 0; pageIndex < prompts.length; pageIndex++) {
+    for (let pageIndex = startPageIndex; pageIndex < prompts.length; pageIndex++) {
       checkTimeout();
       const pageStartTime = Date.now();
       const prompt = prompts[pageIndex];
