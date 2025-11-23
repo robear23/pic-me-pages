@@ -31,7 +31,7 @@ interface GenerationJob {
   };
 }
 
-const FUNCTION_TIMEOUT_MS = 240000; // 4 minutes - leave buffer before edge function timeout
+const FUNCTION_TIMEOUT_MS = 840000; // 14 minutes (leave 1 min buffer before 15 min edge function timeout)
 
 // Heartbeat system to keep job alive
 function startHeartbeat(supabase: any, jobId: string): () => void {
@@ -123,10 +123,21 @@ Deno.serve(async (req) => {
     const stopHeartbeat = startHeartbeat(supabase, job.id);
     
     try {
-      await processBookGeneration(supabase, job, startTime);
+      // PHASE 3: Add timeout recovery with Promise.race
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Edge function timeout - exceeded 14 minutes')), FUNCTION_TIMEOUT_MS);
+      });
+
+      await Promise.race([
+        processBookGeneration(supabase, job, startTime),
+        timeoutPromise
+      ]);
+      
+      console.log(`✓ Job ${job.id} completed successfully`);
+      
     } catch (processError) {
       // ALWAYS mark job as failed if something goes wrong
-      console.error(`Job ${job.id} processing error:`, processError);
+      console.error(`❌ Job ${job.id} processing error:`, processError);
       const errorMessage = processError instanceof Error ? processError.message : 'Unknown error during processing';
       
       // Determine if this is a system error (grant retry credit)
@@ -150,6 +161,10 @@ Deno.serve(async (req) => {
         status: 500,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
+    } finally {
+      // PHASE 1 (CRITICAL FIX): Always stop heartbeat in finally block
+      stopHeartbeat();
+      console.log(`💔 Heartbeat stopped for job ${job.id}`);
     }
 
     return new Response(JSON.stringify({ success: true, jobId: job.id }), {
@@ -245,7 +260,8 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       const batchPrompts = prompts.slice(start, end);
       
       const batchStartTime = Date.now();
-      console.log(`📦 Processing batch ${batchIndex + 1}/${totalBatches} (pages ${start + 1}-${end})`);
+      // PHASE 6: Enhanced monitoring
+      console.log(`[${Date.now() - startTime}ms] 📦 Processing batch ${batchIndex + 1}/${totalBatches} (pages ${start + 1}-${end})`);
 
       // Retry logic for this batch
       let batchAttempts = 0;
@@ -329,8 +345,9 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
             generatedPages.push(...pagesWithStorageUrls);
             batchSuccess = true;
             const batchTime = Date.now() - batchStartTime;
-            console.log(`  ✓ Batch ${batchIndex + 1} succeeded with ${pagesWithStorageUrls.length} pages (${batchTime}ms)`);
-            console.log(`  Progress: ${generatedPages.length}/${prompts.length} pages generated`);
+            // PHASE 6: Enhanced monitoring
+            console.log(`[${Date.now() - startTime}ms] ✓ Batch ${batchIndex + 1} completed (${batchTime}ms)`);
+            console.log(`[${Date.now() - startTime}ms] Progress: ${generatedPages.length}/${prompts.length} pages generated`);
           }
         } catch (error) {
           console.error(`  Batch ${batchIndex + 1} attempt ${batchAttempts} exception:`, error);
@@ -361,7 +378,8 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     
     if (generatedPages.length > 0) {
       checkTimeout();
-      console.log('\n=== Early Cover Generation (after first page) ===');
+      // PHASE 6: Enhanced monitoring
+      console.log(`[${Date.now() - startTime}ms] === Cover Generation Starting ===`);
       await updateJobProgress(supabase, job.id, { 
         currentStep: 'Creating book cover', 
         currentPage: generatedPages.length, 
