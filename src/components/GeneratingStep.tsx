@@ -47,6 +47,7 @@ export const GeneratingStep = () => {
   const [, setTick] = useState(0);
   const [lastProgressUpdate, setLastProgressUpdate] = useState<number>(Date.now());
   const [showStaleWarning, setShowStaleWarning] = useState(false);
+  const [processingStartTime, setProcessingStartTime] = useState<number | null>(null);
 
   // Force re-render every 10 seconds to update elapsed time
   useEffect(() => {
@@ -244,57 +245,40 @@ export const GeneratingStep = () => {
     };
   }, [jobId, jobStatus]);
 
-  // Dynamic timeout based on book complexity
+  // PHASE 1: Timeout only starts when job is actively processing
   useEffect(() => {
     if (!jobId || jobStatus === 'completed' || jobStatus === 'failed') return;
-
-    // PHASE 2: Calculate timeout based on page count and complexity
-    const baseTime = 5 * 60 * 1000; // 5 minutes base
-    const perPageTime = 60 * 1000; // 1 minute per page
-    const complexityMultiplier = complexityLevel === 'detailed' ? 1.5 : 1;
-    // PHASE 2: Increased to 30 minutes to handle circuit breaker pauses
-    const timeoutMs = Math.min(
-      baseTime + ((selectedPageCount || 12) * perPageTime * complexityMultiplier),
-      30 * 60 * 1000 // Maximum 30 minutes (up from 10)
-    );
     
-    console.log(`Setting dynamic timeout: ${timeoutMs / 1000 / 60} minutes`);
+    // Only start timeout after job begins processing
+    if (jobStatus !== 'processing') {
+      console.log('Waiting for job to start processing before setting timeout');
+      return;
+    }
+    
+    // Flat 30-minute timeout from when processing starts
+    const timeoutMs = 30 * 60 * 1000;
+    
+    console.log(`Setting timeout: 30 minutes from processing start`);
     
     const timeoutId = setTimeout(async () => {
-      console.log('Client-side timeout triggered');
+      console.log('Client-side timeout triggered after 30 minutes of processing');
       
-      // Mark job as failed in database
-      const { error } = await supabase
+      await supabase
         .from('book_generation_jobs')
         .update({
           status: 'failed',
-          error_message: `Generation timed out after ${Math.round(timeoutMs / 1000 / 60)} minutes. This appears to be a system issue. Please try again or contact support if the problem persists.`,
+          error_message: 'Generation timed out after 30 minutes of processing. Please try again.',
           completed_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
           failure_reason: 'client_timeout',
         })
         .eq('id', jobId);
-
-      if (error) {
-        console.error('Failed to update timeout status in DB:', error);
-      }
-
-      // Update UI state
+      
       setJobStatus('failed');
-      setErrorMessage(`Generation timed out after ${Math.round(timeoutMs / 1000 / 60)} minutes. This appears to be a system issue. Please try again or contact support if the problem persists.`);
-      setCanLeave(true);
-
-      toast({
-        title: 'Generation Timeout',
-        description: 'Your book generation took too long. Please try again.',
-        variant: 'destructive',
-      });
+      setErrorMessage('Generation timed out after 30 minutes. Please try again.');
     }, timeoutMs);
-
-    return () => {
-      clearTimeout(timeoutId);
-    };
-  }, [jobId, jobStatus, toast, selectedPageCount, complexityLevel]);
+    
+    return () => clearTimeout(timeoutId);
+  }, [jobId, jobStatus, toast]);
 
   // Subscribe to job updates via Realtime
   useEffect(() => {
@@ -314,6 +298,12 @@ export const GeneratingStep = () => {
           const updatedJob = payload.new as any;
           console.log('Job update received:', updatedJob);
 
+          // PHASE 1: Track when job starts processing
+          if (updatedJob.status === 'processing' && !processingStartTime) {
+            setProcessingStartTime(Date.now());
+            console.log('Job started processing, resetting timeout');
+          }
+
           setJobStatus(updatedJob.status);
 
           if (updatedJob.progress) {
@@ -325,10 +315,17 @@ export const GeneratingStep = () => {
             setProgress(Math.min(progressPercent, 95));
             setCurrentStep(step || 'Processing...');
             
-            // PHASE 2: Reset timeout if function is pausing for memory cleanup
+            // Reset timeout if function is pausing for memory cleanup
             if (step === 'pausing_for_memory_cleanup' || step?.includes('pause')) {
               setLastProgressUpdate(Date.now());
             }
+          }
+
+          // PHASE 4: Detect long queue times
+          const queueTime = Date.now() - new Date(updatedJob.created_at).getTime();
+          if (updatedJob.status === 'pending' && queueTime > 15 * 60 * 1000) {
+            console.warn(`Job has been pending for ${queueTime / 1000 / 60} minutes`);
+            setShowStaleWarning(true);
           }
 
           if (updatedJob.status === 'completed' || updatedJob.status === 'partial') {
@@ -366,7 +363,32 @@ export const GeneratingStep = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [jobId, navigate, toast]);
+  }, [jobId, navigate, toast, processingStartTime]);
+
+  // PHASE 4: Monitor queue and auto-restart if stuck
+  useEffect(() => {
+    if (!jobId || jobStatus !== 'pending') return;
+    
+    const checkQueue = setInterval(async () => {
+      const { data: job } = await supabase
+        .from('book_generation_jobs')
+        .select('created_at, status')
+        .eq('id', jobId)
+        .single();
+      
+      if (job && job.status === 'pending') {
+        const queueTime = Date.now() - new Date(job.created_at).getTime();
+        
+        // If stuck in queue for 20 minutes, trigger processor again
+        if (queueTime > 20 * 60 * 1000) {
+          console.log('Job stuck in queue, triggering processor...');
+          await supabase.functions.invoke('process-book-generation');
+        }
+      }
+    }, 60000); // Check every minute
+    
+    return () => clearInterval(checkQueue);
+  }, [jobId, jobStatus]);
 
   const handleReturnToDashboard = () => {
     navigate('/dashboard');
