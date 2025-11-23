@@ -248,14 +248,14 @@ export const GeneratingStep = () => {
   useEffect(() => {
     if (!jobId || jobStatus === 'completed' || jobStatus === 'failed') return;
 
-    // Calculate timeout based on page count and complexity
+    // PHASE 2: Calculate timeout based on page count and complexity
     const baseTime = 5 * 60 * 1000; // 5 minutes base
     const perPageTime = 60 * 1000; // 1 minute per page
     const complexityMultiplier = complexityLevel === 'detailed' ? 1.5 : 1;
-    // PHASE 7: Cap frontend timeout at 10 minutes to fail faster if edge function is stuck
+    // PHASE 2: Increased to 30 minutes to handle circuit breaker pauses
     const timeoutMs = Math.min(
       baseTime + ((selectedPageCount || 12) * perPageTime * complexityMultiplier),
-      10 * 60 * 1000 // Maximum 10 minutes
+      30 * 60 * 1000 // Maximum 30 minutes (up from 10)
     );
     
     console.log(`Setting dynamic timeout: ${timeoutMs / 1000 / 60} minutes`);
@@ -324,6 +324,11 @@ export const GeneratingStep = () => {
             
             setProgress(Math.min(progressPercent, 95));
             setCurrentStep(step || 'Processing...');
+            
+            // PHASE 2: Reset timeout if function is pausing for memory cleanup
+            if (step === 'pausing_for_memory_cleanup' || step?.includes('pause')) {
+              setLastProgressUpdate(Date.now());
+            }
           }
 
           if (updatedJob.status === 'completed' || updatedJob.status === 'partial') {
