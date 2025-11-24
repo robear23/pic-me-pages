@@ -293,18 +293,28 @@ export const GeneratingStep = () => {
         if (staleTime > 3 * 60 * 1000 && totalTime > 5 * 60 * 1000) {
           console.warn(`Job appears stalled: no heartbeat for ${staleTime/1000}s`);
           
-          // Reset to pending to trigger retry
-          await supabase
-            .from('book_generation_jobs')
-            .update({
-              status: 'pending',
-              error_message: `Job stalled at page ${(job.progress as any)?.currentPage || 0}. Retrying...`,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', jobId);
+          // FIX 4: Check if job is paused for memory cleanup (not actually stalled)
+          const progress = job.progress as any;
+          const isPausedForMemory = progress?.currentStep === 'pausing_for_memory_cleanup';
           
-          // Trigger processor
-          await supabase.functions.invoke('process-book-generation');
+          if (isPausedForMemory) {
+            console.log('Job is paused for memory cleanup, continuing to poll...');
+            // Trigger processor to continue
+            await supabase.functions.invoke('process-book-generation');
+          } else {
+            // Actually stalled - reset to pending
+            await supabase
+              .from('book_generation_jobs')
+              .update({
+                status: 'pending',
+                error_message: `Job stalled at page ${progress?.currentPage || 0}. Retrying...`,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', jobId);
+            
+            // Trigger processor
+            await supabase.functions.invoke('process-book-generation');
+          }
         }
       }
     }, 60000); // Check every minute

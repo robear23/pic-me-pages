@@ -229,13 +229,25 @@ Deno.serve(async (req) => {
         setTimeout(() => reject(new Error('Edge function timeout - exceeded 14 minutes')), FUNCTION_TIMEOUT_MS);
       });
 
-      await Promise.race([
+      // FIX 1: Capture the actual response from processBookGeneration
+      const generationResponse: Response = await Promise.race([
         processBookGeneration(supabase, job, startTime, stopHeartbeat),
         timeoutPromise
-      ]);
+      ]) as Response;
       
-      console.log(`✓ Job ${job.id} completed successfully`);
+      // Check if job was paused for memory or actually completed
+      const responseBody = await generationResponse.clone().json();
+      if (responseBody.message === 'Paused for memory cleanup') {
+        console.log(`⏸️ Job ${job.id} paused for memory cleanup - will resume from page ${responseBody.pages + 1}`);
+      } else if (responseBody.message === 'Batch complete, continuing generation') {
+        console.log(`🔄 Job ${job.id} batch complete - continuing generation from page ${responseBody.pages + 1}`);
+      } else {
+        console.log(`✓ Job ${job.id} completed successfully`);
+      }
       logMemoryUsage('Job Completed');
+      
+      // FIX 2: Return the actual response instead of generic success
+      return generationResponse;
       
     } catch (processError) {
       // ALWAYS mark job as failed if something goes wrong
@@ -291,9 +303,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    return new Response(JSON.stringify({ success: true, jobId: job.id }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    // FIX 2: This line is now removed - response is returned from within try block above
 
   } catch (error) {
     console.error('Error in process-book-generation:', error);
@@ -313,7 +323,7 @@ Deno.serve(async (req) => {
   }
 });
 
-async function processBookGeneration(supabase: any, job: GenerationJob, startTime: number, stopHeartbeat: (() => void) | null) {
+async function processBookGeneration(supabase: any, job: GenerationJob, startTime: number, stopHeartbeat: (() => void) | null): Promise<Response> {
   // Check for timeout before starting
   const checkTimeout = () => {
     const elapsed = Date.now() - startTime;
@@ -468,6 +478,10 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
         
         console.log(`💤 Circuit breaker: ${percentUsedCheck.toFixed(1)}% memory after ${pageIndex - startPageIndex} pages`);
         
+        // FIX 5: Add detailed logging before pausing
+        console.log(`🔄 Job ${job.id} paused: ${generatedPages.length}/${adjustedPageCount} pages complete`);
+        console.log(`📊 Memory: ${percentUsed.toFixed(1)}% - will resume from page ${generatedPages.length + 1}`);
+        
         await updateJobProgress(supabase, job.id, {
           currentStep: 'pausing_for_memory_cleanup',
           currentPage: generatedPages.length,
@@ -486,7 +500,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
           .eq('id', job.id);
         
         return new Response(
-          JSON.stringify({ message: 'Pausing for memory cleanup', pages: generatedPages.length }),
+          JSON.stringify({ message: 'Paused for memory cleanup', pages: generatedPages.length }),
           { headers: corsHeaders }
         );
       }
@@ -988,6 +1002,18 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
 
     console.log(`✅ Job ${job.id} ${finalStatus}. Book ID: ${bookId} (${totalGenerated}/${totalExpected} pages)`);
     logMemoryUsage('Final');
+    
+    // FIX 1: Return success response for completed job
+    return new Response(
+      JSON.stringify({ 
+        success: true, 
+        jobId: job.id, 
+        bookId: bookId,
+        pages: totalGenerated,
+        status: finalStatus
+      }),
+      { headers: corsHeaders }
+    );
 
   } catch (error) {
     console.error(`❌ Job ${job.id} failed:`, error);
