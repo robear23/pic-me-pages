@@ -43,6 +43,7 @@ interface GenerationJob {
   status: string;
   created_at: string;
   started_at: string | null;
+  last_heartbeat: string | null;  // Added for FIX 2
   retry_count: number; // PHASE 5: Track retries for graceful degradation
   progress: {
     currentPage: number;
@@ -173,7 +174,12 @@ Deno.serve(async (req) => {
     }
 
     if (!jobs || jobs.length === 0) {
-      console.log('No pending jobs found');
+      console.log('❌ No pending jobs found');
+      console.log('Query used:', {
+        pending: true,
+        processing_no_start: 'started_at is null',
+        processing_stale: `heartbeat < ${threeMinutesAgo}, start < ${fiveMinutesAgo}`
+      });
       return new Response(JSON.stringify({ message: 'No pending jobs' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -185,12 +191,17 @@ Deno.serve(async (req) => {
     console.log('Job ID:', job.id);
     console.log('User ID:', job.user_id);
     console.log('Status:', job.status);
+    console.log('Started at:', job.started_at);
+    console.log('Last heartbeat:', job.last_heartbeat);
+    console.log('Progress:', job.progress);
+    console.log('Book ID:', job.book_id);
     console.log('Created:', job.created_at);
     console.log('Page count:', job.generation_data.selectedPageCount);
     console.log('Complexity:', job.generation_data.complexityLevel);
 
     // PHASE 3: Atomically claim the job with optimistic locking (only 'pending' jobs)
     // This prevents multiple function instances from processing the same job
+    console.log('🔒 Attempting to claim job...');
     const { data: claimedJob, error: claimError } = await supabase
       .from('book_generation_jobs')
       .update({
@@ -205,13 +216,20 @@ Deno.serve(async (req) => {
       .single();
 
     if (claimError || !claimedJob) {
-      console.log(`⏭️ Job ${job.id} already claimed by another function instance, skipping`);
-      return new Response(JSON.stringify({ message: 'Job already being processed' }), {
+      console.log('⏭️ Job', job.id, 'could not be claimed');
+      console.log('Claim error:', claimError);
+      console.log('Current job status was:', job.status);
+      console.log('Another instance likely claimed this job first');
+      return new Response(JSON.stringify({ 
+        message: 'Job already being processed',
+        jobId: job.id,
+        reason: claimError?.message || 'Concurrency check failed'
+      }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    console.log(`✓ Successfully claimed job ${job.id}`);
+    console.log(`✅ Successfully claimed job ${job.id}`);
 
 
     // Process the job with comprehensive error handling
@@ -495,6 +513,8 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
             book_id: bookId,  // Make sure book_id is set
             error_message: `Memory limit reached at page ${generatedPages.length}/${adjustedPageCount}. Will resume automatically.`,
             updated_at: new Date().toISOString(),
+            started_at: null,  // ✅ FIX 1: Clear started_at so stall detection resets
+            last_heartbeat: null,  // ✅ FIX 1: Clear heartbeat too
             progress: {
               currentStep: 'paused_for_memory',
               currentPage: generatedPages.length,
@@ -536,7 +556,15 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
           .from('book_generation_jobs')
           .update({
             status: 'pending',
-            updated_at: new Date().toISOString()
+            book_id: bookId,  // Make sure book_id is set
+            updated_at: new Date().toISOString(),
+            started_at: null,  // ✅ FIX 1: Clear started_at so stall detection resets
+            last_heartbeat: null,  // ✅ FIX 1: Clear heartbeat too
+            progress: {
+              currentStep: 'paused_for_memory',
+              currentPage: generatedPages.length,
+              totalPages: adjustedPageCount
+            }
           })
           .eq('id', job.id);
         
