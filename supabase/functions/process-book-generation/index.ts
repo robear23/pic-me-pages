@@ -180,21 +180,17 @@ Deno.serve(async (req) => {
     }
 
     const job = jobs[0] as GenerationJob;
-    const wasOrphaned = job.status === 'processing';
     
     console.log('=== Job Details ===');
     console.log('Job ID:', job.id);
     console.log('User ID:', job.user_id);
-    console.log('Status:', job.status, wasOrphaned ? '(ORPHANED - RECOVERING)' : '');
+    console.log('Status:', job.status);
     console.log('Created:', job.created_at);
     console.log('Page count:', job.generation_data.selectedPageCount);
     console.log('Complexity:', job.generation_data.complexityLevel);
-    if (wasOrphaned) {
-      console.log('⚠️ Recovering orphaned job with progress:', job.progress);
-    }
 
-    // Atomically claim the job (prevents race conditions)
-    // Now handles both pending and orphaned processing jobs
+    // PHASE 3: Atomically claim the job with optimistic locking (only 'pending' jobs)
+    // This prevents multiple function instances from processing the same job
     const { data: claimedJob, error: claimError } = await supabase
       .from('book_generation_jobs')
       .update({
@@ -202,21 +198,20 @@ Deno.serve(async (req) => {
         started_at: new Date().toISOString(),
         last_heartbeat: new Date().toISOString(),
         progress: job.progress || { currentPage: 0, totalPages: job.generation_data.selectedPageCount, currentStep: 'Preparing generation' },
-        error_message: wasOrphaned ? 'Recovered from orphaned state' : null
       })
       .eq('id', job.id)
-      .in('status', ['pending', 'processing']) // Accept both pending and processing (for orphaned jobs)
+      .eq('status', 'pending')  // CRITICAL: Only claim if status is 'pending' (not 'processing')
       .select()
       .single();
 
     if (claimError || !claimedJob) {
-      console.log('Job was claimed by another instance');
-      return new Response(JSON.stringify({ message: 'Job already claimed' }), {
+      console.log(`⏭️ Job ${job.id} already claimed by another function instance, skipping`);
+      return new Response(JSON.stringify({ message: 'Job already being processed' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    console.log(`✓ Successfully claimed job ${job.id}${wasOrphaned ? ' (recovered from orphaned state)' : ''}`);
+    console.log(`✓ Successfully claimed job ${job.id}`);
 
 
     // Process the job with comprehensive error handling
