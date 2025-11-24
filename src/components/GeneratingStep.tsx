@@ -271,6 +271,36 @@ export const GeneratingStep = () => {
     // Realtime subscription will handle updates
   }, [jobId]);
 
+  // FIX #4: Immediately resume paused jobs on page load
+  useEffect(() => {
+    if (!jobId || jobStatus !== 'pending') return;
+    
+    const checkAndResume = async () => {
+      const { data: job } = await supabase
+        .from('book_generation_jobs')
+        .select('progress, updated_at')
+        .eq('id', jobId)
+        .single();
+      
+      if (!job) return;
+      
+      const progress = job.progress as any;
+      const isPausedForMemory = progress?.currentStep === 'paused_for_memory';
+      
+      if (isPausedForMemory) {
+        console.log('🔄 Detected paused job, resuming immediately...');
+        await supabase.functions.invoke('process-book-generation');
+        toast({
+          title: 'Resuming Generation',
+          description: 'Your book generation is continuing...',
+        });
+      }
+    };
+    
+    // Check immediately on mount
+    checkAndResume();
+  }, [jobId, jobStatus, toast]);
+
   // FIX 2: Timeout only starts when job is actively processing (no jobStatus dependency)
   useEffect(() => {
     if (!jobId || jobStatus !== 'processing') return;
@@ -300,9 +330,9 @@ export const GeneratingStep = () => {
     return () => clearTimeout(timeoutId);
   }, [jobId, toast]); // FIX 2: Only depend on jobId, not jobStatus
   
-  // FIX 2: Add separate stall detection
+  // FIX 2: Add separate stall detection (FIX #1: Enable for pending AND processing)
   useEffect(() => {
-    if (!jobId || jobStatus !== 'processing') return;
+    if (!jobId || (jobStatus !== 'processing' && jobStatus !== 'pending')) return;
     
     // PHASE 2: Check for stalls every 2 minutes (less aggressive)
     const checkStall = setInterval(async () => {
@@ -593,6 +623,26 @@ export const GeneratingStep = () => {
                 <Progress value={progress} className="h-3" />
                 <p className="text-sm text-muted-foreground mt-2">{progress}%</p>
               </div>
+
+              {/* Manual Resume Button (FIX #5) */}
+              {jobStatus === 'pending' && showStaleWarning && (
+                <Button
+                  onClick={async () => {
+                    console.log('Manually resuming job...');
+                    await supabase.functions.invoke('process-book-generation');
+                    toast({
+                      title: 'Resuming Generation',
+                      description: 'Your book generation is continuing...',
+                    });
+                    setShowStaleWarning(false);
+                  }}
+                  variant="default"
+                  size="lg"
+                  className="mb-4"
+                >
+                  Resume Generation
+                </Button>
+              )}
 
               {/* Return Button (only show if can leave) */}
               {canLeave && jobStatus !== 'completed' && (
