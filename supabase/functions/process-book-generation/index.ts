@@ -199,19 +199,20 @@ Deno.serve(async (req) => {
     console.log('Page count:', job.generation_data.selectedPageCount);
     console.log('Complexity:', job.generation_data.complexityLevel);
 
-    // PHASE 3: Atomically claim the job with optimistic locking (only 'pending' jobs)
+    // PHASE 3: Atomically claim the job with optimistic locking (pending OR orphaned processing jobs)
     // This prevents multiple function instances from processing the same job
     console.log('🔒 Attempting to claim job...');
+    const currentTime = new Date().toISOString();
     const { data: claimedJob, error: claimError } = await supabase
       .from('book_generation_jobs')
       .update({
         status: 'processing',
-        started_at: new Date().toISOString(),
-        last_heartbeat: new Date().toISOString(),
+        started_at: job.started_at || currentTime, // Keep original start time if resuming
+        last_heartbeat: currentTime,
         progress: job.progress || { currentPage: 0, totalPages: job.generation_data.selectedPageCount, currentStep: 'Preparing generation' },
       })
       .eq('id', job.id)
-      .eq('status', 'pending')  // CRITICAL: Only claim if status is 'pending' (not 'processing')
+      .in('status', ['pending', 'processing'])  // CRITICAL: Claim both pending AND orphaned processing jobs
       .select()
       .single();
 

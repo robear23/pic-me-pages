@@ -199,37 +199,87 @@ export const GeneratingStep = () => {
           photoCount: c.photos.filter(p => p !== null).length
         })));
 
-        const { data: job, error: jobError } = await supabase
+        // FIX #2: Check for existing pending/processing jobs before creating a new one
+        const { data: existingJobs } = await supabase
           .from('book_generation_jobs')
-          .insert({
-            user_id: user.id,
-            book_id: isReworkMode ? (generatedBookId || null) : null,
-            status: 'pending',
-            generation_data: {
-              characters: processedCharacters, // Now contains base64 strings
-              interests: selectedInterests,
-              consistentCharacters,
-              complexityLevel,
-              selectedPageCount,
-              isReworkMode,
-              selectedPagesForRework,
-              generatedBookId,
-            }
-          })
-          .select()
-          .single();
+          .select('id, status, created_at')
+          .eq('book_id', isReworkMode ? generatedBookId : null)
+          .eq('user_id', user.id)
+          .in('status', ['pending', 'processing'])
+          .order('created_at', { ascending: false })
+          .limit(1);
 
-        if (jobError) {
-          console.error('Failed to create job:', jobError);
-          toast({
-            title: 'Failed to Start Generation',
-            description: jobError.message,
-            variant: 'destructive',
-          });
-          return;
+        let jobToUse;
+
+        if (existingJobs && existingJobs.length > 0) {
+          // Reuse existing job and update it with latest generation data
+          console.log('Found existing job:', existingJobs[0].id, '- reusing it');
+          jobToUse = existingJobs[0];
+          
+          // Update it with latest generation data
+          const { error: updateError } = await supabase
+            .from('book_generation_jobs')
+            .update({
+              generation_data: {
+                characters: processedCharacters,
+                interests: selectedInterests,
+                consistentCharacters,
+                complexityLevel,
+                selectedPageCount,
+                isReworkMode,
+                selectedPagesForRework,
+                generatedBookId,
+              },
+              status: 'pending', // Reset to pending to be picked up
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', jobToUse.id);
+
+          if (updateError) {
+            console.error('Failed to update existing job:', updateError);
+            toast({
+              title: 'Failed to Update Generation',
+              description: updateError.message,
+              variant: 'destructive',
+            });
+            return;
+          }
+        } else {
+          // Create new job only if none exists
+          const { data: job, error: jobError } = await supabase
+            .from('book_generation_jobs')
+            .insert({
+              user_id: user.id,
+              book_id: isReworkMode ? (generatedBookId || null) : null,
+              status: 'pending',
+              generation_data: {
+                characters: processedCharacters, // Now contains base64 strings
+                interests: selectedInterests,
+                consistentCharacters,
+                complexityLevel,
+                selectedPageCount,
+                isReworkMode,
+                selectedPagesForRework,
+                generatedBookId,
+              }
+            })
+            .select()
+            .single();
+
+          if (jobError) {
+            console.error('Failed to create job:', jobError);
+            toast({
+              title: 'Failed to Start Generation',
+              description: jobError.message,
+              variant: 'destructive',
+            });
+            return;
+          }
+          
+          jobToUse = job;
         }
         
-        setJobId(job.id);
+        setJobId(jobToUse.id);
         setJobStatus('pending');
         setCanLeave(true);
         console.log('Job created:', job.id);
@@ -271,24 +321,32 @@ export const GeneratingStep = () => {
     // Realtime subscription will handle updates
   }, [jobId]);
 
-  // FIX #4: Immediately resume paused jobs on page load
+  // FIX #3: Auto-resume paused or stuck jobs
   useEffect(() => {
-    if (!jobId || jobStatus !== 'pending') return;
+    if (!jobId) return;
     
     const checkAndResume = async () => {
       const { data: job } = await supabase
         .from('book_generation_jobs')
-        .select('progress, updated_at')
+        .select('progress, updated_at, status')
         .eq('id', jobId)
         .single();
       
       if (!job) return;
       
+      // Check if job is stuck (pending for >1 minute or paused)
       const progress = job.progress as any;
       const isPausedForMemory = progress?.currentStep === 'paused_for_memory';
+      const isStuck = job.status === 'pending' && 
+        new Date().getTime() - new Date(job.updated_at).getTime() > 60000;
       
-      if (isPausedForMemory) {
-        console.log('🔄 Detected paused job, resuming immediately...');
+      if (isPausedForMemory || isStuck) {
+        console.log('🔄 Detected stuck job, resuming:', { 
+          isPausedForMemory, 
+          isStuck, 
+          status: job.status,
+          lastUpdate: job.updated_at
+        });
         await supabase.functions.invoke('process-book-generation');
         toast({
           title: 'Resuming Generation',
@@ -297,9 +355,11 @@ export const GeneratingStep = () => {
       }
     };
     
-    // Check immediately on mount
+    // Check immediately on mount and then every 30 seconds
     checkAndResume();
-  }, [jobId, jobStatus, toast]);
+    const interval = setInterval(checkAndResume, 30000);
+    return () => clearInterval(interval);
+  }, [jobId, toast]);
 
   // FIX 2: Timeout only starts when job is actively processing (no jobStatus dependency)
   useEffect(() => {
