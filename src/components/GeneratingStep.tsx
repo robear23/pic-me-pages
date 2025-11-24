@@ -245,20 +245,14 @@ export const GeneratingStep = () => {
     };
   }, [jobId, jobStatus]);
 
-  // PHASE 1: Timeout only starts when job is actively processing
+  // FIX 2: Timeout only starts when job is actively processing (no jobStatus dependency)
   useEffect(() => {
-    if (!jobId || jobStatus === 'completed' || jobStatus === 'failed') return;
+    if (!jobId || jobStatus !== 'processing') return;
     
-    // Only start timeout after job begins processing
-    if (jobStatus !== 'processing') {
-      console.log('Waiting for job to start processing before setting timeout');
-      return;
-    }
-    
-    // Flat 30-minute timeout from when processing starts
+    // Flat 30-minute timeout from NOW
     const timeoutMs = 30 * 60 * 1000;
     
-    console.log(`Setting timeout: 30 minutes from processing start`);
+    console.log(`Setting timeout: 30 minutes from ${new Date().toISOString()}`);
     
     const timeoutId = setTimeout(async () => {
       console.log('Client-side timeout triggered after 30 minutes of processing');
@@ -278,7 +272,45 @@ export const GeneratingStep = () => {
     }, timeoutMs);
     
     return () => clearTimeout(timeoutId);
-  }, [jobId, jobStatus, toast]);
+  }, [jobId, toast]); // FIX 2: Only depend on jobId, not jobStatus
+  
+  // FIX 2: Add separate stall detection
+  useEffect(() => {
+    if (!jobId || jobStatus !== 'processing') return;
+    
+    const checkStall = setInterval(async () => {
+      const { data: job } = await supabase
+        .from('book_generation_jobs')
+        .select('last_heartbeat, started_at, progress')
+        .eq('id', jobId)
+        .single();
+      
+      if (job?.last_heartbeat && job?.started_at) {
+        const staleTime = Date.now() - new Date(job.last_heartbeat).getTime();
+        const totalTime = Date.now() - new Date(job.started_at).getTime();
+        
+        // If no heartbeat for 3 minutes AND total time > 5 minutes, likely stalled
+        if (staleTime > 3 * 60 * 1000 && totalTime > 5 * 60 * 1000) {
+          console.warn(`Job appears stalled: no heartbeat for ${staleTime/1000}s`);
+          
+          // Reset to pending to trigger retry
+          await supabase
+            .from('book_generation_jobs')
+            .update({
+              status: 'pending',
+              error_message: `Job stalled at page ${(job.progress as any)?.currentPage || 0}. Retrying...`,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', jobId);
+          
+          // Trigger processor
+          await supabase.functions.invoke('process-book-generation');
+        }
+      }
+    }, 60000); // Check every minute
+    
+    return () => clearInterval(checkStall);
+  }, [jobId, jobStatus]);
 
   // Subscribe to job updates via Realtime
   useEffect(() => {
