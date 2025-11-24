@@ -30,6 +30,7 @@ interface Book {
   back_cover_image_url?: string | null;
   status: string;
   created_at: string;
+  updated_at?: string;
   user_id: string;
   missing_covers?: boolean;
   missing_components?: string[];
