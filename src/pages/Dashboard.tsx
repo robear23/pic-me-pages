@@ -1314,7 +1314,7 @@ const Dashboard = () => {
               <div className="col-span-full text-center py-8">
                 <p className="text-muted-foreground">Loading pages...</p>
               </div>
-            ) : selectedBookPages?.map((page: any, index: number) => (
+            ) : selectedBookPages?.filter(page => page != null).map((page: any, index: number) => (
               <div 
                 key={index} 
                 className="relative aspect-[3/4] rounded-lg overflow-hidden border border-border cursor-pointer hover:ring-2 hover:ring-primary transition-all group"
@@ -1381,9 +1381,10 @@ const Dashboard = () => {
               variant="outline" 
               onClick={() => {
                 if (selectedPageIndex !== null && selectedPageIndex > 0 && selectedBookPages) {
+                  const validPages = selectedBookPages.filter(page => page != null);
                   setSelectedPageIndex(selectedPageIndex - 1);
-                  const prevPage = selectedBookPages[selectedPageIndex - 1];
-                  setSelectedPageImage(prevPage.imageUrl || prevPage);
+                  const prevPage = validPages[selectedPageIndex - 1];
+                  setSelectedPageImage(prevPage?.imageUrl || prevPage);
                 }
               }}
               disabled={selectedPageIndex === null || selectedPageIndex === 0}
@@ -1394,9 +1395,10 @@ const Dashboard = () => {
               variant="outline" 
               onClick={() => {
                 if (selectedPageIndex !== null && selectedBookPages && selectedPageIndex < selectedBookPages.length - 1) {
+                  const validPages = selectedBookPages.filter(page => page != null);
                   setSelectedPageIndex(selectedPageIndex + 1);
-                  const nextPage = selectedBookPages[selectedPageIndex + 1];
-                  setSelectedPageImage(nextPage.imageUrl || nextPage);
+                  const nextPage = validPages[selectedPageIndex + 1];
+                  setSelectedPageImage(nextPage?.imageUrl || nextPage);
                 }
               }}
               disabled={selectedPageIndex === null || !selectedBookPages || selectedPageIndex === selectedBookPages.length - 1}
