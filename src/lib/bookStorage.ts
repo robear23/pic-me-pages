@@ -178,6 +178,10 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
         })),
         photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
         updated_at: new Date().toISOString(),
+        // Clear PDFs to force regeneration with new pages
+        pdf_url: null,
+        cover_url: null,
+        status: 'processing', // Set back to processing while PDFs regenerate
       };
       
       // Only update covers if new ones were provided, otherwise preserve existing
