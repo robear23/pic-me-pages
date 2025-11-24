@@ -665,7 +665,29 @@ const Dashboard = () => {
   const handleDownloadOrGenerate = async (book: Book) => {
     setDownloadingBookId(book.id);
     try {
-      if (book.pdf_url) {
+      // Check if PDF is stale (older than last update)
+      const pdfNeedsRegeneration = book.pdf_url && book.updated_at && (() => {
+        try {
+          // Extract timestamp from PDF URL (format: interior-1763984230390.pdf)
+          const pdfTimestamp = book.pdf_url.match(/interior-(\d+)\.pdf/)?.[1];
+          if (!pdfTimestamp) return false;
+          
+          const pdfDate = new Date(parseInt(pdfTimestamp));
+          const updateDate = new Date(book.updated_at);
+          
+          return pdfDate < updateDate; // PDF is older than last update
+        } catch {
+          return false;
+        }
+      })();
+      
+      if (pdfNeedsRegeneration) {
+        toast.info('Your book has been updated. Regenerating PDF with latest pages...');
+        const pdfUrl = await handleGeneratePdf(book, false);
+        if (pdfUrl) {
+          await handleDownloadPDF(pdfUrl, book.character_name);
+        }
+      } else if (book.pdf_url) {
         await handleDownloadPDF(book.pdf_url, book.character_name);
       } else {
         const pdfUrl = await handleGeneratePdf(book, false);
