@@ -534,18 +534,26 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
         // Stop heartbeat
         if (stopHeartbeat) stopHeartbeat();
         
-        // PHASE 1: Add detailed logging and include book_id in progress
-        console.log(`🔄 Job ${job.id} paused: ${generatedPages.length}/${adjustedPageCount} pages complete`);
+        // FIX #2: Add detailed logging with correct counters for rework mode
+        const progressMessage = isReworkMode 
+          ? `Processed ${processedCount}/${selectedPagesForRework?.length || 0} rework pages`
+          : `${generatedPages.length}/${adjustedPageCount} pages complete`;
+        
+        console.log(`🔄 Job ${job.id} paused: ${progressMessage}`);
         console.log(`📊 Memory: ${percentUsed.toFixed(1)}% - will resume from page ${generatedPages.length + 1}`);
         console.log(`📚 Book ID: ${bookId} - progress saved to database`);
         
         // Mark job for retry (will resume from where we left off)
+        const errorMessage = isReworkMode
+          ? `Memory limit reached - processed ${processedCount}/${selectedPagesForRework?.length || 0} rework pages. Will resume automatically.`
+          : `Memory limit reached at page ${generatedPages.length}/${adjustedPageCount}. Will resume automatically.`;
+        
         await supabase
           .from('book_generation_jobs')
           .update({
             status: 'pending',
             book_id: bookId,  // Make sure book_id is set
-            error_message: `Memory limit reached at page ${generatedPages.length}/${adjustedPageCount}. Will resume automatically.`,
+            error_message: errorMessage,
             updated_at: new Date().toISOString(),
             started_at: null,  // ✅ FIX 1: Clear started_at so stall detection resets
             last_heartbeat: null,  // ✅ FIX 1: Clear heartbeat too
@@ -566,8 +574,8 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
         );
       }
       
-      // FIX 5: Re-enable circuit breaker with memory check (skip in rework mode)
-      if (!isReworkMode && processedCount > 0 && processedCount >= PAGES_PER_FUNCTION) {
+      // FIX #3: Circuit breaker - use processedCount for both rework and regular mode
+      if (processedCount > 0 && processedCount >= PAGES_PER_FUNCTION) {
         const memCheck = Deno.memoryUsage();
         const percentUsedCheck = (memCheck.heapUsed / memCheck.heapTotal) * 100;
         
