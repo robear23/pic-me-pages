@@ -1,7 +1,6 @@
 import { AnimatePresence } from 'framer-motion';
 import { useBookStore } from '@/store/bookStore';
 import { HeroSection } from '@/components/HeroSection';
-import { ProgressBar } from '@/components/ProgressBar';
 import { UploadStep } from '@/components/UploadStep';
 import { ComplexityStep } from '@/components/ComplexityStep';
 import { InterestsStep } from '@/components/InterestsStep';
@@ -24,7 +23,7 @@ const Index = () => {
         }}
       />
 
-      <ProgressBar currentStep={currentStep} />
+      
 
       <AnimatePresence mode="wait">
         {currentStep === 'hero' && <HeroSection key="hero" />}
