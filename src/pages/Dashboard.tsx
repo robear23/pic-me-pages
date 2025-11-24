@@ -136,6 +136,28 @@ const Dashboard = () => {
     }
   }, [books]); // Only depend on books array, not isGeneratingPdf
 
+  // Clear auto-fix tracking when books change state and need PDFs again
+  useEffect(() => {
+    if (books.length > 0) {
+      const newAttempted = new Set(autoFixAttempted);
+      let changed = false;
+      
+      // Remove books from attempted tracking if they now need PDFs again
+      autoFixAttempted.forEach(bookId => {
+        const book = books.find(b => b.id === bookId);
+        if (book && book.status === 'completed' && (!book.pdf_url || !book.cover_url)) {
+          newAttempted.delete(bookId);
+          changed = true;
+          console.log(`🔧 Clearing auto-fix attempt for ${bookId} - book needs PDFs again`);
+        }
+      });
+      
+      if (changed) {
+        setAutoFixAttempted(newAttempted);
+      }
+    }
+  }, [books.map(b => `${b.id}-${b.pdf_url}-${b.cover_url}`).join(',')]);
+
   const loadBooks = async () => {
     if (!user) {
       console.log('[Dashboard] Cannot load books - no user');
@@ -627,6 +649,13 @@ const Dashboard = () => {
         )
       );
       
+      // Clear auto-fix tracking so book can be auto-fixed if needed
+      setAutoFixAttempted(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(book.id);
+        return newSet;
+      });
+      
       toast.success('Covers generated successfully! Generating cover PDF...');
       
       // Auto-generate cover PDF using the actual client-side function
@@ -1075,7 +1104,7 @@ const Dashboard = () => {
                   <img
                     src={getBookCoverImage(book)}
                     alt={book.character_name}
-                    className="w-full h-full object-contain bg-muted"
+                    className="w-full h-full object-cover"
                   />
                   {/* DEBUG: Show book ID on hover */}
                   <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
