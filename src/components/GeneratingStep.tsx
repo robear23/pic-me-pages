@@ -212,10 +212,20 @@ export const GeneratingStep = () => {
         let jobToUse;
 
         if (existingJobs && existingJobs.length > 0) {
-          // Reuse existing job and update it with latest generation data
-          console.log('Found existing job:', existingJobs[0].id, '- reusing it');
-          jobToUse = existingJobs[0];
+          // Check if the job is too old (stuck for more than 5 minutes)
+          const jobAge = Date.now() - new Date(existingJobs[0].created_at).getTime();
+          const isStuck = jobAge > 5 * 60 * 1000; // 5 minutes
           
+          if (isStuck) {
+            console.log('Existing job', existingJobs[0].id, 'is stuck (age:', Math.round(jobAge / 1000), 's) - creating new job');
+            jobToUse = null; // Will create new job below
+          } else {
+            // Reuse existing job and update it with latest generation data
+            console.log('Found existing job:', existingJobs[0].id, '- reusing it');
+            jobToUse = existingJobs[0];
+          }
+          
+          if (jobToUse) {
           // Update it with latest generation data
           const { error: updateError } = await supabase
             .from('book_generation_jobs')
@@ -244,7 +254,10 @@ export const GeneratingStep = () => {
             });
             return;
           }
-        } else {
+        }
+      }
+        
+        if (!jobToUse) {
           // Create new job only if none exists
           const { data: job, error: jobError } = await supabase
             .from('book_generation_jobs')
