@@ -251,9 +251,9 @@ Deno.serve(async (req) => {
       // Check if job was paused for memory or actually completed
       const responseBody = await generationResponse.clone().json();
       if (responseBody.message === 'Paused for memory cleanup') {
-        console.log(`⏸️ Job ${job.id} paused for memory cleanup - will resume from page ${responseBody.pages + 1}`);
+        console.log(`⏸️ Job ${job.id} paused for memory cleanup - will resume from page ${responseBody.pages_completed + 1}`);
       } else if (responseBody.message === 'Batch complete, continuing generation') {
-        console.log(`🔄 Job ${job.id} batch complete - continuing generation from page ${responseBody.pages + 1}`);
+        console.log(`🔄 Job ${job.id} batch complete - continuing generation from page ${responseBody.pages_completed + 1}`);
       } else {
         console.log(`✓ Job ${job.id} completed successfully`);
       }
@@ -569,7 +569,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
           .eq('id', job.id);
         
         return new Response(
-          JSON.stringify({ message: 'Paused for memory cleanup', pages: generatedPages.length }),
+          JSON.stringify({ message: 'Paused for memory cleanup', pages_completed: generatedPages.length }),
           { headers: corsHeaders }
         );
       }
