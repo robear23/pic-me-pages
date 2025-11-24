@@ -212,11 +212,55 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
       let candidate = extractTopLevelJSON(cleanContent) ?? cleanContent;
       console.log('Extracted JSON candidate (first 200 chars):', candidate.substring(0, 200));
       
-      // Try parsing directly - AI returns valid JSON
+      // Sanitize control characters in JSON strings before parsing
+      // Replace unescaped control characters (0x00-0x1F) with spaces, except for escaped ones
+      const sanitizeJSON = (jsonStr: string): string => {
+        let result = '';
+        let inString = false;
+        let escape = false;
+        
+        for (let i = 0; i < jsonStr.length; i++) {
+          const char = jsonStr[i];
+          const code = jsonStr.charCodeAt(i);
+          
+          if (escape) {
+            result += char;
+            escape = false;
+            continue;
+          }
+          
+          if (char === '\\') {
+            escape = true;
+            result += char;
+            continue;
+          }
+          
+          if (char === '"') {
+            inString = !inString;
+            result += char;
+            continue;
+          }
+          
+          // Replace control characters inside strings with spaces
+          if (inString && code >= 0 && code <= 31 && char !== '\n' && char !== '\r' && char !== '\t') {
+            result += ' ';
+            console.warn(`Replaced control character (code ${code}) at position ${i}`);
+          } else {
+            result += char;
+          }
+        }
+        
+        return result;
+      };
+      
+      candidate = sanitizeJSON(candidate);
+      console.log('Sanitized JSON (first 200 chars):', candidate.substring(0, 200));
+      
+      // Try parsing the sanitized JSON
       let parsed;
       try {
         parsed = JSON.parse(candidate);
-        console.log('Successfully parsed JSON on first attempt');
+        console.log('Successfully parsed JSON');
       } catch (parseError) {
         console.error('JSON parse failed:', parseError);
         console.error('Failed JSON (first 500 chars):', candidate.substring(0, 500));
