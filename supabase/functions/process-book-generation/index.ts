@@ -697,6 +697,9 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
                 if (isReworkMode) {
                   generatedPages[pageIndex] = pageData;
                   console.log(`  🔄 Replaced page ${pageIndex + 1} in rework mode`);
+                  
+                  // ✅ DEFENSIVE: Ensure no null pages exist in array after replacement
+                  generatedPages = generatedPages.filter((p: any) => p != null && p.imageUrl);
                 } else {
                   generatedPages.push(pageData);
                 }

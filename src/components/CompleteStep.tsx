@@ -144,13 +144,15 @@ export const CompleteStep = () => {
           if (fetchedBook) {
             setBookData(fetchedBook);
             
-            // Update pages if we got fresh data
+            // Update pages if we got fresh data (filter out null pages safely)
             if (fetchedBook.pages) {
-              const pages = (fetchedBook.pages as any[]).map((p: any) => ({
-                pageNumber: p.pageNumber,
-                imageUrl: p.imageUrl,
-                prompt: p.prompt
-              }));
+              const pages = (fetchedBook.pages as any[])
+                .filter((p: any) => p != null && p.imageUrl)
+                .map((p: any) => ({
+                  pageNumber: p.pageNumber,
+                  imageUrl: p.imageUrl,
+                  prompt: p.prompt
+                }));
               setGeneratedPages(pages);
             }
             
