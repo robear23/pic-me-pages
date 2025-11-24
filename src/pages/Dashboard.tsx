@@ -777,8 +777,7 @@ const Dashboard = () => {
       bookStore.setComplexityLevel((fullBook.complexity || 'medium') as ComplexityLevel);
       bookStore.setInterests((fullBook.interests || []) as string[]);
       
-      // Navigate to complete step where rework UI is available
-      bookStore.setStep('complete');
+      // Navigate to app - the complete step will load automatically from generatedBookId
       navigate('/app');
       
       toast.success('Book loaded for reworking');
