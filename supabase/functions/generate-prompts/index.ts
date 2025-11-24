@@ -241,8 +241,10 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
             continue;
           }
           
-          // Replace control characters inside strings with spaces
-          if (inString && code >= 0 && code <= 31 && char !== '\n' && char !== '\r' && char !== '\t') {
+          // Replace control characters inside strings
+          // JSON strings cannot contain unescaped control characters (0-31)
+          if (inString && code >= 0 && code <= 31) {
+            // Replace all control characters with spaces (including \n, \r, \t)
             result += ' ';
             console.warn(`Replaced control character (code ${code}) at position ${i}`);
           } else {
@@ -264,7 +266,19 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
       } catch (parseError) {
         console.error('JSON parse failed:', parseError);
         console.error('Failed JSON (first 500 chars):', candidate.substring(0, 500));
-        throw new Error('Invalid JSON from AI response');
+        
+        // Try more aggressive sanitization as fallback
+        console.log('Attempting aggressive sanitization...');
+        try {
+          // Replace all control characters globally, not just in strings
+          const aggressiveSanitized = candidate.replace(/[\x00-\x1F\x7F]/g, ' ');
+          console.log('Aggressive sanitized (first 200 chars):', aggressiveSanitized.substring(0, 200));
+          parsed = JSON.parse(aggressiveSanitized);
+          console.log('Successfully parsed with aggressive sanitization');
+        } catch (secondError) {
+          console.error('Aggressive sanitization also failed:', secondError);
+          throw new Error('Invalid JSON from AI response after multiple sanitization attempts');
+        }
       }
       
       prompts = parsed.prompts || parsed;
