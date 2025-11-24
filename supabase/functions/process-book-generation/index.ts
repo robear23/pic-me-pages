@@ -1092,6 +1092,25 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
 
     if (updateError) throw new Error(`Failed to update book: ${updateError.message}`);
 
+    // Update reworked_page_numbers to track credits
+    if (isReworkMode && selectedPagesForRework && selectedPagesForRework.length > 0) {
+      const { data: currentBook } = await supabase
+        .from('books')
+        .select('reworked_page_numbers')
+        .eq('id', bookId)
+        .single();
+      
+      const existingReworked = currentBook?.reworked_page_numbers || [];
+      const newReworked = [...new Set([...existingReworked, ...selectedPagesForRework])];
+      
+      await supabase
+        .from('books')
+        .update({ reworked_page_numbers: newReworked })
+        .eq('id', bookId);
+      
+      console.log(`✅ Updated reworked_page_numbers: ${existingReworked.length} → ${newReworked.length}`);
+    }
+
     // Mark job as completed
     const finalStatus = totalGenerated === totalExpected ? 'completed' : 'partial';
     const statusMessage = totalGenerated < totalExpected 

@@ -44,8 +44,8 @@ export const CompleteStep = () => {
   
   const characterNames = characters.map(c => c.name).filter(Boolean).join(' and ');
 
-  // Use real generated pages, filter for those with images
-  const pagesToShow = (generatedPages || []).filter(p => !!p.imageUrl);
+  // Use real generated pages, filter for those with images (handle null pages safely)
+  const pagesToShow = (generatedPages || []).filter(p => p != null && p.imageUrl);
   const hasRealPages = pagesToShow.length > 0;
   
   // Mock pages as fallback
