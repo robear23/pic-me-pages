@@ -484,6 +484,13 @@ export const GeneratingStep = () => {
 
           setJobStatus(updatedJob.status);
 
+          // Call completeRework() after successful rework
+          if (updatedJob.status === 'completed' && isReworkMode) {
+            console.log('✅ Rework completed, updating store...');
+            const bookStore = useBookStore.getState();
+            bookStore.completeRework();
+          }
+
           if (updatedJob.progress) {
             const { currentStep: step, currentPage, totalPages } = updatedJob.progress;
             const progressPercent = totalPages > 0 

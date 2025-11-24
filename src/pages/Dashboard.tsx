@@ -882,8 +882,9 @@ const Dashboard = () => {
         }
       }
       
-      // Set all required state for rework mode
-      bookStore.setGeneratedPages(fullBook.pages as any);
+      // Set all required state for rework mode (filter out null pages)
+      const validPages = ((fullBook.pages as any[]) || []).filter((p: any) => p != null && p.imageUrl);
+      bookStore.setGeneratedPages(validPages);
       bookStore.setGeneratedBookId(fullBook.id);
       bookStore.setReworkedPageNumbers((fullBook.reworked_page_numbers || []) as number[]);
       bookStore.setBookOptions(
