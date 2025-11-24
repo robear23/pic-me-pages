@@ -4,7 +4,8 @@ import { motion } from 'framer-motion';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAdmin } from '@/hooks/useAdmin';
-import { useBookStore } from '@/store/bookStore';
+import { useBookStore, type ComplexityLevel } from '@/store/bookStore';
+import type { PageCount, BindingType } from '@/types/bookOptions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap, AlertCircle } from 'lucide-react';
@@ -32,6 +33,10 @@ interface Book {
   user_id: string;
   missing_covers?: boolean;
   missing_components?: string[];
+  reworked_page_numbers?: number[];
+  selected_page_count?: number;
+  complexity?: string;
+  consistent_characters?: boolean;
 }
 
 interface Order {
@@ -742,6 +747,47 @@ const Dashboard = () => {
     setOrderingBook(book);
   };
 
+  const handleReworkPages = async (book: Book) => {
+    try {
+      console.log('[Dashboard] Loading book for rework:', book.id);
+      
+      // Load full book data with pages
+      const { data: fullBook, error: bookError } = await supabase
+        .from('books')
+        .select('*')
+        .eq('id', book.id)
+        .single();
+      
+      if (bookError) throw bookError;
+      if (!fullBook?.pages) throw new Error('Book pages not found');
+      
+      // Populate book store with all necessary data
+      const bookStore = useBookStore.getState();
+      
+      // Set all required state for rework mode
+      bookStore.setGeneratedPages(fullBook.pages as any);
+      bookStore.setGeneratedBookId(fullBook.id);
+      bookStore.setReworkedPageNumbers((fullBook.reworked_page_numbers || []) as number[]);
+      bookStore.setBookOptions(
+        (fullBook.selected_page_count || 24) as PageCount,
+        (fullBook.selected_binding_type || 'premium') as BindingType
+      );
+      bookStore.setCoverImageUrl(fullBook.cover_image_url);
+      bookStore.setBackCoverImageUrl(fullBook.back_cover_image_url);
+      bookStore.setComplexityLevel((fullBook.complexity || 'medium') as ComplexityLevel);
+      bookStore.setInterests((fullBook.interests || []) as string[]);
+      
+      // Navigate to complete step where rework UI is available
+      bookStore.setStep('complete');
+      navigate('/app');
+      
+      toast.success('Book loaded for reworking');
+    } catch (error: any) {
+      console.error('[Dashboard] Error loading book for rework:', error);
+      toast.error('Failed to load book: ' + error.message);
+    }
+  };
+
   const handleDeleteBook = async (bookId: string, e?: React.MouseEvent) => {
     if (e) {
       e.stopPropagation();
@@ -1045,6 +1091,34 @@ const Dashboard = () => {
                             <p className="text-xs text-muted-foreground text-center pt-1">
                               Interior for coloring • Cover for printing
                             </p>
+                            
+                            {/* Rework button - only show if reworks are available */}
+                            {(() => {
+                              const pageCount = book.selected_page_count || 12;
+                              const maxReworks = Math.floor(pageCount * 0.5);
+                              const usedReworks = (book.reworked_page_numbers || []).length;
+                              const reworksRemaining = maxReworks - usedReworks;
+                              
+                              return reworksRemaining > 0 ? (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="w-full border-purple-500/50 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/50"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleReworkPages(book);
+                                  }}
+                                >
+                                  <Zap className="w-4 h-4 mr-1" />
+                                  Rework Pages ({reworksRemaining} left)
+                                </Button>
+                              ) : (
+                                <div className="text-xs text-muted-foreground text-center py-2 px-3 bg-muted/50 rounded border border-border/50">
+                                  All reworks used ({maxReworks}/{maxReworks})
+                                </div>
+                              );
+                            })()}
+                            
                                <OrderPhysicalBookDialog 
                                  bookId={book.id}
                                  bookTitle={`${book.character_name}'s Coloring Book`}
