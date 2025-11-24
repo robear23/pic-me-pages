@@ -383,6 +383,42 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       throw error;
     }
 
+    // PHASE 1: Create book record early to enable incremental saves
+    let bookId = job.book_id;
+    if (!bookId) {
+      console.log('📚 Creating book record early for incremental saves...');
+      const characterName = characters[0]?.name || 'Child';
+      const { data: newBook, error: insertError } = await supabase
+        .from('books')
+        .insert({
+          user_id: job.user_id,
+          character_name: characterName,
+          interests,
+          pages: [],
+          photo_urls: [],
+          consistent_characters: consistentCharacters,
+          complexity: complexityLevel,
+          selected_page_count: selectedPageCount,
+          status: 'generating',
+          cover_image_url: null,
+          back_cover_image_url: null,
+          cover_url: null,
+        })
+        .select()
+        .single();
+
+      if (insertError) throw new Error(`Failed to create book: ${insertError.message}`);
+      bookId = newBook.id;
+      
+      // Update job with book_id immediately
+      await supabase
+        .from('book_generation_jobs')
+        .update({ book_id: bookId })
+        .eq('id', job.id);
+      
+      console.log(`📚 Book record created: ${bookId}`);
+    }
+
     // Step 2: Generate images one-by-one with timeout protection
     checkTimeout();
     
@@ -393,8 +429,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     });
 
     // ============================================
-    // PHASE 2: Check if job was orphaned and has partial progress
-    // Resume from last saved page instead of starting over
+    // PHASE 1: Check for existing progress (resume logic)
     // ============================================
     let generatedPages = [];
     let startPageIndex = 0;
@@ -406,17 +441,17 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       console.warn(`⚠️ Retry #${job.retry_count}: Reducing page count from ${selectedPageCount} to ${adjustedPageCount} pages to avoid memory exhaustion`);
     }
     
-    if (job.book_id && job.progress?.currentPage > 0) {
-      console.log(`🔄 Resuming orphaned job from page ${job.progress.currentPage}...`);
+    // Always check for resume, even on first run (book_id now exists from above)
+    if (bookId) {
+      console.log(`🔄 Checking for existing progress...`);
       
-      // Load previously generated pages from database
       const { data: bookData } = await supabase
         .from('books')
         .select('pages')
-        .eq('id', job.book_id)
+        .eq('id', bookId)
         .single();
       
-      if (bookData?.pages && Array.isArray(bookData.pages)) {
+      if (bookData?.pages && Array.isArray(bookData.pages) && bookData.pages.length > 0) {
         generatedPages = bookData.pages;
         startPageIndex = generatedPages.length;
         console.log(`✅ Recovered ${generatedPages.length} pages, resuming from page ${startPageIndex + 1}`);
@@ -452,13 +487,24 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
         // Stop heartbeat
         if (stopHeartbeat) stopHeartbeat();
         
+        // PHASE 1: Add detailed logging and include book_id in progress
+        console.log(`🔄 Job ${job.id} paused: ${generatedPages.length}/${adjustedPageCount} pages complete`);
+        console.log(`📊 Memory: ${percentUsed.toFixed(1)}% - will resume from page ${generatedPages.length + 1}`);
+        console.log(`📚 Book ID: ${bookId} - progress saved to database`);
+        
         // Mark job for retry (will resume from where we left off)
         await supabase
           .from('book_generation_jobs')
           .update({
             status: 'pending',
+            book_id: bookId,  // Make sure book_id is set
             error_message: `Memory limit reached at page ${generatedPages.length}/${adjustedPageCount}. Will resume automatically.`,
-            updated_at: new Date().toISOString()
+            updated_at: new Date().toISOString(),
+            progress: {
+              currentStep: 'paused_for_memory',
+              currentPage: generatedPages.length,
+              totalPages: adjustedPageCount
+            }
           })
           .eq('id', job.id);
         
@@ -597,17 +643,15 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
               totalPages: selectedPageCount
             });
             
-            // Update book record with current progress (incremental save)
-            if (job.book_id) {
-              await supabase
-                .from('books')
-                .update({ 
-                  pages: generatedPages,
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', job.book_id);
-              console.log(`  💾 Progress saved to database: ${generatedPages.length}/${prompts.length} pages`);
-            }
+            // PHASE 1: Update book record with current progress (bookId always exists now)
+            await supabase
+              .from('books')
+              .update({ 
+                pages: generatedPages,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', bookId);
+            console.log(`  💾 Progress saved to database: ${generatedPages.length}/${prompts.length} pages`);
             
             // PHASE 2: Aggressive memory cleanup after each page
             generatedPages[pageIndex] = null as any; // Clear from memory
@@ -959,24 +1003,13 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
       missing_components: missingComponents,
     };
 
-    let bookId = job.book_id;
-    if (!bookId) {
-      const { data: newBook, error: insertError } = await supabase
-        .from('books')
-        .insert(bookData)
-        .select()
-        .single();
+    // PHASE 1: Book already created early, just update with final data
+    const { error: updateError } = await supabase
+      .from('books')
+      .update(bookData)
+      .eq('id', bookId);
 
-      if (insertError) throw new Error(`Failed to save book: ${insertError.message}`);
-      bookId = newBook.id;
-    } else {
-      const { error: updateError } = await supabase
-        .from('books')
-        .update(bookData)
-        .eq('id', bookId);
-
-      if (updateError) throw new Error(`Failed to update book: ${updateError.message}`);
-    }
+    if (updateError) throw new Error(`Failed to update book: ${updateError.message}`);
 
     // Mark job as completed
     const finalStatus = totalGenerated === totalExpected ? 'completed' : 'partial';
