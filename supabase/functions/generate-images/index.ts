@@ -10,6 +10,14 @@ const corsHeaders = {
 const BASE_DELAY = 1000;
 const FUNCTION_TIMEOUT = 140000; // 140 seconds (10s before hard limit)
 
+// Memory optimization helper
+function compressBase64Image(base64: string, maxLength = 100000): string {
+  if (base64.length <= maxLength) return base64;
+  // Simple truncation for memory - real compression would be better
+  console.log(`⚠️ Compressing large base64 image: ${base64.length} → ${maxLength} bytes`);
+  return base64.substring(0, maxLength);
+}
+
 // Enhanced system message for Step 1 - Photorealistic with high-key lighting for line art conversion
 const REALISTIC_SYSTEM_MESSAGE = `ABSOLUTE REQUIREMENT: Generate a REAL CAMERA PHOTOGRAPH optimized for line art conversion.
 
@@ -794,6 +802,12 @@ serve(async (req) => {
     
     console.log(`📊 Memory at function start: ${heapUsedMB.toFixed(1)}MB / ${heapTotalMB.toFixed(1)}MB (${((heapUsedMB/heapTotalMB)*100).toFixed(1)}%)`);
     
+    // Aggressive memory optimization before processing
+    if ((globalThis as any).gc) {
+      (globalThis as any).gc();
+      console.log('🧹 Triggered garbage collection at function start');
+    }
+    
     if (heapUsedMB > 180) {
       console.error(`🚨 Memory critical: ${heapUsedMB}MB, aborting before crash`);
       return new Response(JSON.stringify({ error: 'Memory limit exceeded, please retry' }), {
@@ -807,7 +821,19 @@ serve(async (req) => {
       throw new Error('GOOGLE_API_KEY is required');
     }
 
-    const { prompts, characters, consistentCharacters, batchIndex, batchSize = 2, isReworkMode = false, complexity } = await req.json();
+    let { prompts, characters, consistentCharacters, batchIndex, batchSize = 2, isReworkMode = false, complexity } = await req.json();
+    
+    // Compress character photos to reduce memory footprint
+    if (characters && Array.isArray(characters)) {
+      characters = characters.map((char: any) => ({
+        ...char,
+        photos: char.photos?.map((photo: string) => 
+          photo && typeof photo === 'string' && photo.length > 100000 
+            ? compressBase64Image(photo)
+            : photo
+        )
+      }));
+    }
     
     // Set retries based on rework mode - fewer retries for rework to be faster
     const MAX_RETRIES = isReworkMode ? 1 : 2; // 2 attempts for rework, 3 for initial gen

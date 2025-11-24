@@ -458,7 +458,7 @@ export const GeneratingStep = () => {
     return () => clearInterval(checkStall);
   }, [jobId, jobStatus]);
 
-  // Subscribe to job updates via Realtime
+  // Subscribe to job updates via Realtime with fast polling for memory pauses
   useEffect(() => {
     if (!jobId) return;
 
@@ -483,6 +483,16 @@ export const GeneratingStep = () => {
           }
 
           setJobStatus(updatedJob.status);
+          
+          // Fast resume for memory-paused jobs (3s polling)
+          if (updatedJob.status === 'pending' && 
+              updatedJob.progress?.currentStep === 'paused_for_memory') {
+            console.log('⚡ Memory pause detected - fast polling enabled');
+            setTimeout(async () => {
+              console.log('🔄 Attempting fast resume...');
+              await supabase.functions.invoke('process-book-generation');
+            }, 3000);
+          }
 
           // Call completeRework() after successful rework
           if (updatedJob.status === 'completed' && isReworkMode) {
