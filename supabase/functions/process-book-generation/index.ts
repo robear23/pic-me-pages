@@ -153,13 +153,14 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-  // PHASE 4: Fetch pending or orphaned jobs (including jobs with NULL started_at)
+  // FIX 3: Improved orphaned job detection - catch stalled jobs more aggressively
   console.log('Fetching pending or orphaned jobs...');
-  const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const threeMinutesAgo = new Date(Date.now() - 3 * 60 * 1000).toISOString();
   const { data: jobs, error: fetchError } = await supabase
     .from('book_generation_jobs')
     .select('*')
-    .or(`status.eq.pending,and(status.eq.processing,started_at.is.null),and(status.eq.processing,last_heartbeat.lt.${twoMinutesAgo})`)
+    .or(`status.eq.pending,and(status.eq.processing,started_at.is.null),and(status.eq.processing,last_heartbeat.lt.${threeMinutesAgo},started_at.lt.${fiveMinutesAgo})`)
     .order('created_at', { ascending: true })
     .limit(1);
 
@@ -229,7 +230,7 @@ Deno.serve(async (req) => {
       });
 
       await Promise.race([
-        processBookGeneration(supabase, job, startTime),
+        processBookGeneration(supabase, job, startTime, stopHeartbeat),
         timeoutPromise
       ]);
       
@@ -312,7 +313,7 @@ Deno.serve(async (req) => {
   }
 });
 
-async function processBookGeneration(supabase: any, job: GenerationJob, startTime: number) {
+async function processBookGeneration(supabase: any, job: GenerationJob, startTime: number, stopHeartbeat: (() => void) | null) {
   // Check for timeout before starting
   const checkTimeout = () => {
     const elapsed = Date.now() - startTime;
@@ -421,17 +422,51 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     // Save progress incrementally, clear memory
     // ============================================
     
-    const PAGES_PER_FUNCTION = 3; // PHASE 2: Restart edge function every 3 pages
+    const PAGES_PER_FUNCTION = 2; // FIX 5: Reduced from 3 to 2 for better memory management
     
     for (let pageIndex = startPageIndex; pageIndex < Math.min(prompts.length, adjustedPageCount); pageIndex++) {
       checkTimeout();
       
-      // PHASE 5: CIRCUIT BREAKER DISABLED - causing more issues than it solves
-      // Will re-enable once orphaned job recovery is more reliable
-      /*
+      // FIX 1: Memory monitoring before each page
+      const memUsage = Deno.memoryUsage();
+      const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
+      const heapTotalMB = memUsage.heapTotal / 1024 / 1024;
+      const percentUsed = (heapUsedMB / heapTotalMB) * 100;
+      
+      console.log(`📊 Memory before page ${pageIndex + 1}: ${heapUsedMB.toFixed(1)}MB / ${heapTotalMB.toFixed(1)}MB (${percentUsed.toFixed(1)}%)`);
+      
+      // Emergency exit if memory critically high
+      if (percentUsed > 85) {
+        console.error(`⚠️ MEMORY CRITICAL: ${percentUsed.toFixed(1)}% - Gracefully exiting`);
+        
+        // Stop heartbeat
+        if (stopHeartbeat) stopHeartbeat();
+        
+        // Mark job for retry (will resume from where we left off)
+        await supabase
+          .from('book_generation_jobs')
+          .update({
+            status: 'pending',
+            error_message: `Memory limit reached at page ${generatedPages.length}/${adjustedPageCount}. Will resume automatically.`,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', job.id);
+        
+        return new Response(
+          JSON.stringify({ 
+            message: 'Paused for memory cleanup',
+            pages_completed: generatedPages.length 
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      // FIX 5: Re-enable circuit breaker with memory check
       if (pageIndex > 0 && (pageIndex - startPageIndex) >= PAGES_PER_FUNCTION) {
-        console.log(`💤 Circuit breaker: Pausing after ${pageIndex - startPageIndex} pages to clear memory`);
-        console.log(`Progress saved: ${generatedPages.length}/${adjustedPageCount} pages. Job will resume automatically.`);
+        const memCheck = Deno.memoryUsage();
+        const percentUsedCheck = (memCheck.heapUsed / memCheck.heapTotal) * 100;
+        
+        console.log(`💤 Circuit breaker: ${percentUsedCheck.toFixed(1)}% memory after ${pageIndex - startPageIndex} pages`);
         
         await updateJobProgress(supabase, job.id, {
           currentStep: 'pausing_for_memory_cleanup',
@@ -439,10 +474,22 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
           totalPages: adjustedPageCount
         });
         
-        // Exit - orphaned job detection will restart us
-        return;
+        if (stopHeartbeat) stopHeartbeat();
+        
+        // Reset to pending so it gets picked up again
+        await supabase
+          .from('book_generation_jobs')
+          .update({
+            status: 'pending',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', job.id);
+        
+        return new Response(
+          JSON.stringify({ message: 'Pausing for memory cleanup', pages: generatedPages.length }),
+          { headers: corsHeaders }
+        );
       }
-      */
       
       const pageStartTime = Date.now();
       const prompt = prompts[pageIndex];
@@ -551,10 +598,15 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
             // PHASE 2: Aggressive memory cleanup after each page
             generatedPages[pageIndex] = null as any; // Clear from memory
             
-            // Force garbage collection hint (Deno may or may not honor this)
-            if ((globalThis as any).gc) {
-              (globalThis as any).gc();
+            // FIX 4: Force multiple GC passes for better cleanup
+            for (let i = 0; i < 3; i++) {
+              if ((globalThis as any).gc) {
+                (globalThis as any).gc();
+              }
             }
+            
+            // Add small delay to allow GC to complete
+            await new Promise(resolve => setTimeout(resolve, 100));
           }
         } catch (error) {
           console.error(`  ❌ Page ${pageIndex + 1} attempt ${attempt} exception:`, error);
