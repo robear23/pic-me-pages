@@ -66,14 +66,16 @@ COLOR: Fill with rich, vibrant colors matching theme: ${interestsText}. Professi
 
 BORDER: Add playful decorative border (10-15% width) with theme elements (${interestsText}). Eye-catching, child-friendly design.
 
-CHARACTER NAME - CRITICAL PLACEMENT RULES:
+CHARACTER NAME - ULTRA-SPECIFIC PLACEMENT RULES:
 - Display the name "${characterName}" in large, bold, playful letters
-- Position the text HORIZONTALLY CENTERED in the TOP 20% of the cover
-- ALL letters must be COMPLETELY WITHIN the cover frame (no text cut off at edges)
+- HORIZONTAL POSITIONING: Center the text between X=20% and X=80% of cover width
+- VERTICAL POSITIONING: Place text in the TOP 15-25% of the cover (not at the very top edge)
+- MARGIN SAFETY: Ensure ALL letters are at least 0.5 inches (40 pixels at 300 DPI) from ANY edge
+- TEXT MUST BE FULLY VISIBLE: No letters should be cut off or extend beyond the visible cover area
+- VALIDATION: After placing text, verify that the leftmost letter starts at least X=15% and rightmost letter ends before X=85%
 - Use a fun, decorative font style (bubble letters, cartoon style, or playful typography)
 - Make the text large enough to be prominent (at least 15% of cover height)
-- Add a subtle outline or shadow for readability
-- Integrate decoratively with the border/theme but keep fully visible
+- Add a subtle outline or shadow for readability against any background color
 
 OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at 300 DPI.`;
 
