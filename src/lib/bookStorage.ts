@@ -171,11 +171,13 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
         .single();
       
       const updateData: any = {
-        pages: generatedPages.map((page, index) => ({
-          pageNumber: page.pageNumber,
-          imageUrl: uploadedPageUrls[index] || page.imageUrl || '',
-          prompt: page.prompt,
-        })),
+        pages: generatedPages
+          .filter(page => page != null && page.imageUrl) // Filter out null pages
+          .map((page, index) => ({
+            pageNumber: page.pageNumber,
+            imageUrl: uploadedPageUrls[index] || page.imageUrl || '',
+            prompt: page.prompt,
+          })),
         photo_urls: photoUrls.length > 0 ? photoUrls : undefined,
         updated_at: new Date().toISOString(),
         // Clear PDFs to force regeneration with new pages

@@ -321,11 +321,20 @@ export async function repairBookPdf(
     console.log(`  Safety margin: ${LULU_CONFIG.SAFETY_MARGIN}"`);
     console.log(`  Gutter (binding): ${bindingType === 'COIL' ? LULU_CONFIG.GUTTER_COIL : LULU_CONFIG.GUTTER_SADDLE}"`);
 
-    let processedPages = 0;
-    const totalPages = options?.pageCount || Math.max(options?.minPages || 12, pages.length);
+    // Filter out any null/undefined pages before processing
+    const validPages = pages.filter(page => page != null && page.imageUrl);
 
-    for (let i = 0; i < pages.length; i++) {
-      const page = pages[i];
+    if (validPages.length === 0) {
+      throw new Error('No valid pages found to generate PDF');
+    }
+
+    console.log(`[repairBookPdf] Processing ${validPages.length} valid pages out of ${pages.length} total`);
+
+    let processedPages = 0;
+    const totalPages = options?.pageCount || Math.max(options?.minPages || 12, validPages.length);
+
+    for (let i = 0; i < validPages.length; i++) {
+      const page = validPages[i];
       
       if (i > 0) {
         pdf.addPage([LULU_CONFIG.PAGE_WIDTH * LULU_CONFIG.POINTS_PER_INCH, LULU_CONFIG.PAGE_HEIGHT * LULU_CONFIG.POINTS_PER_INCH], 'portrait');
