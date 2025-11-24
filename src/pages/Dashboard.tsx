@@ -705,7 +705,12 @@ const Dashboard = () => {
           const pdfDate = new Date(parseInt(pdfTimestamp));
           const updateDate = new Date(book.updated_at);
           
-          return pdfDate < updateDate; // PDF is older than last update
+          // Only regenerate if PDF is more than 5 minutes older than last update
+          // This prevents regeneration loops while catching genuinely stale PDFs
+          const fiveMinutesInMs = 5 * 60 * 1000;
+          const timeDiff = updateDate.getTime() - pdfDate.getTime();
+          
+          return timeDiff > fiveMinutesInMs;
         } catch {
           return false;
         }
