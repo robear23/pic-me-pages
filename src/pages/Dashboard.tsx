@@ -1052,7 +1052,7 @@ const Dashboard = () => {
                   <img
                     src={getBookCoverImage(book)}
                     alt={book.character_name}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain bg-muted"
                   />
                   {/* DEBUG: Show book ID on hover */}
                   <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
@@ -1327,7 +1327,7 @@ const Dashboard = () => {
                 <img
                   src={page.imageUrl || page}
                   alt={`Page ${index + 1}`}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain bg-muted"
                 />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                   <Eye className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
