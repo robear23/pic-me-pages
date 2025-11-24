@@ -277,36 +277,46 @@ export const GeneratingStep = () => {
     const checkStall = setInterval(async () => {
       const { data: job } = await supabase
         .from('book_generation_jobs')
-        .select('last_heartbeat, started_at, progress')
+        .select('last_heartbeat, started_at, progress, status')
         .eq('id', jobId)
         .single();
       
-      if (job?.last_heartbeat && job?.started_at) {
-        const staleTime = Date.now() - new Date(job.last_heartbeat).getTime();
+      if (!job) return;
+      
+      const progress = job.progress as any;
+      const isPausedForMemory = progress?.currentStep === 'paused_for_memory' || 
+                               progress?.currentStep === 'pausing_for_memory_cleanup';
+      
+      // ✅ FIX 3: For paused jobs, trigger after 2 minutes of no activity
+      // For running jobs, use the standard 5-minute total time check
+      if (isPausedForMemory) {
+        // Paused job: check if started_at is null AND last activity > 2 mins
+        const lastActivity = job.last_heartbeat || job.started_at;
+        if (!lastActivity || (Date.now() - new Date(lastActivity).getTime() > 2 * 60 * 1000)) {
+          console.log('⚠️ Paused job inactive for 2+ minutes, triggering processor...');
+          await supabase.functions.invoke('process-book-generation');
+        }
+      } else if (job.started_at) {
+        // Running job: use normal stall detection
+        const staleTime = job.last_heartbeat 
+          ? Date.now() - new Date(job.last_heartbeat).getTime()
+          : Infinity;
         const totalTime = Date.now() - new Date(job.started_at).getTime();
         
-        // Only intervene if stale for 3+ minutes AND total time > 5 minutes
         if (staleTime > 3 * 60 * 1000 && totalTime > 5 * 60 * 1000) {
-          const progress = job.progress as any;
-          const isPausedForMemory = progress?.currentStep === 'paused_for_memory' || 
-                                   progress?.currentStep === 'pausing_for_memory_cleanup';
+          console.warn('⚠️ Job stalled (no heartbeat for 3+ mins, running 5+ mins), resetting...');
+          await supabase
+            .from('book_generation_jobs')
+            .update({
+              status: 'pending',
+              started_at: null,
+              last_heartbeat: null,
+              error_message: 'Job stalled. Retrying...',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', jobId);
           
-          if (isPausedForMemory) {
-            console.log('Job is paused for memory cleanup, triggering ONE processor invocation...');
-            await supabase.functions.invoke('process-book-generation');
-          } else if (progress?.currentPage === 0 || !progress?.currentPage) {
-            console.warn('Job appears stuck at page 0, resetting...');
-            await supabase
-              .from('book_generation_jobs')
-              .update({
-                status: 'pending',
-                error_message: 'Job stalled at start. Retrying...',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', jobId);
-            
-            await supabase.functions.invoke('process-book-generation');
-          }
+          await supabase.functions.invoke('process-book-generation');
         }
       }
     }, 120000); // Check every 2 minutes instead of 1
