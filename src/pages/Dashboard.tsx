@@ -505,6 +505,19 @@ const Dashboard = () => {
   const handleRetryCoverGeneration = async (book: Book, e: React.MouseEvent) => {
     e.stopPropagation();
     
+    // DEBUG: Log which book we're regenerating
+    console.log('🎨 Regenerating cover for:', {
+      bookId: book.id,
+      characterName: book.character_name,
+      createdAt: book.created_at
+    });
+    
+    // Confirm with user which book they're regenerating
+    const confirmMsg = `Regenerate cover for "${book.character_name}'s Coloring Book"?\n\nThis will create a new cover with the character name prominently displayed.`;
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+    
     if (!book.pages || book.pages.length === 0) {
       toast.error('Cannot generate covers without pages');
       return;
@@ -1009,12 +1022,16 @@ const Dashboard = () => {
                   }}
                 >
                   <CardContent className="p-0">
-                    <div className="aspect-[3/4] relative overflow-hidden bg-muted">
-                      <img
-                        src={getBookCoverImage(book)}
-                        alt={book.character_name}
-                        className="w-full h-full object-cover"
-                      />
+                <div className="aspect-[3/4] relative overflow-hidden bg-muted">
+                  <img
+                    src={getBookCoverImage(book)}
+                    alt={book.character_name}
+                    className="w-full h-full object-cover"
+                  />
+                  {/* DEBUG: Show book ID on hover */}
+                  <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
+                    {book.character_name} - {book.id.slice(0, 8)}
+                  </div>
                       {(() => {
                         const missing = getMissingComponents(book);
                         return missing.length > 0 && (

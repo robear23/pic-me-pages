@@ -66,7 +66,14 @@ COLOR: Fill with rich, vibrant colors matching theme: ${interestsText}. Professi
 
 BORDER: Add playful decorative border (10-15% width) with theme elements (${interestsText}). Eye-catching, child-friendly design.
 
-CHARACTER NAME: Add the name "${characterName}" in a super stylized, fun, decorative font near the character. Make it prominent, playful, and integrated into the design. Use creative lettering that matches the book's theme.
+CHARACTER NAME - CRITICAL PLACEMENT RULES:
+- Display the name "${characterName}" in large, bold, playful letters
+- Position the text HORIZONTALLY CENTERED in the TOP 20% of the cover
+- ALL letters must be COMPLETELY WITHIN the cover frame (no text cut off at edges)
+- Use a fun, decorative font style (bubble letters, cartoon style, or playful typography)
+- Make the text large enough to be prominent (at least 15% of cover height)
+- Add a subtle outline or shadow for readability
+- Integrate decoratively with the border/theme but keep fully visible
 
 OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at 300 DPI.`;
 
