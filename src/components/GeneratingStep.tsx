@@ -596,9 +596,20 @@ export const GeneratingStep = () => {
     setStep('upload');
   };
 
-  const currentStepIndex = GENERATION_STEPS.findIndex(step => 
-    currentStep.toLowerCase().includes(step.toLowerCase())
-  );
+  const getCurrentStepIndex = (stepString: string): number => {
+    const normalized = stepString.toLowerCase();
+    
+    // Map all possible edge function step values to display step indices
+    if (normalized.includes('preparing') || normalized === 'initializing') return 0;
+    if (normalized.includes('prompt') || normalized.includes('story')) return 1;
+    if (normalized.includes('generat') || normalized.includes('image') || normalized.includes('page') || normalized.includes('paused') || normalized.includes('pausing')) return 2;
+    if (normalized.includes('cover')) return 3;
+    if (normalized.includes('finaliz') || normalized.includes('complet')) return 4;
+    
+    return -1; // Unknown step
+  };
+
+  const currentStepIndex = getCurrentStepIndex(currentStep);
 
   const elapsedMinutes = Math.round((Date.now() - startTime) / 1000 / 60);
   const estimatedMinutes = isReworkMode ? 10 : 20;
@@ -749,8 +760,8 @@ export const GeneratingStep = () => {
               {/* Status Steps */}
               <div className="space-y-4">
                 {GENERATION_STEPS.map((step, index) => {
-                  const isComplete = index < currentStepIndex || jobStatus === 'completed';
-                  const isCurrent = index === currentStepIndex && jobStatus !== 'completed';
+                  const isComplete = (index < currentStepIndex && currentStepIndex >= 0) || jobStatus === 'completed';
+                  const isCurrent = index === currentStepIndex && jobStatus !== 'completed' && currentStepIndex >= 0;
 
                   return (
                     <motion.div
