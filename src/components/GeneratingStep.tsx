@@ -217,10 +217,11 @@ export const GeneratingStep = () => {
   }, [user, jobId]);
 
   // Set up polling when we have a jobId
+  // PHASE 2: Remove aggressive polling - trigger only once, rely on realtime
   useEffect(() => {
     if (!jobId || jobStatus === 'completed' || jobStatus === 'failed') return;
 
-    console.log('Setting up polling for job:', jobId);
+    console.log('Triggering initial processor for job:', jobId);
 
     const triggerProcessor = async () => {
       console.log('Triggering edge function...');
@@ -233,17 +234,11 @@ export const GeneratingStep = () => {
       }
     };
 
-    // Trigger immediately
+    // Trigger ONLY ONCE when job is created - no polling!
     triggerProcessor();
-
-    // Then poll every 5 seconds
-    const pollInterval = setInterval(triggerProcessor, 5000);
-
-    return () => {
-      console.log('Cleaning up polling interval');
-      clearInterval(pollInterval);
-    };
-  }, [jobId, jobStatus]);
+    
+    // Realtime subscription will handle updates
+  }, [jobId]);
 
   // FIX 2: Timeout only starts when job is actively processing (no jobStatus dependency)
   useEffect(() => {
@@ -278,6 +273,7 @@ export const GeneratingStep = () => {
   useEffect(() => {
     if (!jobId || jobStatus !== 'processing') return;
     
+    // PHASE 2: Check for stalls every 2 minutes (less aggressive)
     const checkStall = setInterval(async () => {
       const { data: job } = await supabase
         .from('book_generation_jobs')
@@ -289,35 +285,31 @@ export const GeneratingStep = () => {
         const staleTime = Date.now() - new Date(job.last_heartbeat).getTime();
         const totalTime = Date.now() - new Date(job.started_at).getTime();
         
-        // If no heartbeat for 3 minutes AND total time > 5 minutes, likely stalled
+        // Only intervene if stale for 3+ minutes AND total time > 5 minutes
         if (staleTime > 3 * 60 * 1000 && totalTime > 5 * 60 * 1000) {
-          console.warn(`Job appears stalled: no heartbeat for ${staleTime/1000}s`);
-          
-          // FIX 4: Check if job is paused for memory cleanup (not actually stalled)
           const progress = job.progress as any;
-          const isPausedForMemory = progress?.currentStep === 'pausing_for_memory_cleanup';
+          const isPausedForMemory = progress?.currentStep === 'paused_for_memory' || 
+                                   progress?.currentStep === 'pausing_for_memory_cleanup';
           
           if (isPausedForMemory) {
-            console.log('Job is paused for memory cleanup, continuing to poll...');
-            // Trigger processor to continue
+            console.log('Job is paused for memory cleanup, triggering ONE processor invocation...');
             await supabase.functions.invoke('process-book-generation');
-          } else {
-            // Actually stalled - reset to pending
+          } else if (progress?.currentPage === 0 || !progress?.currentPage) {
+            console.warn('Job appears stuck at page 0, resetting...');
             await supabase
               .from('book_generation_jobs')
               .update({
                 status: 'pending',
-                error_message: `Job stalled at page ${progress?.currentPage || 0}. Retrying...`,
+                error_message: 'Job stalled at start. Retrying...',
                 updated_at: new Date().toISOString()
               })
               .eq('id', jobId);
             
-            // Trigger processor
             await supabase.functions.invoke('process-book-generation');
           }
         }
       }
-    }, 60000); // Check every minute
+    }, 120000); // Check every 2 minutes instead of 1
     
     return () => clearInterval(checkStall);
   }, [jobId, jobStatus]);
