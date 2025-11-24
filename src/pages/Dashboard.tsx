@@ -626,7 +626,31 @@ const Dashboard = () => {
         )
       );
       
-      toast.success('Covers generated successfully! Book is now complete.');
+      toast.success('Covers generated successfully! Generating cover PDF...');
+      
+      // Auto-generate cover PDF
+      try {
+        const { error: pdfError } = await supabase.functions.invoke('generate-cover-pdf', {
+          body: {
+            bookId: book.id,
+            frontCoverUrl: frontUrlData.publicUrl,
+            backCoverUrl: backUrlData.publicUrl,
+          }
+        });
+        
+        if (pdfError) {
+          console.error('Cover PDF generation error:', pdfError);
+          toast.error('Cover images created, but PDF generation failed. You can try downloading the covers separately.');
+        } else {
+          toast.success('Cover PDF generated successfully! Book is now complete.');
+        }
+        
+        // Reload books to get the updated cover_url
+        await loadBooks();
+      } catch (pdfError) {
+        console.error('Cover PDF generation error:', pdfError);
+        toast.error('Cover images created, but PDF generation failed.');
+      }
       
     } catch (error: any) {
       console.error('Error retrying cover generation:', error);

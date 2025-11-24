@@ -462,24 +462,49 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       console.warn(`⚠️ Retry #${job.retry_count}: Reducing page count from ${selectedPageCount} to ${adjustedPageCount} pages to avoid memory exhaustion`);
     }
     
-    // Always check for resume, even on first run (book_id now exists from above)
-    if (bookId) {
-      console.log(`🔄 Checking for existing progress...`);
+    // Check for rework mode vs. resume mode
+    if (isReworkMode && selectedPagesForRework && selectedPagesForRework.length > 0) {
+      // REWORK MODE: Load existing pages but DON'T resume - we'll replace specific pages
+      console.log(`🔄 Rework mode: will regenerate ${selectedPagesForRework.length} specific page(s): ${selectedPagesForRework.join(', ')}`);
       
-      const { data: bookData } = await supabase
-        .from('books')
-        .select('pages')
-        .eq('id', bookId)
-        .single();
-      
-      if (bookData?.pages && Array.isArray(bookData.pages) && bookData.pages.length > 0) {
-        generatedPages = bookData.pages;
-        startPageIndex = generatedPages.length;
-        console.log(`✅ Recovered ${generatedPages.length} pages, resuming from page ${startPageIndex + 1}`);
+      if (bookId) {
+        const { data: bookData } = await supabase
+          .from('books')
+          .select('pages')
+          .eq('id', bookId)
+          .single();
+        
+        if (bookData?.pages && Array.isArray(bookData.pages)) {
+          generatedPages = bookData.pages;
+          console.log(`✅ Loaded ${generatedPages.length} existing pages for rework`);
+        }
+      }
+      // DO NOT set startPageIndex in rework mode - we process specific pages only
+    } else {
+      // RESUME MODE: Normal recovery logic for interrupted generations
+      if (bookId) {
+        console.log(`🔄 Checking for existing progress...`);
+        
+        const { data: bookData } = await supabase
+          .from('books')
+          .select('pages')
+          .eq('id', bookId)
+          .single();
+        
+        if (bookData?.pages && Array.isArray(bookData.pages) && bookData.pages.length > 0) {
+          generatedPages = bookData.pages;
+          startPageIndex = generatedPages.length;
+          console.log(`✅ Recovered ${generatedPages.length} pages, resuming from page ${startPageIndex + 1}`);
+        }
       }
     }
     
-    console.log(`Starting page-by-page generation: ${Math.min(prompts.length, adjustedPageCount)} total pages (starting from page ${startPageIndex + 1})`);
+    // Determine which pages to process
+    const pagesToProcess = isReworkMode && selectedPagesForRework 
+      ? selectedPagesForRework.map(p => p - 1) // Convert to 0-indexed
+      : Array.from({length: adjustedPageCount - startPageIndex}, (_, i) => startPageIndex + i);
+    
+    console.log(`Starting page-by-page generation: ${pagesToProcess.length} page(s) - indices: [${pagesToProcess.map(i => i + 1).join(', ')}]`);
     logMemoryUsage('Before Image Generation');
 
     // ============================================
@@ -489,8 +514,9 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     // ============================================
     
     const PAGES_PER_FUNCTION = 2; // FIX 5: Reduced from 3 to 2 for better memory management
+    let processedCount = 0; // Track how many pages we've processed in this run
     
-    for (let pageIndex = startPageIndex; pageIndex < Math.min(prompts.length, adjustedPageCount); pageIndex++) {
+    for (const pageIndex of pagesToProcess) {
       checkTimeout();
       
       // FIX 1: Memory monitoring before each page
@@ -540,8 +566,8 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
         );
       }
       
-      // FIX 5: Re-enable circuit breaker with memory check
-      if (pageIndex > 0 && (pageIndex - startPageIndex) >= PAGES_PER_FUNCTION) {
+      // FIX 5: Re-enable circuit breaker with memory check (skip in rework mode)
+      if (!isReworkMode && processedCount > 0 && processedCount >= PAGES_PER_FUNCTION) {
         const memCheck = Deno.memoryUsage();
         const percentUsedCheck = (memCheck.heapUsed / memCheck.heapTotal) * 100;
         
@@ -651,18 +677,32 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
                 
                 console.log(`  ✅ Page ${pageIndex + 1} uploaded`);
                 
-                // Clear base64 data from memory immediately
-                generatedPages.push({
+                // In rework mode, REPLACE the page at the specific index
+                // In normal mode, PUSH the page to the end
+                const pageData = {
                   pageNumber: page.pageNumber,
                   prompt: page.prompt,
                   imageUrl: urlData.publicUrl
-                });
+                };
+                
+                if (isReworkMode) {
+                  generatedPages[pageIndex] = pageData;
+                  console.log(`  🔄 Replaced page ${pageIndex + 1} in rework mode`);
+                } else {
+                  generatedPages.push(pageData);
+                }
               }
             } else {
-              generatedPages.push(page);
+              if (isReworkMode) {
+                generatedPages[pageIndex] = page;
+                console.log(`  🔄 Replaced page ${pageIndex + 1} in rework mode`);
+              } else {
+                generatedPages.push(page);
+              }
             }
             
             pageSuccess = true;
+            processedCount++; // Increment processed count
             const pageTime = Date.now() - pageStartTime;
             console.log(`  ✅ Page ${pageIndex + 1} complete in ${pageTime}ms`);
             logMemoryUsage(`After Page ${pageIndex + 1}`);
