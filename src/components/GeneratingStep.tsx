@@ -137,6 +137,37 @@ export const GeneratingStep = () => {
         return;
       }
 
+      // Validation for rework mode (CRITICAL FIX)
+      if (isReworkMode) {
+        const characterName = characters[0]?.name;
+        if (!characterName) {
+          console.error('Rework mode requires character name');
+          toast({
+            title: 'Character Name Required',
+            description: 'Cannot rework pages without character name. Please return to Dashboard.',
+            variant: 'destructive',
+          });
+          setStep('complete');
+          return;
+        }
+        
+        if (!selectedPagesForRework || selectedPagesForRework.length === 0) {
+          console.error('Rework mode requires page selection');
+          toast({
+            title: 'No Pages Selected',
+            description: 'Please select at least one page to rework.',
+            variant: 'destructive',
+          });
+          setStep('complete');
+          return;
+        }
+        
+        console.log('✓ Rework validation passed:', {
+          characterName,
+          selectedPages: selectedPagesForRework.length
+        });
+      }
+
       try {
         // CRITICAL FIX: Convert File objects to base64 before storing
         console.log('Processing character photos...');
