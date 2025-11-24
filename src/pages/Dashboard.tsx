@@ -8,7 +8,7 @@ import { useBookStore, type ComplexityLevel } from '@/store/bookStore';
 import type { PageCount, BindingType } from '@/types/bookOptions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap, AlertCircle } from 'lucide-react';
+import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap, AlertCircle, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { OrderPhysicalBookDialog } from '@/components/OrderPhysicalBookDialog';
 import { Badge } from '@/components/ui/badge';
@@ -37,6 +37,9 @@ interface Book {
   selected_page_count?: number;
   complexity?: string;
   consistent_characters?: boolean;
+  photo_urls?: string[];
+  selected_binding_type?: string;
+  selected_pod_package_id?: string;
 }
 
 interface Order {
@@ -145,7 +148,7 @@ const Dashboard = () => {
     try {
       const { data, error } = await supabase
         .from('books')
-        .select('id, character_name, interests, pdf_url, cover_url, cover_image_url, back_cover_image_url, status, created_at, user_id, pages, missing_covers, missing_components')
+        .select('id, character_name, interests, pdf_url, cover_url, cover_image_url, back_cover_image_url, status, created_at, user_id, pages, missing_covers, missing_components, selected_page_count, reworked_page_numbers, complexity, selected_binding_type, selected_pod_package_id, consistent_characters, photo_urls')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -764,6 +767,25 @@ const Dashboard = () => {
       // Populate book store with all necessary data
       const bookStore = useBookStore.getState();
       
+      // Add character data to store (CRITICAL FIX for rework bug)
+      // Reset characters and add the book's character
+      bookStore.addCharacter();
+      const firstCharacterId = bookStore.characters[0]?.id;
+      
+      if (firstCharacterId) {
+        bookStore.updateCharacter(firstCharacterId, { name: fullBook.character_name });
+        
+        // If there are photo URLs, add them to the character
+        if (fullBook.photo_urls && fullBook.photo_urls.length > 0) {
+          fullBook.photo_urls.forEach((url, idx) => {
+            if (url && idx < 3) {
+              // Store URL as string in photos array (will be processed later if needed)
+              bookStore.setCharacterPhoto(firstCharacterId, idx, url as any);
+            }
+          });
+        }
+      }
+      
       // Set all required state for rework mode
       bookStore.setGeneratedPages(fullBook.pages as any);
       bookStore.setGeneratedBookId(fullBook.id);
@@ -1120,6 +1142,18 @@ const Dashboard = () => {
                                 </div>
                               );
                             })()}
+                            
+                            {/* Regenerate Cover button */}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full border-pink-500/50 text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950/50"
+                              onClick={(e) => handleRetryCoverGeneration(book, e)}
+                              disabled={retryingCoverId === book.id}
+                            >
+                              <Sparkles className="w-4 h-4 mr-1" />
+                              {retryingCoverId === book.id ? 'Regenerating...' : 'Regenerate Cover'}
+                            </Button>
                             
                                <OrderPhysicalBookDialog 
                                  bookId={book.id}

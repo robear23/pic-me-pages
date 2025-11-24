@@ -33,3 +33,6 @@ verify_jwt = true
 
 [functions.retry-book-cover]
 verify_jwt = true
+
+[functions.retry-book-cover-v2]
+verify_jwt = true
