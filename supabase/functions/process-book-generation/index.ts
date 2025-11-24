@@ -366,6 +366,14 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     const { generation_data } = job;
     const { characters, interests, consistentCharacters, complexityLevel, selectedPageCount, isReworkMode, selectedPagesForRework, generatedBookId } = generation_data;
 
+    // CRITICAL: Validate rework mode parameters
+    if (isReworkMode) {
+      if (!selectedPagesForRework || selectedPagesForRework.length === 0) {
+        throw new Error('Rework mode requires at least one page to be selected. Please select pages to rework before continuing.');
+      }
+      console.log(`🔄 Rework mode: regenerating ${selectedPagesForRework.length} page(s): ${selectedPagesForRework.join(', ')}`);
+    }
+
     // Step 1: Generate prompts with error handling
     console.log('📝 Starting prompt generation...');
     logMemoryUsage('Before Prompts');
@@ -704,11 +712,12 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     logMemoryUsage('After All Images');
 
     // Generate covers (if we have at least one page)
+    // CRITICAL: Skip cover generation in rework mode - only regenerate covers for NEW books
     let coverImageUrl = null;
     let backCoverImageUrl = null;
     let coverUrl = null;
     
-    if (generatedPages.length > 0) {
+    if (generatedPages.length > 0 && !isReworkMode) {
       checkTimeout();
       console.log(`\n[${Date.now() - startTime}ms] === Cover Generation Starting ===`);
       logMemoryUsage('Before Covers');

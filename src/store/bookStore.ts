@@ -242,7 +242,10 @@ export const useBookStore = create<BookState>((set, get) => ({
     console.log('Entering rework mode');
     set({
       isReworkMode: true,
-      selectedPagesForRework: [],
+      // Preserve existing page selection if already set (from CompleteStep)
+      selectedPagesForRework: state.selectedPagesForRework.length > 0 
+        ? state.selectedPagesForRework 
+        : [],
       currentStep: 'rework-settings' as BookStep,
       generationProgress: 0,  // Reset progress
       generationStatus: '',   // Reset status
