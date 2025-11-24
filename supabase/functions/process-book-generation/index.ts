@@ -514,8 +514,10 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     // Save progress incrementally, clear memory
     // ============================================
     
-    const PAGES_PER_FUNCTION = 2; // FIX 5: Reduced from 3 to 2 for better memory management
+    // Dynamic memory-based circuit breaker (not fixed page count)
     let processedCount = 0; // Track how many pages we've processed in this run
+    const MIN_PAGES_BEFORE_CHECK = 1; // Process at least 1 page before checking
+    const PAUSE_MEMORY_THRESHOLD = 88; // Graceful pause at 88% (before 92% emergency limit)
     
     for (const pageIndex of pagesToProcess) {
       checkTimeout();
@@ -528,8 +530,8 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       
       console.log(`📊 Memory before page ${pageIndex + 1}: ${heapUsedMB.toFixed(1)}MB / ${heapTotalMB.toFixed(1)}MB (${percentUsed.toFixed(1)}%)`);
       
-      // Emergency exit if memory critically high
-      if (percentUsed > 85) {
+      // Emergency exit if memory critically high (92% threshold - modern V8 handles this safely)
+      if (percentUsed > 92) {
         console.error(`⚠️ MEMORY CRITICAL: ${percentUsed.toFixed(1)}% - Gracefully exiting`);
         
         // Stop heartbeat
@@ -575,12 +577,9 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
         );
       }
       
-      // FIX #3: Circuit breaker - use processedCount for both rework and regular mode
-      if (processedCount > 0 && processedCount >= PAGES_PER_FUNCTION) {
-        const memCheck = Deno.memoryUsage();
-        const percentUsedCheck = (memCheck.heapUsed / memCheck.heapTotal) * 100;
-        
-        console.log(`💤 Circuit breaker: ${percentUsedCheck.toFixed(1)}% memory after ${pageIndex - startPageIndex} pages`);
+      // Dynamic circuit breaker - check memory after processing at least 1 page
+      if (processedCount >= MIN_PAGES_BEFORE_CHECK && percentUsed > PAUSE_MEMORY_THRESHOLD) {
+        console.log(`💤 Graceful pause: ${percentUsed.toFixed(1)}% memory after ${processedCount} pages`);
         
         // FIX 5: Add detailed logging before pausing
         console.log(`🔄 Job ${job.id} paused: ${generatedPages.length}/${adjustedPageCount} pages complete`);
@@ -726,18 +725,27 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
               totalPages: selectedPageCount
             });
             
-            // PHASE 1: Update book record with current progress (bookId always exists now)
+            // PHASE 1: Create clean copy WITHOUT base64 data for database
+            const dbPages = generatedPages
+              .filter((p: any) => p != null && p.imageUrl)
+              .map((p: any) => ({
+                pageNumber: p.pageNumber,
+                prompt: p.prompt,
+                imageUrl: p.imageUrl
+              }));
+            
+            // Save clean data to database (no base64 bloat)
             await supabase
               .from('books')
               .update({ 
-                pages: generatedPages,
+                pages: dbPages,
                 updated_at: new Date().toISOString()
               })
               .eq('id', bookId);
-            console.log(`  💾 Progress saved to database: ${generatedPages.length}/${prompts.length} pages`);
+            console.log(`  💾 Progress saved to database: ${dbPages.length}/${prompts.length} pages`);
             
-            // PHASE 2: Aggressive memory cleanup after each page
-            generatedPages[pageIndex] = null as any; // Clear from memory
+            // PHASE 2: NOW clear from memory (after saving clean version)
+            generatedPages[pageIndex] = null as any;
             
             // FIX 4: Force multiple GC passes for better cleanup
             for (let i = 0; i < 3; i++) {
