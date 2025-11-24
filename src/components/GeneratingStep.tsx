@@ -282,7 +282,7 @@ export const GeneratingStep = () => {
         setJobId(jobToUse.id);
         setJobStatus('pending');
         setCanLeave(true);
-        console.log('Job created:', job.id);
+        console.log('Job created/reused:', jobToUse.id);
 
       } catch (error: any) {
         console.error('Error creating job:', error);
