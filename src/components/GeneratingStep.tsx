@@ -374,6 +374,8 @@ export const GeneratingStep = () => {
 
           if (updatedJob.status === 'completed' || updatedJob.status === 'partial') {
             setProgress(100);
+            setErrorMessage(null); // Clear any stale errors from failed attempts
+            setShowStaleWarning(false);
             
             if (updatedJob.status === 'partial') {
               setCurrentStep('Book partially completed');
