@@ -45,6 +45,7 @@ interface GenerationJob {
   started_at: string | null;
   last_heartbeat: string | null;  // Added for FIX 2
   retry_count: number; // PHASE 5: Track retries for graceful degradation
+  error_message?: string | null; // FIX #4: Add error_message for diagnostic logging
   progress: {
     currentPage: number;
     totalPages: number;
@@ -232,6 +233,13 @@ Deno.serve(async (req) => {
 
     console.log(`✅ Successfully claimed job ${job.id}`);
 
+    // FIX #4: Add diagnostic logging on resume
+    console.log(`📊 Job state at start:`);
+    console.log(`   - Status: ${job.status}`);
+    console.log(`   - Progress: ${JSON.stringify(job.progress)}`);
+    console.log(`   - Book ID: ${job.book_id}`);
+    console.log(`   - Retry count: ${job.retry_count}`);
+    console.log(`   - Error message: ${job.error_message || 'none'}`);
 
     // Process the job with comprehensive error handling
     const startTime = Date.now();
@@ -487,6 +495,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     // ============================================
     let generatedPages = [];
     let startPageIndex = 0;
+    let savedPageCount = 0; // FIX #1: Track saved pages separately from memory array
     
     // PHASE 5: Graceful degradation - reduce page count on retry
     let adjustedPageCount = selectedPageCount;
@@ -525,9 +534,14 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
           .single();
         
         if (bookData?.pages && Array.isArray(bookData.pages) && bookData.pages.length > 0) {
-          generatedPages = bookData.pages;
+          // Filter out any null pages before counting
+          generatedPages = bookData.pages.filter((p: any) => p != null && p.imageUrl);
+          savedPageCount = generatedPages.length; // FIX #2: Initialize saved count from DB
           startPageIndex = generatedPages.length;
-          console.log(`✅ Recovered ${generatedPages.length} pages, resuming from page ${startPageIndex + 1}`);
+          console.log(`✅ Recovered ${generatedPages.length} pages from database`);
+          console.log(`📊 Resume state: savedPageCount=${savedPageCount}, startPageIndex=${startPageIndex}`);
+        } else {
+          console.log(`ℹ️ No existing pages found in database, starting fresh`);
         }
       }
     }
@@ -566,22 +580,37 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       if (percentUsed > 92) {
         console.error(`⚠️ MEMORY CRITICAL: ${percentUsed.toFixed(1)}% - Gracefully exiting`);
         
+        // FIX #3: Verify database state before pausing
+        const { data: verifyBook } = await supabase
+          .from('books')
+          .select('pages')
+          .eq('id', bookId)
+          .single();
+
+        const actualSavedPages = verifyBook?.pages?.length || 0;
+        console.log(`📊 Pause verification: DB has ${actualSavedPages} pages, savedPageCount=${savedPageCount}`);
+
+        if (actualSavedPages !== savedPageCount) {
+          console.error(`⚠️ MISMATCH: savedPageCount (${savedPageCount}) !== database (${actualSavedPages})`);
+          savedPageCount = actualSavedPages; // Use database as source of truth
+        }
+        
         // Stop heartbeat
         if (stopHeartbeat) stopHeartbeat();
         
-        // FIX #2: Add detailed logging with correct counters for rework mode
+        // FIX #1: Use savedPageCount for progress reporting
         const progressMessage = isReworkMode 
           ? `Processed ${processedCount}/${selectedPagesForRework?.length || 0} rework pages`
-          : `${generatedPages.length}/${adjustedPageCount} pages complete`;
+          : `${savedPageCount}/${adjustedPageCount} pages complete`;
         
         console.log(`🔄 Job ${job.id} paused: ${progressMessage}`);
-        console.log(`📊 Memory: ${percentUsed.toFixed(1)}% - will resume from page ${generatedPages.length + 1}`);
+        console.log(`📊 Memory: ${percentUsed.toFixed(1)}% - will resume from page ${savedPageCount + 1}`);
         console.log(`📚 Book ID: ${bookId} - progress saved to database`);
         
         // Mark job for retry (will resume from where we left off)
         const errorMessage = isReworkMode
           ? `Memory limit reached - processed ${processedCount}/${selectedPagesForRework?.length || 0} rework pages. Will resume automatically.`
-          : `Memory limit reached at page ${generatedPages.length}/${adjustedPageCount}. Will resume automatically.`;
+          : `Memory limit reached at page ${savedPageCount}/${adjustedPageCount}. Will resume automatically.`;
         
         await supabase
           .from('book_generation_jobs')
@@ -594,7 +623,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
             last_heartbeat: null,  // ✅ FIX 1: Clear heartbeat too
             progress: {
               currentStep: 'paused_for_memory',
-              currentPage: generatedPages.length,
+              currentPage: savedPageCount, // FIX #1: Use savedPageCount
               totalPages: adjustedPageCount
             }
           })
@@ -603,7 +632,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
         return new Response(
           JSON.stringify({ 
             message: 'Paused for memory cleanup',
-            pages_completed: generatedPages.length 
+            pages_completed: savedPageCount // FIX #1: Use savedPageCount
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -613,13 +642,28 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       if (processedCount >= MIN_PAGES_BEFORE_CHECK && percentUsed > PAUSE_MEMORY_THRESHOLD) {
         console.log(`💤 Graceful pause: ${percentUsed.toFixed(1)}% memory after ${processedCount} pages`);
         
-        // FIX 5: Add detailed logging before pausing
-        console.log(`🔄 Job ${job.id} paused: ${generatedPages.length}/${adjustedPageCount} pages complete`);
-        console.log(`📊 Memory: ${percentUsed.toFixed(1)}% - will resume from page ${generatedPages.length + 1}`);
+        // FIX #3: Verify database state before pausing
+        const { data: verifyBook } = await supabase
+          .from('books')
+          .select('pages')
+          .eq('id', bookId)
+          .single();
+
+        const actualSavedPages = verifyBook?.pages?.length || 0;
+        console.log(`📊 Pause verification: DB has ${actualSavedPages} pages, savedPageCount=${savedPageCount}`);
+
+        if (actualSavedPages !== savedPageCount) {
+          console.error(`⚠️ MISMATCH: savedPageCount (${savedPageCount}) !== database (${actualSavedPages})`);
+          savedPageCount = actualSavedPages; // Use database as source of truth
+        }
+        
+        // FIX #1: Use savedPageCount for progress reporting
+        console.log(`🔄 Job ${job.id} paused: ${savedPageCount}/${adjustedPageCount} pages complete`);
+        console.log(`📊 Memory: ${percentUsed.toFixed(1)}% - will resume from page ${savedPageCount + 1}`);
         
         await updateJobProgress(supabase, job.id, {
           currentStep: 'pausing_for_memory_cleanup',
-          currentPage: generatedPages.length,
+          currentPage: savedPageCount, // FIX #1: Use savedPageCount
           totalPages: adjustedPageCount
         });
         
@@ -636,14 +680,14 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
             last_heartbeat: null,  // ✅ FIX 1: Clear heartbeat too
             progress: {
               currentStep: 'paused_for_memory',
-              currentPage: generatedPages.length,
+              currentPage: savedPageCount, // FIX #1: Use savedPageCount
               totalPages: adjustedPageCount
             }
           })
           .eq('id', job.id);
         
         return new Response(
-          JSON.stringify({ message: 'Paused for memory cleanup', pages_completed: generatedPages.length }),
+          JSON.stringify({ message: 'Paused for memory cleanup', pages_completed: savedPageCount }), // FIX #1: Use savedPageCount
           { headers: corsHeaders }
         );
       }
@@ -774,7 +818,9 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
                 updated_at: new Date().toISOString()
               })
               .eq('id', bookId);
-            console.log(`  💾 Progress saved to database: ${dbPages.length}/${prompts.length} pages`);
+            
+            savedPageCount = dbPages.length; // FIX #1: Track actual saved count
+            console.log(`  💾 Progress saved to database: ${savedPageCount}/${prompts.length} pages`);
             
             // PHASE 2: NOW clear from memory (after saving clean version)
             generatedPages[pageIndex] = null as any;
