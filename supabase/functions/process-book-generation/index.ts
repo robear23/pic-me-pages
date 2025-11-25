@@ -288,6 +288,15 @@ Deno.serve(async (req) => {
         })
         .eq('id', job.id);
 
+      // FIX #1: Update book status to 'failed' if book was created
+      if (job.book_id) {
+        await supabase
+          .from('books')
+          .update({ status: 'failed' })
+          .eq('id', job.book_id);
+        console.log(`✓ Book ${job.book_id} status updated to failed`);
+      }
+
       // Grant retry credit if system error
       if (isSystemError) {
         try {
@@ -393,14 +402,37 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
         }
       });
 
+      // FIX #3: Log the full response for debugging
+      console.log('Prompts response:', {
+        error: promptsResponse.error,
+        data: promptsResponse.data ? 'present' : 'missing',
+        status: (promptsResponse as any).status
+      });
+
       if (promptsResponse.error) {
-        await logError('Prompt Generation', promptsResponse.error);
-        throw new Error(`Prompt generation failed: ${promptsResponse.error.message}`);
+        // Extract more details from the error
+        const errorDetails = {
+          message: promptsResponse.error.message,
+          status: (promptsResponse.error as any).status,
+          statusCode: (promptsResponse.error as any).statusCode,
+          details: (promptsResponse.error as any).details || JSON.stringify(promptsResponse.error)
+        };
+        
+        console.error('❌ Prompt generation error details:', errorDetails);
+        await logError('Prompt Generation', errorDetails);
+        
+        throw new Error(`Prompt generation failed: ${errorDetails.message} (Status: ${errorDetails.statusCode || errorDetails.status || 'unknown'})`);
       }
+      
+      if (!promptsResponse.data || !promptsResponse.data.prompts) {
+        throw new Error('No prompts returned from generate-prompts function');
+      }
+      
       prompts = promptsResponse.data.prompts;
       console.log(`✓ Generated ${prompts.length} prompts in ${Date.now() - promptStartTime}ms`);
       logMemoryUsage('After Prompts');
     } catch (error) {
+      console.error('❌ Prompt generation failed:', error);
       await logError('Prompt Generation', error);
       throw error;
     }

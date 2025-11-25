@@ -119,7 +119,14 @@ Return JSON array with:
 
     console.log('Calling Lovable AI for prompt generation...');
     
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // FIX #2: Add timeout protection for AI requests
+    const AI_TIMEOUT_MS = 60000; // 60 seconds
+
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('AI request timed out after 60 seconds')), AI_TIMEOUT_MS);
+    });
+
+    const aiResponsePromise = fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${LOVABLE_API_KEY}`,
@@ -139,26 +146,54 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
       }),
     });
 
+    const aiResponse = await Promise.race([aiResponsePromise, timeoutPromise]) as Response;
+
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      console.error('AI Gateway error:', aiResponse.status, errorText);
+      console.error('❌ AI Gateway error:', {
+        status: aiResponse.status,
+        statusText: aiResponse.statusText,
+        body: errorText,
+        headers: Object.fromEntries(aiResponse.headers.entries())
+      });
       
+      // Return specific error messages with status codes
       if (aiResponse.status === 429) {
         return new Response(
-          JSON.stringify({ error: 'Rate limit exceeded. Please try again in a moment.' }),
+          JSON.stringify({ 
+            error: 'Rate limit exceeded. Please try again in a moment.',
+            statusCode: 429
+          }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
       
       if (aiResponse.status === 402) {
         return new Response(
-          JSON.stringify({ error: 'AI credits depleted. Please contact support.' }),
+          JSON.stringify({ 
+            error: 'AI credits depleted. Please contact support.',
+            statusCode: 402
+          }),
           { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      
+      if (aiResponse.status >= 500) {
+        return new Response(
+          JSON.stringify({ 
+            error: 'AI service temporarily unavailable. Please try again.',
+            statusCode: aiResponse.status
+          }),
+          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
       return new Response(
-        JSON.stringify({ error: 'Failed to generate prompts' }),
+        JSON.stringify({ 
+          error: `AI service error: ${aiResponse.statusText}`,
+          statusCode: aiResponse.status,
+          details: errorText
+        }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

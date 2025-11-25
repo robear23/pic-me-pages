@@ -158,6 +158,82 @@ const Dashboard = () => {
     }
   }, [books.map(b => `${b.id}-${b.pdf_url}-${b.cover_url}`).join(',')]);
 
+  // FIX #4: Sync failed jobs with book status
+  useEffect(() => {
+    const syncFailedJobs = async () => {
+      if (!user) return;
+      
+      // Find books stuck in "generating" state
+      const generatingBooks = books.filter(b => b.status === 'generating');
+      if (generatingBooks.length === 0) return;
+      
+      try {
+        // Check if their jobs have actually failed
+        const { data: failedJobs } = await supabase
+          .from('book_generation_jobs')
+          .select('id, book_id, status, error_message')
+          .in('book_id', generatingBooks.map(b => b.id))
+          .eq('status', 'failed');
+        
+        if (failedJobs && failedJobs.length > 0) {
+          console.log(`🔧 Found ${failedJobs.length} books with failed jobs, updating status...`);
+          
+          // Update book statuses to failed
+          const bookIdsToUpdate = failedJobs.map(j => j.book_id).filter(Boolean);
+          if (bookIdsToUpdate.length > 0) {
+            await supabase
+              .from('books')
+              .update({ status: 'failed' })
+              .in('id', bookIdsToUpdate);
+            
+            toast.info(`${bookIdsToUpdate.length} incomplete book(s) marked as failed. You have retry credits available.`);
+            loadBooks(); // Refresh the book list
+          }
+        }
+      } catch (error) {
+        console.error('Failed to sync job statuses:', error);
+      }
+    };
+    
+    syncFailedJobs();
+  }, [books.map(b => b.id).join(','), user]);
+
+  // FIX #5: Realtime job status monitoring
+  useEffect(() => {
+    if (!user) return;
+
+    // Subscribe to job status changes
+    const jobChannel = supabase
+      .channel('job-status-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'book_generation_jobs',
+          filter: `user_id=eq.${user.id}`
+        },
+        (payload) => {
+          console.log('Job status changed:', payload);
+          const job = payload.new as any;
+          
+          if (job.status === 'failed' && job.book_id) {
+            toast.error(`Book generation failed: ${job.error_message}`);
+            loadBooks(); // Refresh to show failed status
+            loadRetryCredits(); // Refresh retry credits
+          } else if (job.status === 'completed' && job.book_id) {
+            toast.success('Book generation completed!');
+            loadBooks(); // Refresh to show completed book
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(jobChannel);
+    };
+  }, [user]);
+
   const loadBooks = async () => {
     if (!user) {
       console.log('[Dashboard] Cannot load books - no user');
