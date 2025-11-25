@@ -277,20 +277,35 @@ Deno.serve(async (req) => {
       const errorMessage = processError instanceof Error ? processError.message : 'Unknown error during processing';
       
       // Determine if this is a system error (grant retry credit)
-      const isSystemError = errorMessage.includes('timeout') || 
+      // DO NOT grant retries for user errors (credits depleted, rate limits)
+      const isUserError = errorMessage.includes('CREDITS_DEPLETED') || 
+                         errorMessage.includes('RATE_LIMITED');
+      
+      const isSystemError = !isUserError && (
+                            errorMessage.includes('timeout') || 
                             errorMessage.includes('Edge Function') ||
                             errorMessage.includes('network') ||
                             errorMessage.includes('crashed') ||
                             errorMessage.includes('fetch failed') ||
                             errorMessage.includes('SIGTERM') ||
-                            errorMessage.includes('unhandled');
+                            errorMessage.includes('unhandled'));
+      
+      // Determine failure reason
+      let failureReason = 'generation_error';
+      if (isSystemError) {
+        failureReason = 'system_error';
+      } else if (errorMessage.includes('CREDITS_DEPLETED')) {
+        failureReason = 'credits_depleted';
+      } else if (errorMessage.includes('RATE_LIMITED')) {
+        failureReason = 'rate_limited';
+      }
       
       await supabase
         .from('book_generation_jobs')
         .update({
           status: 'failed',
           error_message: errorMessage,
-          failure_reason: isSystemError ? 'system_error' : 'generation_error',
+          failure_reason: failureReason,
           completed_at: new Date().toISOString(),
           processing_duration_ms: Date.now() - startTime,
         })
@@ -418,18 +433,28 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       });
 
       if (promptsResponse.error) {
-        // Extract more details from the error
+        // Extract status from error.context (FunctionsHttpError structure)
+        const errorContext = (promptsResponse.error as any).context;
+        const actualStatus = errorContext?.status || (promptsResponse.error as any).status;
+        
         const errorDetails = {
           message: promptsResponse.error.message,
-          status: (promptsResponse.error as any).status,
-          statusCode: (promptsResponse.error as any).statusCode,
+          status: actualStatus,
+          statusText: errorContext?.statusText,
           details: (promptsResponse.error as any).details || JSON.stringify(promptsResponse.error)
         };
         
         console.error('❌ Prompt generation error details:', errorDetails);
         await logError('Prompt Generation', errorDetails);
         
-        throw new Error(`Prompt generation failed: ${errorDetails.message} (Status: ${errorDetails.statusCode || errorDetails.status || 'unknown'})`);
+        // Check for specific error types
+        if (actualStatus === 402) {
+          throw new Error('CREDITS_DEPLETED: Not enough AI credits available. Please add more credits to continue.');
+        } else if (actualStatus === 429) {
+          throw new Error('RATE_LIMITED: Too many requests. Please try again in a few moments.');
+        } else {
+          throw new Error(`Prompt generation failed: ${errorDetails.message} (Status: ${actualStatus || 'unknown'})`);
+        }
       }
       
       if (!promptsResponse.data || !promptsResponse.data.prompts) {
