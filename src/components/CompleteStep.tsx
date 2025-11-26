@@ -308,7 +308,34 @@ export const CompleteStep = () => {
   const handleDownload = async () => {
     setIsDownloading(true);
     try {
-      console.log('Downloading PDF...');
+      // Prioritize pre-generated PDF for instant download
+      if (bookData?.pdf_url) {
+        console.log('Using pre-generated PDF...');
+        const response = await fetch(bookData.pdf_url);
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `${characterNames || 'Coloring-Book'}.pdf`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+          
+          const { toast } = await import('@/hooks/use-toast');
+          toast({
+            title: 'PDF Downloaded!',
+            description: 'Your coloring book has been downloaded',
+          });
+          setIsDownloading(false);
+          return;
+        }
+        console.warn('Pre-generated PDF not available, generating client-side...');
+      }
+      
+      // Fallback: Generate PDF client-side
+      console.log('Generating PDF client-side...');
       const { jsPDF } = await import('jspdf');
       const pdf = new jsPDF({
         orientation: 'portrait',
