@@ -795,19 +795,48 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
                 };
                 
                 if (isReworkMode) {
-                  generatedPages[pageIndex] = pageData;
-                  console.log(`  🔄 Replaced page ${pageIndex + 1} in rework mode`);
+                  // Find and replace by pageNumber, not array index
+                  const actualPageNumber = pageIndex + 1;  // Convert back to 1-indexed
+                  const existingIndex = generatedPages.findIndex((p: any) => p?.pageNumber === actualPageNumber);
                   
-                  // ✅ DEFENSIVE: Ensure no null pages exist in array after replacement
-                  generatedPages = generatedPages.filter((p: any) => p != null && p.imageUrl);
+                  if (existingIndex >= 0) {
+                    // Replace existing page
+                    generatedPages[existingIndex] = pageData;
+                    console.log(`  🔄 Replaced page ${actualPageNumber} at array index ${existingIndex}`);
+                  } else {
+                    // Page doesn't exist yet, add it
+                    generatedPages.push(pageData);
+                    console.log(`  ➕ Added missing page ${actualPageNumber}`);
+                  }
+                  
+                  // Sort pages by pageNumber and filter nulls to maintain order
+                  generatedPages = generatedPages
+                    .filter((p: any) => p != null && p.imageUrl)
+                    .sort((a: any, b: any) => (a.pageNumber || 0) - (b.pageNumber || 0));
                 } else {
                   generatedPages.push(pageData);
                 }
               }
             } else {
               if (isReworkMode) {
-                generatedPages[pageIndex] = page;
-                console.log(`  🔄 Replaced page ${pageIndex + 1} in rework mode`);
+                // Find and replace by pageNumber, not array index
+                const actualPageNumber = pageIndex + 1;  // Convert back to 1-indexed
+                const existingIndex = generatedPages.findIndex((p: any) => p?.pageNumber === actualPageNumber);
+                
+                if (existingIndex >= 0) {
+                  // Replace existing page
+                  generatedPages[existingIndex] = page;
+                  console.log(`  🔄 Replaced page ${actualPageNumber} at array index ${existingIndex}`);
+                } else {
+                  // Page doesn't exist yet, add it
+                  generatedPages.push(page);
+                  console.log(`  ➕ Added missing page ${actualPageNumber}`);
+                }
+                
+                // Sort pages by pageNumber and filter nulls to maintain order
+                generatedPages = generatedPages
+                  .filter((p: any) => p != null && p.imageUrl)
+                  .sort((a: any, b: any) => (a.pageNumber || 0) - (b.pageNumber || 0));
               } else {
                 generatedPages.push(page);
               }
@@ -848,7 +877,12 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
             console.log(`  💾 Progress saved to database: ${savedPageCount}/${prompts.length} pages`);
             
             // PHASE 2: NOW clear from memory (after saving clean version)
-            generatedPages[pageIndex] = null as any;
+            // In rework mode, don't null out by index - the array structure is different
+            // The pages are already saved to DB, and we filter nulls before saving anyway
+            if (!isReworkMode) {
+              generatedPages[pageIndex] = null as any;
+            }
+            // In rework mode, just let GC handle memory - pages array stays intact
             
             // FIX 4: Force multiple GC passes for better cleanup
             for (let i = 0; i < 3; i++) {
