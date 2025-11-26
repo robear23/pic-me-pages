@@ -390,7 +390,7 @@ export const GeneratingStep = () => {
       if (!latestJob) return;
       
       const isPausedForMemory = latestJob.status === 'pending' && 
-                                latestJob.progress?.currentStep === 'paused_for_memory';
+                                (latestJob.progress as any)?.currentStep === 'paused_for_memory';
       const isStuck = latestJob.status === 'pending' && 
                       new Date(latestJob.updated_at).getTime() < Date.now() - 5 * 60 * 1000;
       
