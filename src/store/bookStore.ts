@@ -8,7 +8,7 @@ export type ComplexityLevel = 'simple' | 'medium' | 'detailed';
 export interface Character {
   id: string;
   name: string;
-  photos: (File | null)[];
+  photos: (File | string | null)[];
 }
 
 export interface GeneratedPage {
