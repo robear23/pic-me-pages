@@ -177,6 +177,15 @@ export const GeneratingStep = () => {
             photos: await Promise.all(
               c.photos.map(async (photo) => {
                 if (!photo) return null;
+                
+                // If photo is already a string (URL from database), return it as-is
+                // The edge function already handles URL→base64 conversion
+                if (typeof photo === 'string') {
+                  console.log(`✓ Photo is already a URL/string, passing through`);
+                  return photo;
+                }
+                
+                // If it's a File object, convert to base64
                 return new Promise<string | null>((resolve) => {
                   const reader = new FileReader();
                   reader.onloadend = () => {
