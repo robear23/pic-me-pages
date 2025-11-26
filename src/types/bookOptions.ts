@@ -13,13 +13,10 @@ export interface BookOption {
   isPdfOnly?: boolean;
 }
 
-// CRITICAL: POD package IDs need verification with Lulu API
-// The current IDs (0850X1100BWSTDPB060UW444MXX, 0850X1100FCPRECO060UW444MXX) 
-// are returning 500 errors - they may not exist in Lulu's catalog
-// Contact Lulu support to obtain valid product codes for:
-//   - 8.5" x 11" Saddle Stitch binding (currently using PB=paperback, should be STD?)
-//   - 8.5" x 11" Coil binding
-// See: https://developers.lulu.com for product catalog
+// Verified POD package IDs for Lulu print-on-demand:
+// Standard (Saddle Stitch): 0850X1100BWSTDSS060UW444MXX
+// Premium (Coil): 0850X1100BWSTDCO060UW444MXX
+// These IDs work for all page counts (12, 24, 32 pages)
 export const BOOK_OPTIONS: Record<string, BookOption> = {
   '12-pdf': {
     pageCount: 12,
@@ -40,7 +37,7 @@ export const BOOK_OPTIONS: Record<string, BookOption> = {
     pageCount: 12,
     binding: 'standard',
     price: 24.99,
-    podPackageId: '0850X1100BWSTDSTD060UW444MXX',
+    podPackageId: '0850X1100BWSTDSS060UW444MXX',
     name: '12-Page Standard',
     description: 'Traditional stapled binding - our affordable option for quality coloring books.',
     features: [
@@ -54,7 +51,7 @@ export const BOOK_OPTIONS: Record<string, BookOption> = {
     pageCount: 12,
     binding: 'premium',
     price: 29.99,
-    podPackageId: '0850X1100FCPRECO060UW444MXX',
+    podPackageId: '0850X1100BWSTDCO060UW444MXX',
     name: '12-Page Premium Coil',
     description: 'Professional coil binding that lays completely flat. Perfect for easy coloring and durability.',
     badge: 'RECOMMENDED',
@@ -83,7 +80,7 @@ export const BOOK_OPTIONS: Record<string, BookOption> = {
     pageCount: 24,
     binding: 'standard',
     price: 29.99,
-    podPackageId: '0850X1100BWSTDSTD060UW444MXX',
+    podPackageId: '0850X1100BWSTDSS060UW444MXX',
     name: '24-Page Standard',
     description: 'Traditional stapled binding with double the content.',
     features: [
@@ -97,7 +94,7 @@ export const BOOK_OPTIONS: Record<string, BookOption> = {
     pageCount: 24,
     binding: 'premium',
     price: 34.99,
-    podPackageId: '0850X1100FCPRECO060UW444MXX',
+    podPackageId: '0850X1100BWSTDCO060UW444MXX',
     name: '24-Page Premium Coil',
     description: 'Professional coil binding with the perfect amount of content.',
     badge: 'BEST VALUE',
@@ -126,7 +123,7 @@ export const BOOK_OPTIONS: Record<string, BookOption> = {
     pageCount: 32,
     binding: 'standard',
     price: 34.99,
-    podPackageId: '0850X1100BWSTDSTD060UW444MXX',
+    podPackageId: '0850X1100BWSTDSS060UW444MXX',
     name: '32-Page Standard',
     description: 'Traditional stapled binding with maximum content.',
     features: [
@@ -140,7 +137,7 @@ export const BOOK_OPTIONS: Record<string, BookOption> = {
     pageCount: 32,
     binding: 'premium',
     price: 39.99,
-    podPackageId: '0850X1100FCPRECO060UW444MXX',
+    podPackageId: '0850X1100BWSTDCO060UW444MXX',
     name: '32-Page Premium Coil',
     description: 'Professional coil binding with the most content.',
     features: [
