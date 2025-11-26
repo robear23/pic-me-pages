@@ -31,9 +31,9 @@ serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      console.error('LOVABLE_API_KEY not configured');
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+    if (!GOOGLE_API_KEY) {
+      console.error('GOOGLE_API_KEY not configured');
       return new Response(
         JSON.stringify({ error: 'AI service not configured' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -117,8 +117,17 @@ Return JSON array with:
   "prompt": "Detailed 2-3 sentence scene description with environment details"
 }`;
 
-    console.log('Calling Lovable AI for prompt generation...');
+    console.log('Calling Google Gemini API for prompt generation...');
     
+    // Combine system prompt and user message for Gemini
+    const combinedPrompt = `${systemPrompt}
+
+Generate exactly ${targetPageCount} unique coloring book page prompts.
+
+CRITICAL: Return ONLY valid JSON with proper escaping. Use \\n for newlines in text.
+
+Generate prompts for ${characterNames} using photogenic illustrated style based on: ${interests.join(', ')}`;
+
     // FIX #2: Add timeout protection for AI requests
     const AI_TIMEOUT_MS = 60000; // 60 seconds
 
@@ -126,23 +135,24 @@ Return JSON array with:
       setTimeout(() => reject(new Error('AI request timed out after 60 seconds')), AI_TIMEOUT_MS);
     });
 
-    const aiResponsePromise = fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    const MODEL = 'gemini-2.0-flash-exp';
+    const API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
+
+    const aiResponsePromise = fetch(`${API_ENDPOINT}?key=${GOOGLE_API_KEY}`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: `Generate exactly ${targetPageCount} unique coloring book page prompts.
-
-CRITICAL: Return ONLY valid JSON with proper escaping. Use \\n for newlines in text.
-
-Generate prompts for ${characterNames} using photogenic illustrated style based on: ${interests.join(', ')}` }
-        ],
-        response_format: { type: "json_object" }
+        contents: [{
+          parts: [{ text: combinedPrompt }]
+        }],
+        generationConfig: {
+          temperature: 0.9,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 4096,
+        }
       }),
     });
 
@@ -150,7 +160,7 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
 
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      console.error('❌ AI Gateway error:', {
+      console.error('❌ Gemini API error:', {
         status: aiResponse.status,
         statusText: aiResponse.statusText,
         body: errorText,
@@ -168,13 +178,13 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
         );
       }
       
-      if (aiResponse.status === 402) {
+      if (aiResponse.status === 403) {
         return new Response(
           JSON.stringify({ 
-            error: 'AI credits depleted. Please contact support.',
-            statusCode: 402
+            error: 'API quota exceeded. Please check your Google API key.',
+            statusCode: 403
           }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
       
@@ -199,7 +209,7 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
     }
 
     const aiData = await aiResponse.json();
-    const content = aiData.choices?.[0]?.message?.content;
+    const content = aiData.candidates?.[0]?.content?.parts?.[0]?.text;
     
     if (!content) {
       console.error('No content in AI response:', aiData);
@@ -350,15 +360,15 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
       );
     }
 
-    if (!Array.isArray(prompts) || prompts.length !== 12) {
-      console.error('Invalid prompts count:', prompts?.length);
+    if (!Array.isArray(prompts) || prompts.length !== targetPageCount) {
+      console.error('Invalid prompts count:', prompts?.length, 'expected:', targetPageCount);
       return new Response(
         JSON.stringify({ error: 'Invalid number of prompts generated' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Successfully generated 12 prompts');
+    console.log(`Successfully generated ${targetPageCount} prompts`);
     
     return new Response(
       JSON.stringify({ prompts }),
