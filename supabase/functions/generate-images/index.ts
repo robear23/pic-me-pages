@@ -10,12 +10,53 @@ const corsHeaders = {
 const BASE_DELAY = 1000;
 const FUNCTION_TIMEOUT = 140000; // 140 seconds (10s before hard limit)
 
-// Memory optimization helper
-function compressBase64Image(base64: string, maxLength = 100000): string {
-  if (base64.length <= maxLength) return base64;
-  // Simple truncation for memory - real compression would be better
-  console.log(`⚠️ Compressing large base64 image: ${base64.length} → ${maxLength} bytes`);
-  return base64.substring(0, maxLength);
+// Helper to fetch and convert HTTP URLs to base64
+async function urlToBase64(url: string): Promise<string> {
+  try {
+    console.log(`📥 Fetching image from URL: ${url.substring(0, 60)}...`);
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+    }
+    const blob = await response.blob();
+    const arrayBuffer = await blob.arrayBuffer();
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+    console.log(`✅ Converted URL to base64 (${base64.length} chars)`);
+    return base64;
+  } catch (error) {
+    console.error(`❌ Failed to convert URL to base64:`, error);
+    throw error;
+  }
+}
+
+// Helper to extract and validate base64 from various formats
+async function extractBase64FromUrl(photoUrl: string): Promise<{ base64: string; mimeType: string }> {
+  console.log(`🔍 Processing photo URL (type: ${photoUrl.startsWith('http') ? 'HTTP' : photoUrl.startsWith('data:') ? 'data URL' : 'raw base64'}, length: ${photoUrl.length})`);
+  
+  // Case 1: HTTP/HTTPS URL from Supabase storage
+  if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+    const base64 = await urlToBase64(photoUrl);
+    return { base64, mimeType: 'image/jpeg' }; // Assume JPEG for HTTP URLs
+  }
+  
+  // Case 2: Data URL (data:image/png;base64,...)
+  if (photoUrl.startsWith('data:')) {
+    const match = photoUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+    if (match) {
+      console.log(`✅ Extracted base64 from data URL (mimeType: ${match[1]}, length: ${match[2].length})`);
+      return { base64: match[2], mimeType: match[1] };
+    }
+    throw new Error('Invalid data URL format');
+  }
+  
+  // Case 3: Raw base64 string
+  // Validate it looks like base64 (alphanumeric + / + = only)
+  if (/^[A-Za-z0-9+/]+=*$/.test(photoUrl)) {
+    console.log(`✅ Using raw base64 string (length: ${photoUrl.length})`);
+    return { base64: photoUrl, mimeType: 'image/jpeg' };
+  }
+  
+  throw new Error('Unrecognized photo URL format');
 }
 
 // Enhanced system message for Step 1 - Photorealistic with high-key lighting for line art conversion
@@ -474,23 +515,34 @@ async function generateRealisticImage(
           mergedContent.unshift({ type: 'text', text: REALISTIC_SYSTEM_MESSAGE });
         }
         
-        // Transform content parts to Google's native format
-        const parts = mergedContent.map((part: any) => {
+        // Transform content parts to Google's native format (with proper async handling)
+        const parts = await Promise.all(mergedContent.map(async (part: any) => {
           if (part.type === 'text') {
             return { text: part.text };
           } else if (part.type === 'image_url') {
-            // Convert data URL to inline data format
-            const base64Data = part.image_url.url.replace(/^data:image\/\w+;base64,/, '');
-            const mimeType = part.image_url.url.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/jpeg';
-            return {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Data
+            try {
+              // Properly extract base64 from various URL formats
+              const { base64, mimeType } = await extractBase64FromUrl(part.image_url.url);
+              
+              // Validate base64 before sending to API
+              if (!base64 || base64.length < 100) {
+                throw new Error('Base64 data too short or empty');
               }
-            };
+              
+              return {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64
+                }
+              };
+            } catch (error) {
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              console.error('❌ Failed to process image URL:', error);
+              throw new Error(`Failed to process character photo: ${errorMessage}`);
+            }
           }
           return part;
-        });
+        }));
 
         const imageResponse = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -823,17 +875,8 @@ serve(async (req) => {
 
     let { prompts, characters, consistentCharacters, batchIndex, batchSize = 2, isReworkMode = false, complexity } = await req.json();
     
-    // Compress character photos to reduce memory footprint
-    if (characters && Array.isArray(characters)) {
-      characters = characters.map((char: any) => ({
-        ...char,
-        photos: char.photos?.map((photo: string) => 
-          photo && typeof photo === 'string' && photo.length > 100000 
-            ? compressBase64Image(photo)
-            : photo
-        )
-      }));
-    }
+    // Keep character photos as-is - proper conversion happens later
+    // (Removed corrupting compression that was truncating base64 strings)
     
     // Set retries based on rework mode - fewer retries for rework to be faster
     const MAX_RETRIES = isReworkMode ? 1 : 2; // 2 attempts for rework, 3 for initial gen
