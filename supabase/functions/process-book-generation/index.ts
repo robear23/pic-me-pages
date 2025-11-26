@@ -1094,7 +1094,9 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
 
     // Determine final status
     const totalExpected = prompts.length;
-    const totalGenerated = generatedPages.length;
+    // Count only valid pages (not null, has imageUrl)
+    const validPages = generatedPages.filter((p: any) => p != null && p.imageUrl);
+    const totalGenerated = validPages.length;
 
     console.log(`\n=== Generation Summary ===`);
     console.log(`Total pages generated: ${totalGenerated}/${totalExpected}`);
@@ -1181,11 +1183,20 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
       }
     }
     
+    // Filter out null pages before saving to database
+    const finalPages = generatedPages
+      .filter((p: any) => p != null && p.imageUrl)
+      .map((p: any, index: number) => ({
+        pageNumber: index + 1,
+        prompt: p.prompt,
+        imageUrl: p.imageUrl
+      }));
+
     const bookData: any = {
       user_id: job.user_id,
       character_name: characterName,
       interests,
-      pages: generatedPages,
+      pages: finalPages,
       photo_urls: photoUrls,
       consistent_characters: consistentCharacters,
       complexity: complexityLevel,

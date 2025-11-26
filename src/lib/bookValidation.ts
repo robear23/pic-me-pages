@@ -30,8 +30,14 @@ export function getMissingComponents(book: Book): string[] {
   if (!book.cover_image_url) missing.push('Cover Image');
   if (!book.back_cover_image_url) missing.push('Back Cover Image');
   
-  const pageCount = book.pages?.length || 0;
-  if (pageCount > 0 && pageCount < 12) missing.push(`${12 - pageCount} Pages`);
+  // Count VALID pages with imageUrl, not just array length
+  const validPages = (book.pages || []).filter((p: any) => p?.imageUrl);
+  const pageCount = validPages.length;
+  const expectedCount = book.selected_page_count || 12;
+  
+  if (pageCount < expectedCount) {
+    missing.push(`${expectedCount - pageCount} Pages`);
+  }
   
   return missing;
 }
@@ -50,9 +56,11 @@ export function validateBookCompleteness(book: Book): BookCompleteness {
   if (book.status === 'failed') missing.push('failed');
   if (book.status === 'partial') missing.push('partial');
   
-  // Check pages
-  const pageCount = book.pages?.length || 0;
-  if (pageCount < 12) missing.push(`${12 - pageCount}_pages`);
+  // Check pages - count valid pages only
+  const validPages = (book.pages || []).filter((p: any) => p?.imageUrl);
+  const pageCount = validPages.length;
+  const expectedCount = book.selected_page_count || 12;
+  if (pageCount < expectedCount) missing.push(`${expectedCount - pageCount}_pages`);
   
   // Determine if can auto-fix (has all pages and covers, just needs PDFs)
   const canAutoFix = 
