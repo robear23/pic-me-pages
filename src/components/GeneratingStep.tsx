@@ -469,7 +469,7 @@ export const GeneratingStep = () => {
         .eq('id', jobId)
         .single();
       
-      if (job && job.status === 'failed' && jobStatus !== 'failed') {
+      if (job?.status === 'failed') {
         console.log('📍 Polling detected failed job that Realtime missed');
         setJobStatus('failed');
         setErrorMessage(job.error_message || 'Generation failed');
