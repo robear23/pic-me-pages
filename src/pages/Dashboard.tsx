@@ -985,6 +985,87 @@ const Dashboard = () => {
     }
   };
 
+  const handleFixMissingPages = async (book: Book) => {
+    try {
+      console.log('[Dashboard] Fixing missing pages for book:', book.id);
+      
+      // Load full book data
+      const { data: fullBook, error: bookError } = await supabase
+        .from('books')
+        .select('*')
+        .eq('id', book.id)
+        .single();
+      
+      if (bookError) throw bookError;
+      
+      // Identify missing pages
+      const expectedPageCount = fullBook.selected_page_count || 12;
+      const existingPages = (fullBook.pages || []) as any[];
+      
+      // Find which page numbers are missing (1-indexed)
+      const missingPageNumbers: number[] = [];
+      for (let i = 1; i <= expectedPageCount; i++) {
+        const page = existingPages.find((p: any) => p?.pageNumber === i);
+        if (!page || !page.imageUrl) {
+          missingPageNumbers.push(i);
+        }
+      }
+      
+      if (missingPageNumbers.length === 0) {
+        toast.success('No missing pages found!');
+        return;
+      }
+      
+      // Populate book store with all necessary data
+      const bookStore = useBookStore.getState();
+      
+      // Reset and set up character
+      bookStore.addCharacter();
+      const firstCharacterId = bookStore.characters[0]?.id;
+      
+      if (firstCharacterId) {
+        bookStore.updateCharacter(firstCharacterId, { name: fullBook.character_name });
+        
+        // Add photo URLs if available
+        if (fullBook.photo_urls?.length > 0) {
+          fullBook.photo_urls.forEach((url: string, idx: number) => {
+            if (url && idx < 3) {
+              bookStore.setCharacterPhoto(firstCharacterId, idx, url as any);
+            }
+          });
+        }
+      }
+      
+      // Set up existing valid pages (filter out nulls)
+      const validPages = existingPages.filter((p: any) => p != null && p.imageUrl);
+      bookStore.setGeneratedPages(validPages);
+      bookStore.setGeneratedBookId(fullBook.id);
+      bookStore.setReworkedPageNumbers((fullBook.reworked_page_numbers || []) as number[]);
+      bookStore.setBookOptions(
+        (fullBook.selected_page_count || 24) as PageCount,
+        (fullBook.selected_binding_type || 'premium') as BindingType
+      );
+      bookStore.setCoverImageUrl(fullBook.cover_image_url);
+      bookStore.setBackCoverImageUrl(fullBook.back_cover_image_url);
+      bookStore.setComplexityLevel((fullBook.complexity || 'medium') as ComplexityLevel);
+      bookStore.setInterests((fullBook.interests || []) as string[]);
+      
+      // CRITICAL: Set the missing pages for rework before entering rework mode
+      useBookStore.setState({ selectedPagesForRework: missingPageNumbers });
+      
+      // Enter rework mode (which will set step to 'rework-settings')
+      bookStore.enterReworkMode();
+      
+      // Navigate to app (will be at rework-settings step)
+      navigate('/app');
+      
+      toast.success(`Fixing ${missingPageNumbers.length} missing page(s): ${missingPageNumbers.join(', ')}`);
+    } catch (error: any) {
+      console.error('[Dashboard] Error fixing missing pages:', error);
+      toast.error('Failed to fix missing pages: ' + error.message);
+    }
+  };
+
   const handleDeleteBook = async (bookId: string, e?: React.MouseEvent) => {
     if (e) {
       e.stopPropagation();
@@ -1249,7 +1330,7 @@ const Dashboard = () => {
                               className="w-full border-orange-500/50 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/50"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleReworkPages(book);
+                                handleFixMissingPages(book);
                               }}
                             >
                               <Zap className="w-4 h-4 mr-1" />
