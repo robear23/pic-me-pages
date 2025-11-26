@@ -587,8 +587,8 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     
     // Dynamic memory-based circuit breaker (not fixed page count)
     let processedCount = 0; // Track how many pages we've processed in this run
-    const MIN_PAGES_BEFORE_CHECK = 1; // Process at least 1 page before checking
-    const PAUSE_MEMORY_THRESHOLD = 88; // Graceful pause at 88% (before 92% emergency limit)
+    const MIN_PAGES_BEFORE_CHECK = 3; // Process at least 3 pages before checking
+    const PAUSE_MEMORY_THRESHOLD = 92; // Graceful pause at 92% (before 95% emergency limit)
     
     for (const pageIndex of pagesToProcess) {
       checkTimeout();
@@ -601,8 +601,8 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       
       console.log(`📊 Memory before page ${pageIndex + 1}: ${heapUsedMB.toFixed(1)}MB / ${heapTotalMB.toFixed(1)}MB (${percentUsed.toFixed(1)}%)`);
       
-      // Emergency exit if memory critically high (92% threshold - modern V8 handles this safely)
-      if (percentUsed > 92) {
+      // Emergency exit if memory critically high (95% threshold - modern V8 handles this safely)
+      if (percentUsed > 95) {
         console.error(`⚠️ MEMORY CRITICAL: ${percentUsed.toFixed(1)}% - Gracefully exiting`);
         
         // FIX #3: Verify database state before pausing
