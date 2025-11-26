@@ -399,6 +399,24 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     const { generation_data } = job;
     const { characters, interests, consistentCharacters, complexityLevel, selectedPageCount, isReworkMode, selectedPagesForRework, generatedBookId } = generation_data;
 
+    // Initialize savedPageCount early - will be loaded from DB if resuming
+    let savedPageCount = 0;
+    
+    // Load existing page count if book already exists (for accurate progress tracking)
+    if (job.book_id) {
+      const { data: existingBook } = await supabase
+        .from('books')
+        .select('pages')
+        .eq('id', job.book_id)
+        .single();
+      
+      if (existingBook?.pages && Array.isArray(existingBook.pages)) {
+        const validPages = existingBook.pages.filter((p: any) => p?.imageUrl);
+        savedPageCount = validPages.length;
+        console.log(`📊 Resuming book ${job.book_id}: ${savedPageCount} pages already saved`);
+      }
+    }
+
     // CRITICAL: Validate rework mode parameters
     if (isReworkMode) {
       if (!selectedPagesForRework || selectedPagesForRework.length === 0) {
@@ -410,7 +428,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     // Step 1: Generate prompts with error handling
     console.log('📝 Starting prompt generation...');
     logMemoryUsage('Before Prompts');
-    await updateJobProgress(supabase, job.id, { currentStep: 'Creating story prompts', currentPage: 0, totalPages: selectedPageCount });
+    await updateJobProgress(supabase, job.id, { currentStep: 'Creating story prompts', currentPage: savedPageCount, totalPages: selectedPageCount });
     
     let prompts;
     try {
@@ -511,7 +529,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     
     await updateJobProgress(supabase, job.id, { 
       currentStep: 'Generating coloring pages', 
-      currentPage: 0, 
+      currentPage: savedPageCount, 
       totalPages: selectedPageCount 
     });
 
@@ -520,7 +538,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     // ============================================
     let generatedPages = [];
     let startPageIndex = 0;
-    let savedPageCount = 0; // FIX #1: Track saved pages separately from memory array
+    // savedPageCount already initialized at the top with database load
     
     // PHASE 5: Graceful degradation - reduce page count on retry
     let adjustedPageCount = selectedPageCount;
