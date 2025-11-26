@@ -876,13 +876,8 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
             savedPageCount = dbPages.length; // FIX #1: Track actual saved count
             console.log(`  💾 Progress saved to database: ${savedPageCount}/${prompts.length} pages`);
             
-            // PHASE 2: NOW clear from memory (after saving clean version)
-            // In rework mode, don't null out by index - the array structure is different
-            // The pages are already saved to DB, and we filter nulls before saving anyway
-            if (!isReworkMode) {
-              generatedPages[pageIndex] = null as any;
-            }
-            // In rework mode, just let GC handle memory - pages array stays intact
+            // Memory footprint is minimal since we only store URL strings, not base64 data
+            // Let GC handle cleanup naturally
             
             // FIX 4: Force multiple GC passes for better cleanup
             for (let i = 0; i < 3; i++) {
