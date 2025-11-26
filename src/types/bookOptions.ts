@@ -13,8 +13,13 @@ export interface BookOption {
   isPdfOnly?: boolean;
 }
 
-// TODO: Verify POD package IDs for 24 and 32-page books with Lulu
-// Current IDs are confirmed for 12-page books only
+// CRITICAL: POD package IDs need verification with Lulu API
+// The current IDs (0850X1100BWSTDPB060UW444MXX, 0850X1100FCPRECO060UW444MXX) 
+// are returning 500 errors - they may not exist in Lulu's catalog
+// Contact Lulu support to obtain valid product codes for:
+//   - 8.5" x 11" Saddle Stitch binding (currently using PB=paperback, should be STD?)
+//   - 8.5" x 11" Coil binding
+// See: https://developers.lulu.com for product catalog
 export const BOOK_OPTIONS: Record<string, BookOption> = {
   '12-pdf': {
     pageCount: 12,

@@ -251,17 +251,30 @@ serve(async (req) => {
       console.error('Lulu API Error Response:', errorText);
       console.error('Status:', luluOrderResponse.status);
       
-      // Check if Lulu returned HTML error page (indicates invalid product or sandbox limitation)
+      // Check if Lulu returned HTML error page (indicates invalid product ID)
       const isHtmlError = errorText.trim().toLowerCase().startsWith('<!doctype') || 
                           errorText.trim().toLowerCase().startsWith('<html');
       
       if (isHtmlError) {
-        console.error('Lulu returned HTML error page - likely invalid product for sandbox environment');
+        console.error('Lulu returned HTML error page - invalid POD package ID:', selectedPodPackageId);
+        
+        // Suggest standard perfect bound as fallback (most commonly supported)
+        const fallbackId = '0850X1100BWSTDPB060UW444MXX';
+        
         return new Response(
           JSON.stringify({ 
-            error: `Lulu sandbox error: The product type (${selectedPodPackageId}) may not be supported in the test environment. Try using a standard paperback (0850X1100BWSTDPB060UW444MXX) or switch to production for specialty products.`,
+            error: `Invalid product ID: "${selectedPodPackageId}" is not recognized by Lulu API. This typically means:\n\n` +
+                   `1. The product code doesn't exist in Lulu's catalog\n` +
+                   `2. Your credentials (${luluEnvironment}) don't support this product\n` +
+                   `3. Saddle stitch/coil bindings require different product codes\n\n` +
+                   `Please contact Lulu support to get valid POD package IDs for:\n` +
+                   `- 8.5" x 11" Saddle Stitch binding\n` +
+                   `- 8.5" x 11" Coil binding\n\n` +
+                   `Or try standard paperback (${fallbackId}) as a temporary workaround.`,
             validationError: true,
             productNotSupported: true,
+            podPackageId: selectedPodPackageId,
+            environment: luluEnvironment,
           }),
           { 
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
