@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { useBookStore } from '@/store/bookStore';
 import { Sparkles, Check, Loader2, Info, XCircle, AlertCircle } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -48,6 +48,7 @@ export const GeneratingStep = () => {
   const [lastProgressUpdate, setLastProgressUpdate] = useState<number>(Date.now());
   const [showStaleWarning, setShowStaleWarning] = useState(false);
   const [processingStartTime, setProcessingStartTime] = useState<number | null>(null);
+  const resumeInProgressRef = useRef(false);
 
   // Force re-render every 10 seconds to update elapsed time
   useEffect(() => {
@@ -379,7 +380,28 @@ export const GeneratingStep = () => {
     
     // Check immediately on mount and then every 30 seconds
     checkAndResume();
-    const interval = setInterval(checkAndResume, 30000);
+    const interval = setInterval(async () => {
+      const { data: latestJob } = await supabase
+        .from('book_generation_jobs')
+        .select('*')
+        .eq('id', jobId)
+        .single();
+        
+      if (!latestJob) return;
+      
+      const isPausedForMemory = latestJob.status === 'pending' && 
+                                latestJob.progress?.currentStep === 'paused_for_memory';
+      const isStuck = latestJob.status === 'pending' && 
+                      new Date(latestJob.updated_at).getTime() < Date.now() - 5 * 60 * 1000;
+      
+      // Only trigger if not already in progress
+      if ((isPausedForMemory || isStuck) && !resumeInProgressRef.current) {
+        resumeInProgressRef.current = true;
+        console.log('🔄 Periodic check triggering resume');
+        await supabase.functions.invoke('process-book-generation');
+        setTimeout(() => { resumeInProgressRef.current = false; }, 10000);
+      }
+    }, 30000);
     return () => clearInterval(interval);
   }, [jobId, toast]);
 
@@ -493,14 +515,20 @@ export const GeneratingStep = () => {
 
           setJobStatus(updatedJob.status);
           
-          // Fast resume for memory-paused jobs (3s polling)
+          // Fast resume for memory-paused jobs (15s polling with debouncing)
           if (updatedJob.status === 'pending' && 
               updatedJob.progress?.currentStep === 'paused_for_memory') {
             console.log('⚡ Memory pause detected - fast polling enabled');
-            setTimeout(async () => {
-              console.log('🔄 Attempting fast resume...');
-              await supabase.functions.invoke('process-book-generation');
-            }, 3000);
+            
+            // Debounce: Only trigger if no resume is in progress
+            if (!resumeInProgressRef.current) {
+              resumeInProgressRef.current = true;
+              setTimeout(async () => {
+                console.log('🔄 Attempting fast resume...');
+                await supabase.functions.invoke('process-book-generation');
+                resumeInProgressRef.current = false;
+              }, 15000); // Wait 15s instead of 3s
+            }
           }
 
           // Call completeRework() after successful rework
