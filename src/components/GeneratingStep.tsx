@@ -88,6 +88,9 @@ export const GeneratingStep = () => {
     const checkExistingJob = async () => {
       if (!user || jobId) return;
 
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+      // Check for in-progress jobs first
       const { data: existingJobs } = await supabase
         .from('book_generation_jobs')
         .select('*')
@@ -106,6 +109,25 @@ export const GeneratingStep = () => {
           setProgress(Math.min((prog.currentPage || 0) / (prog.totalPages || 1) * 100, 95));
           setCurrentStep(prog.currentStep || 'Processing...');
         }
+        return;
+      }
+
+      // FIX 3: Also check for recently failed jobs (within last hour)
+      const { data: failedJobs } = await supabase
+        .from('book_generation_jobs')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('status', 'failed')
+        .gte('updated_at', oneHourAgo)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (failedJobs && failedJobs.length > 0) {
+        console.log('Found recently failed job:', failedJobs[0].id);
+        setJobId(failedJobs[0].id);
+        setJobStatus('failed');
+        setErrorMessage(failedJobs[0].error_message || 'Generation failed');
+        setCanLeave(true);
       }
     };
 
@@ -338,8 +360,10 @@ export const GeneratingStep = () => {
       }
     };
 
-    // Trigger ONLY ONCE when job is created - no polling!
-    triggerProcessor();
+    // FIX 4: Add 500ms delay before triggering to avoid race conditions
+    setTimeout(() => {
+      triggerProcessor();
+    }, 500);
     
     // Realtime subscription will handle updates
   }, [jobId]);
@@ -405,7 +429,7 @@ export const GeneratingStep = () => {
     return () => clearInterval(interval);
   }, [jobId, toast]);
 
-  // FIX 2: Timeout only starts when job is actively processing (no jobStatus dependency)
+  // FIX 1: Timeout starts when job transitions to processing (added jobStatus to dependencies)
   useEffect(() => {
     if (!jobId || jobStatus !== 'processing') return;
     
@@ -432,9 +456,32 @@ export const GeneratingStep = () => {
     }, timeoutMs);
     
     return () => clearTimeout(timeoutId);
-  }, [jobId, toast]); // FIX 2: Only depend on jobId, not jobStatus
+  }, [jobId, jobStatus, toast]); // FIX 1: Added jobStatus to dependencies
   
-  // FIX 2: Add separate stall detection (FIX #1: Enable for pending AND processing)
+  // FIX 2: Add periodic polling as fallback to Realtime
+  useEffect(() => {
+    if (!jobId || jobStatus === 'completed' || jobStatus === 'failed') return;
+    
+    const checkJobStatus = async () => {
+      const { data: job } = await supabase
+        .from('book_generation_jobs')
+        .select('status, error_message')
+        .eq('id', jobId)
+        .single();
+      
+      if (job && job.status === 'failed' && jobStatus !== 'failed') {
+        console.log('📍 Polling detected failed job that Realtime missed');
+        setJobStatus('failed');
+        setErrorMessage(job.error_message || 'Generation failed');
+      }
+    };
+    
+    // Poll every 30 seconds as fallback
+    const interval = setInterval(checkJobStatus, 30000);
+    return () => clearInterval(interval);
+  }, [jobId, jobStatus]);
+
+  // Stall detection (FIX #1: Enable for pending AND processing)
   useEffect(() => {
     if (!jobId || (jobStatus !== 'processing' && jobStatus !== 'pending')) return;
     
