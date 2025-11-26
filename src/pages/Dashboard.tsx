@@ -1208,8 +1208,16 @@ const Dashboard = () => {
                         </h3>
                         <div className="flex gap-1 flex-wrap justify-end">
                           {book.pages && (
-                            <Badge variant={book.pages.length === 12 ? "default" : "destructive"} className="text-xs">
-                              {book.pages.length}/12
+                            <Badge variant={(() => {
+                              const validPages = (book.pages || []).filter((p: any) => p?.imageUrl);
+                              const expectedPages = book.selected_page_count || 12;
+                              return validPages.length === expectedPages ? "default" : "destructive";
+                            })()} className="text-xs">
+                              {(() => {
+                                const validPages = (book.pages || []).filter((p: any) => p?.imageUrl);
+                                const expectedPages = book.selected_page_count || 12;
+                                return `${validPages.length}/${expectedPages}`;
+                              })()}
                             </Badge>
                           )}
                           {(() => {
@@ -1225,11 +1233,31 @@ const Dashboard = () => {
                       <p className="text-sm text-muted-foreground mb-3">
                         {new Date(book.created_at).toLocaleDateString()}
                       </p>
-                      {book.pages && book.pages.length < 12 && (
-                        <div className="mb-2 p-2 bg-amber-100 dark:bg-amber-950/50 border border-amber-500/50 rounded text-xs text-amber-700 dark:text-amber-300">
-                          ⚠️ This book has missing pages
-                        </div>
-                      )}
+                      {(() => {
+                        const validPages = (book.pages || []).filter((p: any) => p?.imageUrl);
+                        const expectedPages = book.selected_page_count || 12;
+                        const missingPageCount = expectedPages - validPages.length;
+                        
+                        return missingPageCount > 0 && (
+                          <div className="mb-2">
+                            <div className="p-2 bg-amber-100 dark:bg-amber-950/50 border border-amber-500/50 rounded text-xs text-amber-700 dark:text-amber-300 mb-2">
+                              ⚠️ This book has {missingPageCount} missing {missingPageCount === 1 ? 'page' : 'pages'} ({validPages.length}/{expectedPages})
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full border-orange-500/50 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/50"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleReworkPages(book);
+                              }}
+                            >
+                              <Zap className="w-4 h-4 mr-1" />
+                              Fix Missing Pages
+                            </Button>
+                          </div>
+                        );
+                      })()}
                       {book.missing_covers && (
                         <div className="mb-2 p-2 bg-amber-100 dark:bg-amber-950/50 border border-amber-500/50 rounded text-xs text-amber-700 dark:text-amber-300">
                           ⚠️ Book covers are missing

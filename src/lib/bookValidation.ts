@@ -12,6 +12,7 @@ export interface Book {
   user_id: string;
   missing_covers?: boolean;
   missing_components?: string[];
+  selected_page_count?: number;
 }
 
 export interface BookCompleteness {
