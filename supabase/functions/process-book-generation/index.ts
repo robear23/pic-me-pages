@@ -923,6 +923,68 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     }
 
     logMemoryUsage('After All Images');
+    
+    // ============================================
+    // CRITICAL: Extract data before memory cleanup
+    // ============================================
+    const characterName = characters[0]?.name || 'Child';
+    
+    // Process character photos BEFORE clearing characters array
+    let photoUrls: string[] = [];
+    if (characters[0]?.photos && Array.isArray(characters[0].photos)) {
+      for (let i = 0; i < characters[0].photos.length; i++) {
+        const photo = characters[0].photos[i];
+        if (!photo) continue;
+        
+        try {
+          if (typeof photo === 'string' && photo.startsWith('data:image')) {
+            const blob = await fetch(photo).then(r => r.blob());
+            const timestamp = Date.now();
+            const photoPath = `${job.user_id}/${timestamp}-character-photo-${i}.png`;
+            
+            const { error: uploadError } = await supabase.storage
+              .from('user-photos')
+              .upload(photoPath, blob, {
+                contentType: 'image/png',
+                cacheControl: '3600',
+                upsert: false
+              });
+            
+            if (!uploadError) {
+              const { data: urlData } = supabase.storage
+                .from('user-photos')
+                .getPublicUrl(photoPath);
+              photoUrls.push(urlData.publicUrl);
+            }
+          } else if (typeof photo === 'string' && photo.startsWith('http')) {
+            photoUrls.push(photo);
+          }
+        } catch (photoError) {
+          console.error(`Error processing photo ${i + 1}:`, photoError);
+        }
+      }
+    }
+    
+    // ============================================
+    // AGGRESSIVE MEMORY CLEANUP BEFORE COVERS
+    // ============================================
+    console.log(`\n[${Date.now() - startTime}ms] === Aggressive Memory Cleanup ===`);
+    
+    // Save essential data before clearing
+    const firstPageUrl = generatedPages[0]?.imageUrl;
+    
+    // Clear mutable arrays to free memory (characters is const, so we can't reassign)
+    if (Array.isArray(prompts)) {
+      prompts.length = 0; // Clear array contents
+    }
+    
+    // Force garbage collection if available
+    if (typeof global !== 'undefined' && (global as any).gc) {
+      (global as any).gc();
+      console.log('🗑️ Forced garbage collection');
+    }
+    
+    logMemoryUsage('After Cleanup');
 
     // Generate covers (if we have at least one page)
     // CRITICAL: Skip cover generation in rework mode - only regenerate covers for NEW books
@@ -942,9 +1004,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       
       try {
         const googleApiKey = Deno.env.get('GOOGLE_API_KEY');
-        const characterName = characters[0]?.name || 'Child';
         const interestsText = interests.slice(0, 3).join(', ');
-        const firstPageUrl = generatedPages[0]?.imageUrl;
         
         if (firstPageUrl && googleApiKey) {
           console.log('Fetching first page for cover generation...');
@@ -1098,14 +1158,17 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
                 throw new Error(`Back cover not accessible: ${backTest.status}`);
               }
               
+              // Process front cover
               const frontArrayBuffer = await frontTest.arrayBuffer();
               const frontBase64 = encode(frontArrayBuffer);
               const frontDataUrl = `data:image/png;base64,${frontBase64}`;
               
+              // Process back cover
               const backArrayBuffer = await backTest.arrayBuffer();
               const backBase64 = encode(backArrayBuffer);
               const backDataUrl = `data:image/png;base64,${backBase64}`;
               
+              // Create PDF immediately and clear base64 data
               const doc = new jsPDF({
                 orientation: 'landscape',
                 unit: 'in',
@@ -1115,7 +1178,12 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
               doc.addImage(backDataUrl, 'PNG', 0, 0, 8.588, 8.625);
               doc.addImage(frontDataUrl, 'PNG', 8.588, 0, 8.588, 8.625);
               
+              // Clear intermediate data immediately
               const pdfOutput = doc.output('arraybuffer');
+              
+              // Clear doc from memory
+              (doc as any) = null;
+              
               const pdfBlob = new Blob([pdfOutput], { type: 'application/pdf' });
               const coverPdfPath = `${job.user_id}/${Date.now()}-cover.pdf`;
               
@@ -1195,43 +1263,9 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
       console.error('❌ Book generation failed - no pages generated');
     }
 
-    const characterName = characters[0]?.name || 'Child';
+    // characterName and photoUrls already extracted before cleanup
     
-    // Process character photos
-    let photoUrls: string[] = [];
-    if (characters[0]?.photos && Array.isArray(characters[0].photos)) {
-      for (let i = 0; i < characters[0].photos.length; i++) {
-        const photo = characters[0].photos[i];
-        if (!photo) continue;
-        
-        try {
-          if (typeof photo === 'string' && photo.startsWith('data:image')) {
-            const blob = await fetch(photo).then(r => r.blob());
-            const timestamp = Date.now();
-            const photoPath = `${job.user_id}/${timestamp}-character-photo-${i}.png`;
-            
-            const { error: uploadError } = await supabase.storage
-              .from('user-photos')
-              .upload(photoPath, blob, {
-                contentType: 'image/png',
-                cacheControl: '3600',
-                upsert: false
-              });
-            
-            if (!uploadError) {
-              const { data: urlData } = supabase.storage
-                .from('user-photos')
-                .getPublicUrl(photoPath);
-              photoUrls.push(urlData.publicUrl);
-            }
-          } else if (typeof photo === 'string' && photo.startsWith('http')) {
-            photoUrls.push(photo);
-          }
-        } catch (photoError) {
-          console.error(`Error processing photo ${i + 1}:`, photoError);
-        }
-      }
-    }
+    // Process character photos - already done before cleanup
     
     // Filter out null pages before saving to database
     const finalPages = generatedPages
