@@ -210,7 +210,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     // Send email via Resend
     const { error: sendError } = await resend.emails.send({
-      from: "Color Me In Books <onboarding@resend.dev>",
+      from: "Color Me In Books <contact@colormeinbooks.com>",
       to: [recipientEmail],
       subject: replaceVariables(content.subject),
       html: emailHTML,
@@ -218,6 +218,7 @@ const handler = async (req: Request): Promise<Response> => {
 
     if (sendError) {
       console.error("Email send error:", sendError);
+      console.error("Failed to send email to:", recipientEmail, "Template:", templateName);
       return new Response(
         JSON.stringify({ error: sendError.message }),
         { status: 500, headers: { "Content-Type": "application/json", ...corsHeaders } }

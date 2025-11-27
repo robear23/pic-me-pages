@@ -298,6 +298,7 @@ const Dashboard = () => {
         .select('*')
         .eq('user_id', user?.id)
         .eq('order_type', 'physical')
+        .neq('lulu_status', 'rejected') // Filter out rejected orders
         .order('created_at', { ascending: false });
 
       if (error) throw error;
