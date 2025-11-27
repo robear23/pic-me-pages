@@ -264,6 +264,99 @@ export type Database = {
           },
         ]
       }
+      orders_uk: {
+        Row: {
+          amount_paid: number
+          book_id: string | null
+          child_name: string
+          created_at: string | null
+          currency: string
+          custom_prompt: string | null
+          customer_email: string
+          customer_name: string | null
+          delivered_at: string | null
+          doxzoo_order_number: string | null
+          id: string
+          original_order_id: string | null
+          pdf_url: string | null
+          product_type: string
+          selected_interests: string[] | null
+          shipped_at: string | null
+          shipping_address: Json | null
+          special_instructions: string | null
+          status: string
+          stripe_payment_id: string | null
+          tracking_number: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          amount_paid: number
+          book_id?: string | null
+          child_name: string
+          created_at?: string | null
+          currency?: string
+          custom_prompt?: string | null
+          customer_email: string
+          customer_name?: string | null
+          delivered_at?: string | null
+          doxzoo_order_number?: string | null
+          id?: string
+          original_order_id?: string | null
+          pdf_url?: string | null
+          product_type: string
+          selected_interests?: string[] | null
+          shipped_at?: string | null
+          shipping_address?: Json | null
+          special_instructions?: string | null
+          status?: string
+          stripe_payment_id?: string | null
+          tracking_number?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          amount_paid?: number
+          book_id?: string | null
+          child_name?: string
+          created_at?: string | null
+          currency?: string
+          custom_prompt?: string | null
+          customer_email?: string
+          customer_name?: string | null
+          delivered_at?: string | null
+          doxzoo_order_number?: string | null
+          id?: string
+          original_order_id?: string | null
+          pdf_url?: string | null
+          product_type?: string
+          selected_interests?: string[] | null
+          shipped_at?: string | null
+          shipping_address?: Json | null
+          special_instructions?: string | null
+          status?: string
+          stripe_payment_id?: string | null
+          tracking_number?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "orders_uk_book_id_fkey"
+            columns: ["book_id"]
+            isOneToOne: false
+            referencedRelation: "books"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "orders_uk_original_order_id_fkey"
+            columns: ["original_order_id"]
+            isOneToOne: false
+            referencedRelation: "orders_uk"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       retry_credits: {
         Row: {
           book_id: string | null
