@@ -207,11 +207,11 @@ serve(async (req) => {
     console.log(`Shipping level: ${shippingLevel} (country: ${shippingAddress.country}, env: ${luluEnvironment})`);
     
     const luluOrderData = {
+      external_id: `order-${bookId.substring(0, 8)}`,
       line_items: [
         {
-          page_count: interiorPageCount,
+          external_id: `item-${bookId.substring(0, 8)}`,
           pod_package_id: selectedPodPackageId,
-          title: `${book.character_name}'s Coloring Book`,
           quantity: 1,
           interior: {
             source_url: interiorUrl,
