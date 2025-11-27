@@ -16,6 +16,7 @@ import AdminEmailTemplates from "./pages/AdminEmailTemplates";
 import EmailTemplateEditor from "./pages/EmailTemplateEditor";
 import AdminMonitoring from "./pages/AdminMonitoring";
 import TestPdfGeneration from "./pages/TestPdfGeneration";
+import RegenerateCoverUtil from "./pages/RegenerateCoverUtil";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -76,6 +77,11 @@ const AppRoot = () => (
               <ProtectedRoute>
                 <TestPdfGeneration />
               </ProtectedRoute>
+            } />
+            <Route path="/admin/regenerate-cover" element={
+              <AdminRoute>
+                <RegenerateCoverUtil />
+              </AdminRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
