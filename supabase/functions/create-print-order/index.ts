@@ -114,7 +114,7 @@ serve(async (req) => {
     const interiorUrl = book.pdf_url;
     
     // Use book's selected POD package ID if available, otherwise fall back to environment variable
-    const selectedPodPackageId = book.selected_pod_package_id || Deno.env.get('LULU_POD_PACKAGE_ID') || '0850X1100BWSTDPB060UW444MXX';
+    const selectedPodPackageId = book.selected_pod_package_id || Deno.env.get('LULU_POD_PACKAGE_ID') || '0850X1100BWSTDSS060UW444MXX';
     console.log('Using POD Package ID:', selectedPodPackageId, book.selected_pod_package_id ? '(from book)' : '(from env/default)');
     
     if (!coverUrl) {
@@ -258,8 +258,8 @@ serve(async (req) => {
       if (isHtmlError) {
         console.error('Lulu returned HTML error page - invalid POD package ID:', selectedPodPackageId);
         
-        // Suggest standard perfect bound as fallback (most commonly supported)
-        const fallbackId = '0850X1100BWSTDPB060UW444MXX';
+        // Suggest standard saddle stitch as fallback (verified working ID)
+        const fallbackId = '0850X1100BWSTDSS060UW444MXX';
         
         return new Response(
           JSON.stringify({ 

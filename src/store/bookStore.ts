@@ -116,7 +116,7 @@ const initialState = {
   selectedPageCount: 24 as PageCount,
   selectedBinding: 'premium' as BindingType,
   selectedPrice: 34.99,
-  selectedPodPackageId: '0850X1100FCPRECO060UW444MXX',
+  selectedPodPackageId: '0850X1100BWSTDCO060UW444MXX',
   paymentBypassed: false,
   orderId: null,
 };
