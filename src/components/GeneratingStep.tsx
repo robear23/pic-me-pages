@@ -22,6 +22,7 @@ export const GeneratingStep = () => {
   const { 
     characters,
     selectedInterests,
+    customPrompt,
     consistentCharacters,
     complexityLevel,
     selectedPageCount,
@@ -160,12 +161,15 @@ export const GeneratingStep = () => {
         return;
       }
 
-      // CRITICAL: Validate interests before generation
-      if (!selectedInterests || selectedInterests.length === 0) {
-        console.error('No interests selected');
+      // CRITICAL: Validate interests OR custom prompt before generation
+      const hasInterests = selectedInterests && selectedInterests.length > 0;
+      const hasCustomPrompt = customPrompt && customPrompt.trim().length > 0;
+      
+      if (!hasInterests && !hasCustomPrompt) {
+        console.error('No interests or custom prompt provided');
         toast({
-          title: 'Interests Required',
-          description: 'Please select at least one interest before generating your book.',
+          title: 'Input Required',
+          description: 'Please provide either interests or a custom story/theme before generating your book.',
           variant: 'destructive',
         });
         setStep('interests');
@@ -277,6 +281,7 @@ export const GeneratingStep = () => {
               generation_data: {
                 characters: processedCharacters,
                 interests: selectedInterests,
+                customPrompt: customPrompt,
                 consistentCharacters,
                 complexityLevel,
                 selectedPageCount,
@@ -312,6 +317,7 @@ export const GeneratingStep = () => {
               generation_data: {
                 characters: processedCharacters, // Now contains base64 strings
                 interests: selectedInterests,
+                customPrompt: customPrompt,
                 consistentCharacters,
                 complexityLevel,
                 selectedPageCount,

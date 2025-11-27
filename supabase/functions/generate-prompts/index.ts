@@ -24,12 +24,19 @@ serve(async (req) => {
       );
     }
     
-    if (!interests || !Array.isArray(interests) || interests.length < 1) {
+    // Validate that either interests OR customPrompt is provided
+    const hasInterests = interests && Array.isArray(interests) && interests.length >= 1;
+    const hasCustomPrompt = customPrompt && customPrompt.trim().length > 0;
+    
+    if (!hasInterests && !hasCustomPrompt) {
       return new Response(
-        JSON.stringify({ error: 'Invalid input: at least 1 interest required' }),
+        JSON.stringify({ error: 'Invalid input: provide either interests array or a custom prompt' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    
+    // Provide default empty array for interests if only customPrompt is used
+    const effectiveInterests = hasInterests ? interests : [];
 
     const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     if (!GOOGLE_API_KEY) {
@@ -64,9 +71,9 @@ serve(async (req) => {
     const complexityGuidance = complexityLevelMap[complexityLevel] || complexityLevelMap.medium;
 
     // Use custom prompt if provided, otherwise use interests
-    const contentGuidance = customPrompt.trim()
+    const contentGuidance = hasCustomPrompt
       ? `Create scenes based on this custom theme/story: ${customPrompt}`
-      : `Generate scenes related to these interests: ${interests.join(', ')}. ${interests.length === 1 ? 'Create diverse scenarios all related to this interest.' : 'Distribute scenes evenly across the interests.'}`;
+      : `Generate scenes related to these interests: ${effectiveInterests.join(', ')}. ${effectiveInterests.length === 1 ? 'Create diverse scenarios all related to this interest.' : 'Distribute scenes evenly across the interests.'}`;
 
     const systemPrompt = `Generate ${targetPageCount} diverse scene descriptions for ${characterNames}.
 
@@ -126,7 +133,7 @@ Generate exactly ${targetPageCount} unique coloring book page prompts.
 
 CRITICAL: Return ONLY valid JSON with proper escaping. Use \\n for newlines in text.
 
-Generate prompts for ${characterNames} using photogenic illustrated style based on: ${interests.join(', ')}`;
+Generate prompts for ${characterNames} using photogenic illustrated style based on: ${hasCustomPrompt ? customPrompt : effectiveInterests.join(', ')}`;
 
     // FIX #2: Add timeout protection for AI requests
     const AI_TIMEOUT_MS = 60000; // 60 seconds

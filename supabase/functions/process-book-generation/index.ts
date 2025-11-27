@@ -54,6 +54,7 @@ interface GenerationJob {
   generation_data: {
     characters: any[];
     interests: string[];
+    customPrompt?: string;
     consistentCharacters: boolean;
     complexityLevel: string;
     selectedPageCount: number;
@@ -397,7 +398,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
 
   try {
     const { generation_data } = job;
-    const { characters, interests, consistentCharacters, complexityLevel, selectedPageCount, isReworkMode, selectedPagesForRework, generatedBookId } = generation_data;
+    const { characters, interests, customPrompt, consistentCharacters, complexityLevel, selectedPageCount, isReworkMode, selectedPagesForRework, generatedBookId } = generation_data;
 
     // Initialize savedPageCount early - will be loaded from DB if resuming
     let savedPageCount = 0;
@@ -437,6 +438,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
         body: {
           characters,
           interests,
+          customPrompt,
           consistentCharacters,
           targetPageCount: selectedPageCount,
           complexityLevel,
