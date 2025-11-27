@@ -214,6 +214,7 @@ export type Database = {
           created_at: string | null
           id: string
           lulu_order_id: string | null
+          lulu_status: string | null
           order_type: string
           price_paid: number
           shipping_address: Json | null
@@ -227,6 +228,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           lulu_order_id?: string | null
+          lulu_status?: string | null
           order_type: string
           price_paid: number
           shipping_address?: Json | null
@@ -240,6 +242,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           lulu_order_id?: string | null
+          lulu_status?: string | null
           order_type?: string
           price_paid?: number
           shipping_address?: Json | null

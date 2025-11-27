@@ -262,8 +262,8 @@ export function OrderPhysicalBookDialog({
           </div>
         )}
         
-        {/* Customize Your Order Section */}
-        {bookDetails && (
+        {/* Customize Your Order Section - Only show if NOT already paid */}
+        {bookDetails && !hasExistingShipping && (
           <div className="border-t pt-4">
             <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-primary" />
