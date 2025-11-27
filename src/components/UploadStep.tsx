@@ -2,12 +2,39 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useBookStore } from '@/store/bookStore';
+import { useUKBookStore } from '@/store/ukBookStore';
 import { Upload, X, User } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-export const UploadStep = () => {
-  const { characters, updateCharacter, setCharacterPhoto, setStep } = useBookStore();
+interface UploadStepProps {
+  isUKFlow?: boolean;
+}
+
+export const UploadStep = ({ isUKFlow = false }: UploadStepProps) => {
+  // Use appropriate store based on flow
+  const mainStore = useBookStore();
+  const ukStore = useUKBookStore();
+  const { characters, updateCharacter, setCharacterPhoto, setStep } = isUKFlow
+    ? {
+        characters: ukStore.characters,
+        updateCharacter: (id: string, updates: any) => {
+          const char = ukStore.characters.find(c => c.id === id);
+          if (char) {
+            ukStore.setCharacters([{ ...char, ...updates }]);
+          }
+        },
+        setCharacterPhoto: (id: string, photoIndex: number, file: File | null) => {
+          const char = ukStore.characters.find(c => c.id === id);
+          if (char) {
+            const newPhotos = [...char.photos];
+            newPhotos[photoIndex] = file;
+            ukStore.setCharacters([{ ...char, photos: newPhotos }]);
+          }
+        },
+        setStep: (step: string) => ukStore.setStep(step as any),
+      }
+    : mainStore;
   const [previews, setPreviews] = useState<Record<string, (string | null)[]>>({});
   const navigate = useNavigate();
   
@@ -94,7 +121,13 @@ export const UploadStep = () => {
 
           {/* Next Button */}
           <Button
-            onClick={() => setStep('complexity')}
+            onClick={() => {
+              if (isUKFlow) {
+                (setStep as any)('uk-complexity');
+              } else {
+                setStep('complexity');
+              }
+            }}
             disabled={!isComplete}
             size="lg"
             className="w-full bg-gradient-to-r from-primary to-[hsl(330_80%_60%)] hover:scale-105 transition-transform duration-300 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
