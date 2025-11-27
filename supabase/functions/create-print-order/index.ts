@@ -211,6 +211,7 @@ serve(async (req) => {
       line_items: [
         {
           external_id: `item-${bookId.substring(0, 8)}`,
+          title: `${book.character_name}'s Coloring Book`,
           pod_package_id: selectedPodPackageId,
           quantity: 1,
           interior: {
