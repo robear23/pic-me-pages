@@ -160,6 +160,18 @@ export const GeneratingStep = () => {
         return;
       }
 
+      // CRITICAL: Validate interests before generation
+      if (!selectedInterests || selectedInterests.length === 0) {
+        console.error('No interests selected');
+        toast({
+          title: 'Interests Required',
+          description: 'Please select at least one interest before generating your book.',
+          variant: 'destructive',
+        });
+        setStep('interests');
+        return;
+      }
+
       // Validation for rework mode (CRITICAL FIX)
       if (isReworkMode) {
         const characterName = characters[0]?.name;
