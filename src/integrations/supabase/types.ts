@@ -89,6 +89,7 @@ export type Database = {
           cover_image_url: string | null
           cover_url: string | null
           created_at: string | null
+          custom_prompt: string | null
           id: string
           interests: string[]
           last_cover_attempt_at: string | null
@@ -115,6 +116,7 @@ export type Database = {
           cover_image_url?: string | null
           cover_url?: string | null
           created_at?: string | null
+          custom_prompt?: string | null
           id?: string
           interests: string[]
           last_cover_attempt_at?: string | null
@@ -141,6 +143,7 @@ export type Database = {
           cover_image_url?: string | null
           cover_url?: string | null
           created_at?: string | null
+          custom_prompt?: string | null
           id?: string
           interests?: string[]
           last_cover_attempt_at?: string | null
