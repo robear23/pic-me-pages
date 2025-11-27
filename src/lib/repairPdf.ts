@@ -123,7 +123,7 @@ export async function generateCoverWrapPdf(
     const pdf = new jsPDF({
       orientation: 'landscape',
       unit: 'pt', // Use points for better DPI control
-      format: [LULU_CONFIG.COVER_HEIGHT * LULU_CONFIG.POINTS_PER_INCH, LULU_CONFIG.COVER_WIDTH * LULU_CONFIG.POINTS_PER_INCH],
+      format: [LULU_CONFIG.COVER_WIDTH * LULU_CONFIG.POINTS_PER_INCH, LULU_CONFIG.COVER_HEIGHT * LULU_CONFIG.POINTS_PER_INCH],
       compress: false, // Disable compression to maintain image quality
       putOnlyUsedFonts: true, // Only include fonts that are actually used
       floatPrecision: 16, // High precision for measurements
@@ -161,6 +161,12 @@ export async function generateCoverWrapPdf(
 
     // Convert PDF to blob
     const pdfBlob = pdf.output('blob');
+    
+    // Log PDF dimensions for verification
+    const pdfDimensions = pdf.internal.pageSize;
+    const pdfWidthInches = pdfDimensions.getWidth() / LULU_CONFIG.POINTS_PER_INCH;
+    const pdfHeightInches = pdfDimensions.getHeight() / LULU_CONFIG.POINTS_PER_INCH;
+    console.log(`✓ PDF dimensions verified: ${pdfWidthInches.toFixed(3)}" x ${pdfHeightInches.toFixed(3)}"`);
 
     // Upload to storage
     const fileName = `${user.id}/${bookId}/cover-wrap-${Date.now()}.pdf`;
@@ -431,7 +437,7 @@ export async function repairBookPdf(
       console.log(`Adding ${blankPagesNeeded} blank pages for ${bindingType} binding compliance`);
       
       for (let i = 0; i < blankPagesNeeded; i++) {
-        pdf.addPage([LULU_CONFIG.PAGE_WIDTH, LULU_CONFIG.PAGE_HEIGHT], 'portrait');
+        pdf.addPage([LULU_CONFIG.PAGE_WIDTH * LULU_CONFIG.POINTS_PER_INCH, LULU_CONFIG.PAGE_HEIGHT * LULU_CONFIG.POINTS_PER_INCH], 'portrait');
         processedPages++;
         options?.onProgress?.(processedPages, validation.adjustedCount);
       }
