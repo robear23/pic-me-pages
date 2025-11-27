@@ -5,6 +5,7 @@ interface SaveBookParams {
   userId: string;
   characterName: string;
   interests: string[];
+  customPrompt?: string;
   consistentCharacters: boolean;
   characterPhotos: File[];
   generatedPages: Array<{ pageNumber: number; imageUrl: string; prompt: string }>;
@@ -24,6 +25,7 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
       userId,
       characterName,
       interests,
+      customPrompt,
       consistentCharacters,
       characterPhotos,
       generatedPages,
@@ -227,6 +229,7 @@ export async function saveBookToDatabase(params: SaveBookParams): Promise<string
           user_id: userId,
           character_name: characterName,
           interests,
+          custom_prompt: customPrompt,
           complexity: 'medium', // Default photogenic style
           art_style: 'photogenic',
           consistent_characters: consistentCharacters,

@@ -501,6 +501,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
           user_id: job.user_id,
           character_name: characterName,
           interests,
+          custom_prompt: customPrompt,
           pages: [],
           photo_urls: [],
           consistent_characters: consistentCharacters,

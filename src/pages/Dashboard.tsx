@@ -23,6 +23,7 @@ interface Book {
   id: string;
   character_name: string;
   interests: string[];
+  custom_prompt?: string;
   pages?: any;
   pdf_url: string | null;
   cover_url: string | null;
@@ -248,7 +249,7 @@ const Dashboard = () => {
     try {
       const { data, error } = await supabase
         .from('books')
-        .select('id, character_name, interests, pdf_url, cover_url, cover_image_url, back_cover_image_url, status, created_at, user_id, pages, missing_covers, missing_components, selected_page_count, reworked_page_numbers, complexity, selected_binding_type, selected_pod_package_id, consistent_characters, photo_urls')
+        .select('id, character_name, interests, custom_prompt, pdf_url, cover_url, cover_image_url, back_cover_image_url, status, created_at, user_id, pages, missing_covers, missing_components, selected_page_count, reworked_page_numbers, complexity, selected_binding_type, selected_pod_package_id, consistent_characters, photo_urls')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
@@ -1425,14 +1426,20 @@ const Dashboard = () => {
                         </div>
                       )}
                       <div className="flex flex-wrap gap-1 mb-4">
-                        {book.interests.slice(0, 3).map((interest, i) => (
-                          <span
-                            key={i}
-                            className="text-xs px-2 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full"
-                          >
-                            {interest}
+                        {book.interests.length > 0 ? (
+                          book.interests.slice(0, 3).map((interest, i) => (
+                            <span
+                              key={i}
+                              className="text-xs px-2 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full"
+                            >
+                              {interest}
+                            </span>
+                          ))
+                        ) : book.custom_prompt ? (
+                          <span className="text-xs px-2 py-1 bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 border border-purple-500/20 rounded-full">
+                            📖 {book.custom_prompt}
                           </span>
-                        ))}
+                        ) : null}
                       </div>
                       
                       <div className="space-y-2">
