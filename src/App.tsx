@@ -17,6 +17,7 @@ import EmailTemplateEditor from "./pages/EmailTemplateEditor";
 import AdminMonitoring from "./pages/AdminMonitoring";
 import TestPdfGeneration from "./pages/TestPdfGeneration";
 import RegenerateCoverUtil from "./pages/RegenerateCoverUtil";
+import UKCreate from "./pages/UKCreate";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -82,6 +83,14 @@ const AppRoot = () => (
               <AdminRoute>
                 <RegenerateCoverUtil />
               </AdminRoute>
+            } />
+            <Route path="/uk/create" element={
+              <ProtectedRoute>
+                <>
+                  <Navigation />
+                  <UKCreate />
+                </>
+              </ProtectedRoute>
             } />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

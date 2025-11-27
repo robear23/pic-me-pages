@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useBookStore } from '@/store/bookStore';
+import { useUKBookStore } from '@/store/ukBookStore';
 import { Sparkles, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Badge } from './ui/badge';
@@ -16,8 +17,24 @@ const suggestionExamples = [
   "Time travel through history",
 ];
 
-export const InterestsStep = () => {
-  const { characters, selectedInterests, customPrompt, setInterests, setCustomPrompt, setStep } = useBookStore();
+interface InterestsStepProps {
+  isUKFlow?: boolean;
+}
+
+export const InterestsStep = ({ isUKFlow = false }: InterestsStepProps) => {
+  const mainStore = useBookStore();
+  const ukStore = useUKBookStore();
+  
+  const { characters, selectedInterests, customPrompt, setInterests, setCustomPrompt, setStep } = isUKFlow
+    ? {
+        characters: ukStore.characters,
+        selectedInterests: ukStore.selectedInterests,
+        customPrompt: ukStore.customPrompt,
+        setInterests: ukStore.setSelectedInterests,
+        setCustomPrompt: ukStore.setCustomPrompt,
+        setStep: (step: string) => ukStore.setStep(step as any),
+      }
+    : mainStore;
   const [interestsText, setInterestsText] = useState(selectedInterests.join(', '));
   const [promptText, setPromptText] = useState(customPrompt);
   const navigate = useNavigate();
@@ -34,11 +51,19 @@ export const InterestsStep = () => {
   const handleNext = () => {
     setInterests(parsedInterests);
     setCustomPrompt(promptText);
-    setStep('book-options');
+    if (isUKFlow) {
+      (setStep as any)('uk-product-selection');
+    } else {
+      setStep('book-options');
+    }
   };
 
   const handleBack = () => {
-    setStep('complexity');
+    if (isUKFlow) {
+      (setStep as any)('uk-complexity');
+    } else {
+      setStep('complexity');
+    }
   };
 
   const handleReturnToDashboard = () => {

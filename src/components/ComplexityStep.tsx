@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
-import { useBookStore } from '@/store/bookStore';
+import { useBookStore, ComplexityLevel } from '@/store/bookStore';
+import { useUKBookStore } from '@/store/ukBookStore';
 import { ArrowLeft, Check } from 'lucide-react';
-import { ComplexityLevel } from '@/store/bookStore';
 import { useNavigate } from 'react-router-dom';
 
 const complexityOptions: Array<{
@@ -35,25 +35,47 @@ const complexityOptions: Array<{
   },
 ];
 
-export const ComplexityStep = () => {
+interface ComplexityStepProps {
+  isUKFlow?: boolean;
+}
+
+export const ComplexityStep = ({ isUKFlow = false }: ComplexityStepProps) => {
+  const mainStore = useBookStore();
+  const ukStore = useUKBookStore();
+  
   const { 
     complexityLevel, 
     setComplexityLevel,
     setStep,
     isReworkMode
-  } = useBookStore();
+  } = isUKFlow
+    ? {
+        complexityLevel: ukStore.complexityLevel,
+        setComplexityLevel: ukStore.setComplexityLevel,
+        setStep: (step: string) => ukStore.setStep(step as any),
+        isReworkMode: false, // UK flow doesn't have rework mode
+      }
+    : mainStore;
   const navigate = useNavigate();
 
   const handleNext = () => {
     if (isReworkMode) {
-      setStep('generating');
+      setStep('generating' as any);
     } else {
-      setStep('interests');
+      if (isUKFlow) {
+        (setStep as any)('uk-interests');
+      } else {
+        setStep('interests');
+      }
     }
   };
 
   const handleBack = () => {
-    setStep('upload');
+    if (isUKFlow) {
+      (setStep as any)('uk-upload');
+    } else {
+      setStep('upload');
+    }
   };
 
   const handleReturnToDashboard = () => {
