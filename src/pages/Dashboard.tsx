@@ -8,7 +8,7 @@ import { useBookStore, type ComplexityLevel } from '@/store/bookStore';
 import type { PageCount, BindingType } from '@/types/bookOptions';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap, AlertCircle, Sparkles } from 'lucide-react';
+import { Plus, LogOut, BookOpen, Download, Package, Truck, Shield, Eye, FileText, Trash2, Zap, AlertCircle, Sparkles, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { OrderPhysicalBookDialog } from '@/components/OrderPhysicalBookDialog';
 import { Badge } from '@/components/ui/badge';
@@ -83,6 +83,7 @@ const Dashboard = () => {
   const [retryingCoverId, setRetryingCoverId] = useState<string | null>(null);
   const [selectedPageImage, setSelectedPageImage] = useState<string | null>(null);
   const [selectedPageIndex, setSelectedPageIndex] = useState<number | null>(null);
+  const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
 
   useEffect(() => {
     if (user) {
@@ -317,6 +318,63 @@ const Dashboard = () => {
       setOrders(ordersByBook);
     } catch (error: any) {
       console.error('Error fetching orders:', error);
+    }
+  };
+
+  const handleSendTestEmail = async () => {
+    if (!user?.email) {
+      toast.error("No user email available");
+      return;
+    }
+
+    // Get all orders (not grouped by book)
+    const allOrders = Object.values(orders).flat();
+    if (allOrders.length === 0) {
+      toast.error("No orders available to test");
+      return;
+    }
+
+    setIsSendingTestEmail(true);
+    try {
+      const latestOrder = allOrders[0];
+      
+      // Fetch book details
+      const { data: book, error: bookError } = await supabase
+        .from('books')
+        .select('character_name, interests')
+        .eq('id', latestOrder.book_id)
+        .single();
+
+      if (bookError) throw bookError;
+
+      console.log('Sending test email with:', {
+        templateName: 'order_confirmation',
+        recipientEmail: user.email,
+        orderId: latestOrder.id
+      });
+
+      // Send test email
+      const { error: emailError } = await supabase.functions.invoke('send-email', {
+        body: {
+          templateName: 'order_confirmation',
+          recipientEmail: user.email,
+          variables: {
+            customerName: user.email.split('@')[0],
+            childName: book.character_name,
+            interests: book.interests.join(', '),
+            orderId: latestOrder.id
+          }
+        }
+      });
+
+      if (emailError) throw emailError;
+
+      toast.success(`Test email sent to ${user.email}`);
+    } catch (error: any) {
+      console.error('Error sending test email:', error);
+      toast.error(error.message || 'Failed to send test email');
+    } finally {
+      setIsSendingTestEmail(false);
     }
   };
 
@@ -1140,6 +1198,27 @@ const Dashboard = () => {
             <Plus className="w-5 h-5" />
             Create New Book
           </Button>
+          
+          {isAdmin && Object.values(orders).flat().length > 0 && (
+            <Button
+              variant="outline"
+              onClick={handleSendTestEmail}
+              disabled={isSendingTestEmail}
+              className="gap-2"
+            >
+              {isSendingTestEmail ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="w-4 h-4" />
+                  Test Order Email
+                </>
+              )}
+            </Button>
+          )}
           
           {!loading && retryCredits.length > 0 && (
             <Badge variant="secondary" className="text-sm gap-2 py-2 px-4">
