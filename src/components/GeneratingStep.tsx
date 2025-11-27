@@ -568,7 +568,7 @@ export const GeneratingStep = () => {
           table: 'book_generation_jobs',
           filter: `id=eq.${jobId}`,
         },
-        (payload) => {
+        async (payload) => {
           const updatedJob = payload.new as any;
           console.log('Job update received:', updatedJob);
 
@@ -627,10 +627,76 @@ export const GeneratingStep = () => {
 
           if (updatedJob.status === 'completed' || updatedJob.status === 'partial') {
             setProgress(100);
-            setErrorMessage(null); // Clear any stale errors from failed attempts
+            setErrorMessage(null);
             setShowStaleWarning(false);
             
-            if (updatedJob.status === 'partial') {
+            // Fetch book to check PDF status
+            const { data: book } = await supabase
+              .from('books')
+              .select('id, pdf_url, cover_url, cover_image_url, back_cover_image_url, pages, selected_pod_package_id, selected_page_count')
+              .eq('id', updatedJob.book_id)
+              .single();
+            
+            // If book has images but missing PDFs, generate them client-side
+            if (book && Array.isArray(book.pages) && book.pages.length > 0 && (!book.pdf_url || !book.cover_url)) {
+              setCurrentStep('Generating print-ready PDFs...');
+              console.log('📄 Generating missing PDFs client-side:', { 
+                hasInterior: !!book.pdf_url, 
+                hasCover: !!book.cover_url 
+              });
+              
+              try {
+                const { repairBookPdf } = await import('@/lib/repairPdf');
+                const { generateCoverWrapPdf } = await import('@/lib/repairPdf');
+                
+                // Generate interior PDF if missing
+                if (!book.pdf_url) {
+                  console.log('🔧 Generating interior PDF...');
+                  const interiorPdfUrl = await repairBookPdf(
+                    book.id,
+                    book.pages.map((p: any) => ({ imageUrl: p.imageUrl })),
+                    { 
+                      pageCount: book.selected_page_count || book.pages.length,
+                      podPackageId: book.selected_pod_package_id 
+                    }
+                  );
+                  await supabase.from('books').update({ pdf_url: interiorPdfUrl }).eq('id', book.id);
+                  console.log('✅ Interior PDF generated');
+                }
+                
+                // Generate cover PDF if missing
+                if (!book.cover_url && book.cover_image_url && book.back_cover_image_url) {
+                  console.log('🔧 Generating cover PDF...');
+                  const coverPdfUrl = await generateCoverWrapPdf(
+                    book.id,
+                    book.cover_image_url,
+                    book.back_cover_image_url,
+                    book.selected_pod_package_id
+                  );
+                  await supabase.from('books').update({ 
+                    cover_url: coverPdfUrl, 
+                    status: 'completed',
+                    missing_components: []
+                  }).eq('id', book.id);
+                  console.log('✅ Cover PDF generated');
+                }
+                
+                setCurrentStep('Book completed!');
+                toast({ 
+                  title: 'Book Ready!', 
+                  description: 'Your coloring book has been generated successfully.' 
+                });
+              } catch (error) {
+                console.error('❌ Client-side PDF generation failed:', error);
+                setCurrentStep('PDFs need regeneration');
+                toast({
+                  title: 'PDF Generation Issue',
+                  description: 'Images are ready but PDFs need to be generated. You can retry from your dashboard.',
+                  variant: 'default'
+                });
+              }
+            } else if (updatedJob.status === 'partial') {
+              // Book is truly incomplete (missing images)
               setCurrentStep('Book partially completed');
               toast({
                 title: 'Book Partially Completed',
@@ -639,13 +705,13 @@ export const GeneratingStep = () => {
               });
             } else {
               setCurrentStep('Book completed!');
-              toast({
-                title: 'Book Ready!',
-                description: 'Your coloring book has been generated successfully.',
+              toast({ 
+                title: 'Book Ready!', 
+                description: 'Your coloring book has been generated successfully.' 
               });
             }
 
-            // Navigate to dashboard after a brief delay
+            // Navigate to dashboard after processing
             setTimeout(() => {
               navigate('/dashboard');
             }, 2000);
