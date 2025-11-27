@@ -1320,11 +1320,22 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
       console.log(`✅ Updated reworked_page_numbers: ${existingReworked.length} → ${newReworked.length}`);
     }
 
-    // Mark job as completed
-    const finalStatus = totalGenerated === totalExpected ? 'completed' : 'partial';
-    const statusMessage = totalGenerated < totalExpected 
-      ? `Generated ${totalGenerated}/${totalExpected} pages. Some pages failed.`
-      : null;
+    // Mark job as completed based on BOTH pages AND PDFs
+    const hasAllPages = totalGenerated === totalExpected;
+    const hasAllPdfs = hasCoverPdf; // Interior PDF generated client-side
+    
+    let finalStatus: string;
+    let statusMessage: string | null = null;
+    
+    if (hasAllPages && hasAllPdfs) {
+      finalStatus = 'completed';
+    } else if (hasAllPages && !hasAllPdfs) {
+      finalStatus = 'partial'; // Pages complete, PDFs missing - client will generate
+      statusMessage = 'Pages complete. PDFs will be generated on client.';
+    } else {
+      finalStatus = 'partial'; // Some pages failed
+      statusMessage = `Generated ${totalGenerated}/${totalExpected} pages. Some pages failed.`;
+    }
 
     await supabase
       .from('book_generation_jobs')
