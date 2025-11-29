@@ -46,6 +46,7 @@ interface UKBookState {
   ukOrderId: string | null;
   generatedBookId: string | null;
   jobId: string | null;
+  isAdminBypass: boolean;
   
   // Actions
   setStep: (step: UKBookStep) => void;
@@ -58,6 +59,7 @@ interface UKBookState {
   setUKOrderId: (id: string | null) => void;
   setGeneratedBookId: (id: string | null) => void;
   setJobId: (id: string | null) => void;
+  setAdminBypass: (bypass: boolean) => void;
   reset: () => void;
 }
 
@@ -72,6 +74,7 @@ const initialState = {
   ukOrderId: null,
   generatedBookId: null,
   jobId: null,
+  isAdminBypass: false,
 };
 
 export const useUKBookStore = create<UKBookState>((set) => ({
@@ -87,5 +90,6 @@ export const useUKBookStore = create<UKBookState>((set) => ({
   setUKOrderId: (id) => set({ ukOrderId: id }),
   setGeneratedBookId: (id) => set({ generatedBookId: id }),
   setJobId: (id) => set({ jobId: id }),
+  setAdminBypass: (bypass) => set({ isAdminBypass: bypass }),
   reset: () => set(initialState),
 }));

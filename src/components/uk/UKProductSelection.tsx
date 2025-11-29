@@ -65,7 +65,8 @@ export function UKProductSelection() {
     selectedInterests,
     setSelectedInterests,
     customPrompt,
-    setCustomPrompt
+    setCustomPrompt,
+    setAdminBypass
   } = useUKBookStore();
   const [showShippingForm, setShowShippingForm] = useState(false);
   const { isAdmin } = useAdmin();
@@ -131,6 +132,9 @@ export function UKProductSelection() {
       setSelectedInterests(['adventure', 'magic']);
       setCustomPrompt('A fun test adventure');
     }
+    
+    // Mark this as admin bypass so generation step allows proceeding without order
+    setAdminBypass(true);
     
     setStep('uk-generating');
   };
