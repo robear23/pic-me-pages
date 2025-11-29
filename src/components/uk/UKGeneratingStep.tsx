@@ -60,12 +60,25 @@ export function UKGeneratingStep() {
       const characterName = characters[0].name;
       const characterPhotos = characters[0].photos;
 
-      if (!selectedInterests || selectedInterests.length === 0) {
-        throw new Error('Please select at least one interest');
+      // Validate that either interests OR custom prompt is provided
+      const hasInterests = selectedInterests && selectedInterests.length > 0;
+      const hasCustomPrompt = customPrompt && customPrompt.trim().length > 0;
+
+      if (!hasInterests && !hasCustomPrompt) {
+        throw new Error('Please provide either interests or a custom story/theme');
       }
 
+      console.log('[UK Generation] Store state:', {
+        characterName,
+        photoCount: characterPhotos?.filter(p => p).length || 0,
+        hasInterests,
+        interests: selectedInterests,
+        hasCustomPrompt,
+        customPrompt: customPrompt?.substring(0, 50),
+        complexityLevel,
+        ukOrderId,
+      });
       console.log('[UK Generation] Starting generation for:', characterName);
-      console.log('[UK Generation] Interests:', selectedInterests);
       console.log('[UK Generation] Target pages:', UK_PAGE_COUNT);
 
       // Step 2: Generate prompts (10-20%)
