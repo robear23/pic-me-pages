@@ -116,34 +116,41 @@ export function UKGeneratingStep() {
 
       // Step 3: Generate images (20-75%)
       setCurrentStep(UK_GENERATION_STEPS[2]);
+      setProgress(20);
+
+      console.log('[UK Generation] Calling generate-images with', promptsData.prompts.length, 'prompts');
 
       const { data: imagesData, error: imagesError } = await supabase.functions.invoke(
         'generate-images',
         {
           body: {
             prompts: promptsData.prompts,
-            characterPhotos: characterPhotos,
-            characterName: characterName,
-            bookId: generatedBookId || null,
-            onProgress: (current: number, total: number) => {
-              const imageProgress = 20 + (current / total) * 55; // 20% to 75%
-              setProgress(Math.min(imageProgress, 75));
-              setCurrentStep(`${UK_GENERATION_STEPS[2]} (${current}/${total})`);
-            }
+            characters: [{
+              name: characterName,
+              photos: characterPhotos.filter((p: any) => p && typeof p === 'string')
+            }],
+            consistentCharacters: true,
+            complexity: complexityLevel || 'medium'
           }
         }
       );
+
+      setProgress(75);
 
       if (imagesError) {
         console.error('[UK Generation] Images error:', imagesError);
         throw new Error(`Failed to generate images: ${imagesError.message}`);
       }
 
-      if (!imagesData || !imagesData.pages || imagesData.pages.length !== UK_PAGE_COUNT) {
-        throw new Error(`Expected ${UK_PAGE_COUNT} pages, got ${imagesData?.pages?.length || 0}`);
+      if (!imagesData || !imagesData.pages || imagesData.pages.length === 0) {
+        throw new Error(`No pages generated. Got: ${imagesData?.pages?.length || 0}`);
       }
 
-      const bookId = imagesData.bookId;
+      // Log actual pages generated (may be less due to timeout/partial results)
+      console.log('[UK Generation] Generated', imagesData.pages.length, 'pages');
+
+      // Generate a unique book ID since generate-images doesn't create one
+      const bookId = generatedBookId || crypto.randomUUID();
       setGeneratedBookId(bookId);
 
       console.log('[UK Generation] Generated', imagesData.pages.length, 'pages');

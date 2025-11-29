@@ -10,6 +10,8 @@ verify_jwt = false
 
 [functions.generate-images]
 verify_jwt = false
+timeout_sec = 900
+memory_mb = 512
 
 [functions.upload-character-photos]
 verify_jwt = false
