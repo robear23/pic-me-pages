@@ -58,6 +58,9 @@ export const UKGeneratingStep = () => {
   const [currentStep, setCurrentStep] = useState(UK_GENERATION_STEPS[0]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const resumeInProgressRef = useRef(false);
+  const [startTime] = useState(Date.now());
+  const [lastProgressUpdate, setLastProgressUpdate] = useState<number>(Date.now());
+  const [showStaleWarning, setShowStaleWarning] = useState(false);
 
   // Check for existing job or create new one
   useEffect(() => {
@@ -131,7 +134,32 @@ export const UKGeneratingStep = () => {
           }))
         );
 
-        // Check for existing jobs
+        // Clean up any stuck/stale jobs from this user FIRST
+        console.log('[UK Generation] Checking for stuck jobs to clean up...');
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        const { data: stuckJobs } = await supabase
+          .from('book_generation_jobs')
+          .select('id, status, created_at')
+          .eq('user_id', user.id)
+          .in('status', ['pending', 'processing'])
+          .lt('updated_at', oneHourAgo);
+
+        if (stuckJobs && stuckJobs.length > 0) {
+          console.log('[UK Generation] Cleaning up', stuckJobs.length, 'stuck jobs');
+          await supabase
+            .from('book_generation_jobs')
+            .update({ 
+              status: 'failed', 
+              error_message: 'Cancelled - replaced by new generation request',
+              failure_reason: 'user_cancelled',
+              completed_at: new Date().toISOString()
+            })
+            .in('id', stuckJobs.map(j => j.id));
+        } else {
+          console.log('[UK Generation] No stuck jobs found');
+        }
+
+        // Check for existing recent jobs
         const { data: existingJobs } = await supabase
           .from('book_generation_jobs')
           .select('*')
@@ -248,6 +276,8 @@ export const UKGeneratingStep = () => {
           const job = payload.new as any;
           
           setJobStatus(job.status);
+          setLastProgressUpdate(Date.now());
+          setShowStaleWarning(false);
           
           if (job.status === 'failed') {
             setErrorMessage(job.error_message || 'Generation failed');
@@ -274,7 +304,7 @@ export const UKGeneratingStep = () => {
     };
   }, [jobId]);
 
-  // Auto-resume paused jobs
+  // Auto-resume paused jobs + stale progress warning
   useEffect(() => {
     if (!jobId) return;
     
@@ -296,12 +326,18 @@ export const UKGeneratingStep = () => {
         await supabase.functions.invoke('process-book-generation');
         setTimeout(() => { resumeInProgressRef.current = false; }, 15000);
       }
+
+      // Check for stale progress (no updates for 2+ minutes)
+      const timeSinceLastUpdate = Date.now() - lastProgressUpdate;
+      if (timeSinceLastUpdate > 2 * 60 * 1000 && job.status === 'processing') {
+        setShowStaleWarning(true);
+      }
     };
     
     checkAndResume();
     const interval = setInterval(checkAndResume, 30000);
     return () => clearInterval(interval);
-  }, [jobId, toast]);
+  }, [jobId, toast, lastProgressUpdate]);
 
   // Handle job completion - generate UK PDF
   const handleJobComplete = async (bookId: string) => {
@@ -426,6 +462,8 @@ export const UKGeneratingStep = () => {
 
   // Main generation UI
   const completedSteps = UK_GENERATION_STEPS.findIndex(step => step === currentStep);
+  const elapsedMinutes = Math.round((Date.now() - startTime) / 1000 / 60);
+  const estimatedMinutes = 20;
 
   return (
     <motion.div
@@ -435,10 +473,36 @@ export const UKGeneratingStep = () => {
     >
       <div className="w-full max-w-2xl">
         <div className="bg-card/50 backdrop-blur-xl rounded-3xl border border-white/20 shadow-2xl p-8">
-          <div className="flex items-center gap-3 mb-8">
+          <div className="flex items-center gap-3 mb-6">
             <Sparkles className="w-8 h-8 text-primary animate-pulse" />
-            <h2 className="text-3xl font-bold">Creating Your UK Coloring Book</h2>
+            <h2 className="text-3xl font-bold">Creating Your Coloring Book</h2>
           </div>
+
+          {/* Informative Alert */}
+          <Alert className="mb-6 bg-primary/5 border-primary/20 text-left">
+            <Info className="w-5 h-5 text-primary" />
+            <AlertDescription>
+              <p className="font-semibold mb-2 text-foreground">⏱️ Generation Time & Progress</p>
+              <ul className="text-sm space-y-1.5">
+                <li><strong>Expected time:</strong> Up to {estimatedMinutes} minutes (currently {elapsedMinutes} min elapsed)</li>
+                <li className="text-primary font-medium">
+                  ✓ You can safely leave this page. Your book will appear in "My Books" when complete.
+                </li>
+                <li>⚠️ AI-generated images may occasionally contain minor imperfections. You'll have the option to rework any pages you're not happy with.</li>
+              </ul>
+            </AlertDescription>
+          </Alert>
+
+          {/* Stale Progress Warning */}
+          {showStaleWarning && (
+            <Alert className="mb-6 bg-yellow-500/10 border-yellow-500/30">
+              <Info className="w-5 h-5 text-yellow-500" />
+              <AlertDescription className="text-sm">
+                <strong>Progress seems slow?</strong> Generation is still running, but hasn't updated recently. 
+                This is normal for complex books. You can safely leave and return later.
+              </AlertDescription>
+            </Alert>
+          )}
 
           <div className="space-y-8">
             <div>
