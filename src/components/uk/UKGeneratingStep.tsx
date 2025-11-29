@@ -47,6 +47,7 @@ export const UKGeneratingStep = () => {
     setJobId,
     setStep,
     setGeneratedBookId,
+    isAdminBypass,
   } = useUKBookStore();
   
   const { user } = useAuth();
@@ -73,7 +74,7 @@ export const UKGeneratingStep = () => {
         return;
       }
 
-      if (!ukOrderId) {
+      if (!ukOrderId && !isAdminBypass) {
         console.error('No UK order detected');
         toast({
           title: 'Order Required',
@@ -82,6 +83,11 @@ export const UKGeneratingStep = () => {
         });
         setStep('uk-product-selection');
         return;
+      }
+
+      // Log if admin bypass is being used
+      if (isAdminBypass) {
+        console.log('[UK Generation] Admin bypass mode - proceeding without order');
       }
 
       // Validate interests OR custom prompt
@@ -341,17 +347,21 @@ export const UKGeneratingStep = () => {
 
       console.log('[UK Generation] PDF generated:', pdfUrl);
 
-      // Update UK order with PDF URL
-      const { error: orderUpdateError } = await supabase
-        .from('orders_uk')
-        .update({ 
-          pdf_url: pdfUrl,
-          book_id: bookId,
-        })
-        .eq('id', ukOrderId);
+      // Update UK order with PDF URL (skip for admin bypass)
+      if (ukOrderId) {
+        const { error: orderUpdateError } = await supabase
+          .from('orders_uk')
+          .update({ 
+            pdf_url: pdfUrl,
+            book_id: bookId,
+          })
+          .eq('id', ukOrderId);
 
-      if (orderUpdateError) {
-        console.error('[UK Generation] Failed to update order:', orderUpdateError);
+        if (orderUpdateError) {
+          console.error('[UK Generation] Failed to update order:', orderUpdateError);
+        }
+      } else {
+        console.log('[UK Generation] Admin bypass - no order to update, PDF saved to book record only');
       }
 
       setGeneratedBookId(bookId);
