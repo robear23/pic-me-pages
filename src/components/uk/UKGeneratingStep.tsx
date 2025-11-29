@@ -10,6 +10,51 @@ import { supabase } from '@/integrations/supabase/client';
 import { generateUKBookPdf } from '@/lib/ukPdfGenerator';
 import { UK_PAGE_COUNT } from '@/types/ukBookOptions';
 
+// Helper function to call edge functions with extended timeout
+async function invokeWithTimeout(
+  functionName: string,
+  body: any,
+  timeoutMs: number = 300000 // 5 minutes default
+): Promise<{ data: any; error: any }> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    
+    const response = await fetch(
+      `${supabaseUrl}/functions/v1/${functionName}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+          'apikey': supabaseKey,
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      }
+    );
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { data: null, error: { message: errorText || `HTTP ${response.status}` } };
+    }
+    
+    const data = await response.json();
+    return { data, error: null };
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      return { data: null, error: { message: 'Request timed out after 5 minutes' } };
+    }
+    return { data: null, error: { message: err.message || 'Failed to call edge function' } };
+  }
+}
+
 const UK_GENERATION_STEPS = [
   'Preparing generation',
   'Creating story prompts',
@@ -111,58 +156,75 @@ export function UKGeneratingStep() {
         throw new Error('No prompts generated');
       }
 
-      console.log('[UK Generation] Generated', promptsData.prompts.length, 'prompts');
+      console.log('[UK Generation] Received', promptsData.prompts.length, 'prompts');
       setProgress(20);
 
-      // Step 3: Generate images (20-75%)
+      // Step 3: Generate images (20-75%) - Use extended timeout
       setCurrentStep(UK_GENERATION_STEPS[2]);
       setProgress(20);
 
-      console.log('[UK Generation] Calling generate-images with', promptsData.prompts.length, 'prompts');
+      console.log('[UK Generation] Starting image generation');
+      console.log('[UK Generation] Prompts:', promptsData.prompts.length);
+      console.log('[UK Generation] Character photos:', characterPhotos?.filter(p => p).length);
+      console.log('[UK Generation] Using 5-minute timeout for long-running operation');
 
-      const { data: imagesData, error: imagesError } = await supabase.functions.invoke(
+      const { data: imagesData, error: imagesError } = await invokeWithTimeout(
         'generate-images',
         {
-          body: {
-            prompts: promptsData.prompts,
-            characters: [{
-              name: characterName,
-              photos: characterPhotos.filter((p: any) => p && typeof p === 'string')
-            }],
-            consistentCharacters: true,
-            complexity: complexityLevel || 'medium'
-          }
-        }
+          prompts: promptsData.prompts,
+          characters: [{
+            name: characterName,
+            photos: characterPhotos.filter((p: any) => p && typeof p === 'string')
+          }],
+          consistentCharacters: true,
+          complexity: complexityLevel || 'medium'
+        },
+        300000 // 5 minutes (300,000ms)
       );
 
       setProgress(75);
 
       if (imagesError) {
-        console.error('[UK Generation] Images error:', imagesError);
+        console.error('[UK Generation] Image generation error:', imagesError);
         throw new Error(`Failed to generate images: ${imagesError.message}`);
       }
 
-      if (!imagesData || !imagesData.pages || imagesData.pages.length === 0) {
-        throw new Error(`No pages generated. Got: ${imagesData?.pages?.length || 0}`);
+      if (!imagesData || !imagesData.pages) {
+        throw new Error('No pages data received from image generation');
       }
 
-      // Log actual pages generated (may be less due to timeout/partial results)
-      console.log('[UK Generation] Generated', imagesData.pages.length, 'pages');
+      // Handle partial results - edge function might return fewer pages due to timeout
+      const generatedPages = imagesData.pages;
+      const totalRequested = UK_PAGE_COUNT;
 
-      // Generate a unique book ID since generate-images doesn't create one
+      if (generatedPages.length === 0) {
+        throw new Error('No images were generated. Please try again.');
+      }
+
+      if (generatedPages.length < totalRequested) {
+        console.warn(`[UK Generation] Partial results: ${generatedPages.length}/${totalRequested} pages`);
+        // Continue with partial results
+      }
+
+      console.log('[UK Generation] Successfully received', generatedPages.length, 'pages');
+      if (imagesData.partialResult) {
+        console.warn('[UK Generation] Edge function returned partial results');
+      }
+      if (imagesData.executionTime) {
+        console.log('[UK Generation] Execution time:', imagesData.executionTime, 'ms');
+      }
+
+      // Generate a unique book ID
       const bookId = generatedBookId || crypto.randomUUID();
       setGeneratedBookId(bookId);
-
-      console.log('[UK Generation] Generated', imagesData.pages.length, 'pages');
       console.log('[UK Generation] Book ID:', bookId);
-      setProgress(75);
 
       // Step 4: Generate UK PDF (75-90%)
       setCurrentStep(UK_GENERATION_STEPS[3]);
 
       const pdfUrl = await generateUKBookPdf(
         bookId,
-        imagesData.pages,
+        generatedPages,
         characterName,
         (current, total) => {
           const pdfProgress = 75 + (current / total) * 15; // 75% to 90%
