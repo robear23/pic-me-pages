@@ -1,12 +1,13 @@
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Plus, Shield, LogOut, Menu, X } from 'lucide-react';
+import { Plus, Shield, LogOut, Menu, X, BookOpen } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAdmin } from '@/hooks/useAdmin';
 import { supabase } from '@/integrations/supabase/client';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useBookStore } from '@/store/bookStore';
+import logoNarrow from '@/assets/logo_narrow.png';
 
 export const Navigation = () => {
   const { user } = useAuth();
@@ -29,10 +30,9 @@ export const Navigation = () => {
           {/* Logo/Brand */}
           <Link 
             to="/dashboard" 
-            className="flex items-center space-x-2 text-xl font-bold text-white hover:text-white/90 transition-colors"
+            className="flex items-center hover:opacity-90 transition-opacity"
           >
-            <BookOpen className="w-6 h-6" />
-            <span className="hidden sm:inline">ColorBook AI</span>
+            <img src={logoNarrow} alt="Color Me In Books" className="h-8" />
           </Link>
 
           {/* Desktop Navigation */}
