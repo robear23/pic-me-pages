@@ -45,6 +45,7 @@ interface UKBookState {
   // Order tracking
   ukOrderId: string | null;
   generatedBookId: string | null;
+  jobId: string | null;
   
   // Actions
   setStep: (step: UKBookStep) => void;
@@ -56,6 +57,7 @@ interface UKBookState {
   setShippingAddress: (address: ShippingAddress | null) => void;
   setUKOrderId: (id: string | null) => void;
   setGeneratedBookId: (id: string | null) => void;
+  setJobId: (id: string | null) => void;
   reset: () => void;
 }
 
@@ -69,6 +71,7 @@ const initialState = {
   shippingAddress: null,
   ukOrderId: null,
   generatedBookId: null,
+  jobId: null,
 };
 
 export const useUKBookStore = create<UKBookState>((set) => ({
@@ -83,5 +86,6 @@ export const useUKBookStore = create<UKBookState>((set) => ({
   setShippingAddress: (address) => set({ shippingAddress: address }),
   setUKOrderId: (id) => set({ ukOrderId: id }),
   setGeneratedBookId: (id) => set({ generatedBookId: id }),
+  setJobId: (id) => set({ jobId: id }),
   reset: () => set(initialState),
 }));
