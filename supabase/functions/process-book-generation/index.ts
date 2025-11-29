@@ -61,6 +61,7 @@ interface GenerationJob {
     isReworkMode?: boolean;
     selectedPagesForRework?: number[];
     generatedBookId?: string;
+    isUKFlow?: boolean;
   };
 }
 
@@ -398,7 +399,15 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
 
   try {
     const { generation_data } = job;
-    const { characters, interests, customPrompt, consistentCharacters, complexityLevel, selectedPageCount, isReworkMode, selectedPagesForRework, generatedBookId } = generation_data;
+    const { characters, interests, customPrompt, consistentCharacters, complexityLevel, selectedPageCount, isReworkMode, selectedPagesForRework, generatedBookId, isUKFlow } = generation_data;
+    
+    // UK Flow Detection
+    const isUK = isUKFlow === true;
+    const targetPages = isUK ? 18 : selectedPageCount;
+    
+    if (isUK) {
+      console.log('🇬🇧 UK FLOW DETECTED - Generating 18 pages for UK coloring book');
+    }
 
     // Initialize savedPageCount early - will be loaded from DB if resuming
     let savedPageCount = 0;
@@ -429,7 +438,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     // Step 1: Generate prompts with error handling
     console.log('📝 Starting prompt generation...');
     logMemoryUsage('Before Prompts');
-    await updateJobProgress(supabase, job.id, { currentStep: 'Creating story prompts', currentPage: savedPageCount, totalPages: selectedPageCount });
+    await updateJobProgress(supabase, job.id, { currentStep: 'Creating story prompts', currentPage: savedPageCount, totalPages: targetPages });
     
     let prompts;
     try {
@@ -440,7 +449,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
           interests,
           customPrompt,
           consistentCharacters,
-          targetPageCount: selectedPageCount,
+          targetPageCount: targetPages,
           complexityLevel,
         }
       });
@@ -992,14 +1001,15 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     let backCoverImageUrl = null;
     let coverUrl = null;
     
-    if (generatedPages.length > 0 && !isReworkMode) {
+    // CRITICAL: Skip Lulu cover generation for UK flow
+    if (generatedPages.length > 0 && !isReworkMode && !isUK) {
       checkTimeout();
       console.log(`\n[${Date.now() - startTime}ms] === Cover Generation Starting ===`);
       logMemoryUsage('Before Covers');
       await updateJobProgress(supabase, job.id, { 
         currentStep: 'Creating book cover', 
         currentPage: generatedPages.length, 
-        totalPages: selectedPageCount 
+        totalPages: targetPages 
       });
       
       try {
@@ -1234,8 +1244,8 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
     // Save final book to database
     await updateJobProgress(supabase, job.id, { 
       currentStep: 'Finalizing your book', 
-      currentPage: selectedPageCount, 
-      totalPages: selectedPageCount 
+      currentPage: targetPages, 
+      totalPages: targetPages 
     });
 
     const hasCovers = !!(coverImageUrl && backCoverImageUrl);
@@ -1245,22 +1255,34 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
     let bookStatus: string;
     const missingComponents = [];
     
-    if (hasPages && hasCovers && hasCoverPdf) {
-      bookStatus = 'completed';
-      console.log('✅ Book generation complete - all components present');
-    } else if (hasPages && hasCovers && !hasCoverPdf) {
-      bookStatus = 'partial';
-      console.warn('⚠️ Partial book generation - missing cover PDF');
-      missingComponents.push('cover_pdf');
-    } else if (hasPages && !hasCovers) {
-      bookStatus = 'partial';
-      console.warn('⚠️ Partial book generation - pages complete but covers missing');
-      if (!coverImageUrl) missingComponents.push('front_cover');
-      if (!backCoverImageUrl) missingComponents.push('back_cover');
-      if (!hasCoverPdf) missingComponents.push('cover_pdf');
+    // UK Flow: Only pages matter, covers are generated client-side
+    if (isUK) {
+      if (hasPages) {
+        bookStatus = 'completed';
+        console.log('✅ UK book generation complete - pages generated (covers will be added client-side)');
+      } else {
+        bookStatus = 'failed';
+        console.error('❌ UK book generation failed - no pages generated');
+      }
     } else {
-      bookStatus = 'failed';
-      console.error('❌ Book generation failed - no pages generated');
+      // Lulu Flow: Needs pages, covers, and cover PDF
+      if (hasPages && hasCovers && hasCoverPdf) {
+        bookStatus = 'completed';
+        console.log('✅ Book generation complete - all components present');
+      } else if (hasPages && hasCovers && !hasCoverPdf) {
+        bookStatus = 'partial';
+        console.warn('⚠️ Partial book generation - missing cover PDF');
+        missingComponents.push('cover_pdf');
+      } else if (hasPages && !hasCovers) {
+        bookStatus = 'partial';
+        console.warn('⚠️ Partial book generation - pages complete but covers missing');
+        if (!coverImageUrl) missingComponents.push('front_cover');
+        if (!backCoverImageUrl) missingComponents.push('back_cover');
+        if (!hasCoverPdf) missingComponents.push('cover_pdf');
+      } else {
+        bookStatus = 'failed';
+        console.error('❌ Book generation failed - no pages generated');
+      }
     }
 
     // characterName and photoUrls already extracted before cleanup
