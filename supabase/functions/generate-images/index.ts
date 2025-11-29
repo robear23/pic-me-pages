@@ -120,7 +120,16 @@ VALIDATION: Your output will be analyzed for color variance. Photorealistic imag
 OUTPUT: A bright, evenly-lit photograph that maintains realism but minimizes complex shading and shadows. Think: bright studio photo, high-key portrait, passport photo style - NOT dramatic moody photography.`;
 
 // Enhanced system message for Step 2 - Line art conversion with shadow handling
-const LINE_ART_SYSTEM_MESSAGE = `CRITICAL: Convert the INPUT IMAGE ONLY to pure black and white line art. Do NOT regenerate the scene.
+// This will be customized based on complexity level
+const getLineArtSystemMessage = (complexity?: string): string => {
+  const outlineGuidance = {
+    simple: 'BOLD 4-6px outlines - THICK LINES suitable for young children (ages 3-5)',
+    medium: 'MEDIUM 2-4px outlines - Balanced line weight for ages 5-6',
+    detailed: 'FINE 1-2px outlines - Thin, intricate lines for ages 7+ and adults'
+  };
+  const selectedOutline = outlineGuidance[complexity as keyof typeof outlineGuidance] || outlineGuidance.medium;
+  
+  return `CRITICAL: Convert the INPUT IMAGE ONLY to pure black and white line art. Do NOT regenerate the scene.
 
 CONVERSION REQUIREMENTS:
 - Transform EVERY pixel to either pure black (#000000) OR pure white (#FFFFFF)
@@ -128,7 +137,7 @@ CONVERSION REQUIREMENTS:
 - Convert soft shadows to white (remove them entirely)
 - Convert dark shadows to black outlines or white (depending on context)
 - NO filled black areas - use hatching/crosshatching for any remaining dark regions
-- Bold 2-4px outlines suitable for children to color
+- ${selectedOutline}
 - If you see ANY photographic elements remaining, you FAILED
 
 SHADOW HANDLING:
@@ -153,6 +162,7 @@ CRITICAL RULES:
 4. Must be printer-ready with crisp black lines on white background
 
 OUTPUT: Clean black and white line drawing with NO gray tones or photographic shadows.`;
+};
 
 // PHASE 5: Safety filter word blacklist + PHASE 2: Cartoon trigger words
 const SAFETY_FILTER_WORDS = [
@@ -507,9 +517,10 @@ async function generateRealisticImage(
         const mergedContent = [...contentParts];
         
         if (firstTextIndex >= 0) {
+          const complexityNote = complexity ? `\n\nCOMPLEXITY LEVEL: ${complexity.toUpperCase()}` : '';
           mergedContent[firstTextIndex] = {
             type: 'text',
-            text: REALISTIC_SYSTEM_MESSAGE + '\n\n' + contentParts[firstTextIndex].text
+            text: REALISTIC_SYSTEM_MESSAGE + complexityNote + '\n\n' + contentParts[firstTextIndex].text
           };
         } else {
           mergedContent.unshift({ type: 'text', text: REALISTIC_SYSTEM_MESSAGE });
@@ -732,6 +743,9 @@ async function convertToLineArt(
         const base64Data = realisticImageBase64.replace(/^data:image\/\w+;base64,/, '');
         const inputMimeType = realisticImageBase64.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/png';
         
+        const lineArtSystemMessage = getLineArtSystemMessage(complexity);
+        console.log(`[COMPLEXITY] Line art conversion using '${complexity || 'medium'}' complexity`);
+        
         const imageResponse = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
           {
@@ -743,7 +757,7 @@ async function convertToLineArt(
             body: JSON.stringify({
               contents: [{
                 parts: [
-                  { text: LINE_ART_SYSTEM_MESSAGE + `\n\nConvert THIS PROVIDED IMAGE to clean black and white line art. Focus on converting the image you see, not recreating the scene.` },
+                  { text: lineArtSystemMessage + `\n\nConvert THIS PROVIDED IMAGE to clean black and white line art. Focus on converting the image you see, not recreating the scene.` },
                   {
                     inlineData: {
                       mimeType: inputMimeType,
@@ -993,10 +1007,21 @@ serve(async (req) => {
             close: 'CLOSE-UP: Character is prominent with detailed contextual background visible. Character occupies 60-80% of frame.'
           };
           const compositionGuidance = compositionMap[shotType] || compositionMap['medium'];
+          
+          // CRITICAL: Add complexity-specific instructions for image generation
+          const complexityImageGuidance: Record<string, string> = {
+            simple: 'SIMPLICITY REQUIRED: Large shapes, bold lines, minimal detail. Think toddler-friendly coloring. Very few elements in the scene.',
+            medium: 'MODERATE DETAIL: Balanced complexity, clear shapes with some decorative elements. Age 5-6 appropriate.',
+            detailed: 'DETAILED & INTRICATE: Complex patterns, fine details, elaborate scenes. Ages 7+ and adult level complexity.'
+          };
+          const complexityHint = complexityImageGuidance[complexity || 'medium'] || complexityImageGuidance.medium;
+          
+          console.log(`[COMPLEXITY] Applying '${complexity || 'medium'}' complexity to page ${i + 1}`);
+          console.log(`[COMPLEXITY] Guidance: ${complexityHint}`);
 
           const realisticPrompt = characterContext.length > 0 
-            ? `${compositionGuidance}\n\n${filteredPrompt}\n\nMatch the person in the reference photo exactly. Bright, high-key lighting. Detailed, colorable environment. Well-lit scene. Child-appropriate.`
-            : `${compositionGuidance}\n\n${filteredPrompt}\n\nBright, high-key lighting. Detailed, colorable environment. Well-lit scene. Child-appropriate.`;
+            ? `${compositionGuidance}\n\n${complexityHint}\n\n${filteredPrompt}\n\nMatch the person in the reference photo exactly. Bright, high-key lighting. Detailed, colorable environment. Well-lit scene. Child-appropriate.`
+            : `${compositionGuidance}\n\n${complexityHint}\n\n${filteredPrompt}\n\nBright, high-key lighting. Detailed, colorable environment. Well-lit scene. Child-appropriate.`;
 
           const contentParts = [
             ...characterContext, // Photos first for better matching

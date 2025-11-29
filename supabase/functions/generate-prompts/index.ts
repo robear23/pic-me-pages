@@ -62,13 +62,34 @@ serve(async (req) => {
 - Dynamic scenes with varied poses and expressions, but IDENTICAL character age and features`
       : '';
 
-    // Complexity level guidance
+    // CRITICAL: Complexity level guidance - this MUST be followed
     const complexityLevelMap: Record<string, string> = {
-      simple: 'COMPLEXITY: Large shapes, bold outlines, minimal detail suitable for ages 3-5. Keep designs very simple with clear, recognizable forms.',
-      medium: 'COMPLEXITY: Balanced detail with moderate complexity for ages 5-6. Include some patterns and details but keep them manageable.',
-      detailed: 'COMPLEXITY: Intricate patterns and fine details for ages 7-8 and adults. Include complex textures, backgrounds, and detailed elements.'
+      simple: `CRITICAL COMPLEXITY REQUIREMENT - SIMPLE LEVEL:
+- Use BOLD, THICK outlines (4-6px width)
+- Large, basic shapes only - think building blocks
+- MINIMAL interior details - NO patterns, textures, or fine lines
+- Suitable for ages 3-5 years old
+- Think: toddler coloring book with very few elements
+- Example: A simple apple with one leaf, no texture or shading areas`,
+      
+      medium: `CRITICAL COMPLEXITY REQUIREMENT - MEDIUM LEVEL:
+- Use MEDIUM outlines (2-4px width)
+- Include some patterns and decorative elements
+- Moderate detail level suitable for ages 5-6
+- Balance simplicity with some interesting elements
+- Example: An apple with leaf, stem, and a few background flowers`,
+      
+      detailed: `CRITICAL COMPLEXITY REQUIREMENT - DETAILED LEVEL:
+- Use FINE outlines (1-2px width)
+- Include INTRICATE patterns, textures, and many decorative elements
+- High level of detail suitable for ages 7+ and adults
+- Complex scenes with multiple layers and elements
+- Example: An apple with detailed leaf veins, texture patterns, ornate background with flowers and butterflies`
     };
     const complexityGuidance = complexityLevelMap[complexityLevel] || complexityLevelMap.medium;
+    
+    console.log(`[COMPLEXITY] Using complexity level: ${complexityLevel}`);
+    console.log(`[COMPLEXITY] Guidance: ${complexityGuidance}`);
 
     // Use custom prompt if provided, otherwise use interests
     const contentGuidance = hasCustomPrompt
@@ -76,6 +97,8 @@ serve(async (req) => {
       : `Generate scenes related to these interests: ${effectiveInterests.join(', ')}. ${effectiveInterests.length === 1 ? 'Create diverse scenarios all related to this interest.' : 'Distribute scenes evenly across the interests.'}`;
 
     const systemPrompt = `Generate ${targetPageCount} diverse scene descriptions for ${characterNames}.
+
+${complexityGuidance}
 
 COMPOSITION VARIETY (CRITICAL - Mix these shot types):
 1. WIDE SHOTS (30% of pages): Character is part of a larger scene
@@ -111,8 +134,7 @@ REQUIREMENTS:
 - Clear, straightforward descriptions (2-3 sentences maximum)
 - MUST specify shot type and environment detail level
 ${hasCharacterPhotos ? '- Character appears in different poses, angles, and scene types' : ''}
-
-${complexityGuidance}
+- CRITICAL: Follow the complexity guidance above EXACTLY
 
 ${contentGuidance}
 
