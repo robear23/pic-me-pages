@@ -57,7 +57,16 @@ const shippingSchema = z.object({
 type ShippingFormData = z.infer<typeof shippingSchema>;
 
 export function UKProductSelection() {
-  const { selectedProduct, setSelectedProduct, setShippingAddress, setStep } = useUKBookStore();
+  const { 
+    selectedProduct, 
+    setSelectedProduct, 
+    setShippingAddress, 
+    setStep,
+    selectedInterests,
+    setSelectedInterests,
+    customPrompt,
+    setCustomPrompt
+  } = useUKBookStore();
   const [showShippingForm, setShowShippingForm] = useState(false);
   const { isAdmin } = useAdmin();
   
@@ -115,6 +124,14 @@ export function UKProductSelection() {
   
   const handleAdminSkipPayment = () => {
     console.log('[ADMIN] Skipping payment and proceeding directly to generation');
+    
+    // If no interests and no custom prompt, add defaults for testing
+    if (selectedInterests.length === 0 && !customPrompt) {
+      console.log('[ADMIN] No interests/prompt set, adding default test data');
+      setSelectedInterests(['adventure', 'magic']);
+      setCustomPrompt('A fun test adventure');
+    }
+    
     setStep('uk-generating');
   };
   
