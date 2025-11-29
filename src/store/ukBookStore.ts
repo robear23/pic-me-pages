@@ -23,6 +23,12 @@ interface ShippingAddress {
   specialInstructions: string;
 }
 
+const createDefaultCharacter = (): Character => ({
+  id: Math.random().toString(36).substring(7),
+  name: '',
+  photos: [null, null, null],
+});
+
 interface UKBookState {
   currentStep: UKBookStep;
   
@@ -55,7 +61,7 @@ interface UKBookState {
 
 const initialState = {
   currentStep: 'uk-hero' as UKBookStep,
-  characters: [] as Character[],
+  characters: [createDefaultCharacter()],
   complexityLevel: 'medium' as ComplexityLevel,
   customPrompt: '',
   selectedInterests: [] as string[],
