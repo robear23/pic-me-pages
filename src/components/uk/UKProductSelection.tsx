@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Download, Book, Check } from 'lucide-react';
+import { Download, Book, Check, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,7 @@ import { useUKBookStore } from '@/store/ukBookStore';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import { useAdmin } from '@/hooks/useAdmin';
 
 // UK postcode validation regex (supports various formats)
 const UK_POSTCODE_REGEX = /^[A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2}$/i;
@@ -58,6 +59,7 @@ type ShippingFormData = z.infer<typeof shippingSchema>;
 export function UKProductSelection() {
   const { selectedProduct, setSelectedProduct, setShippingAddress, setStep } = useUKBookStore();
   const [showShippingForm, setShowShippingForm] = useState(false);
+  const { isAdmin } = useAdmin();
   
   const form = useForm<ShippingFormData>({
     resolver: zodResolver(shippingSchema),
@@ -111,6 +113,11 @@ export function UKProductSelection() {
     (selectedProduct === 'booklet' && form.formState.isValid)
   );
   
+  const handleAdminSkipPayment = () => {
+    console.log('[ADMIN] Skipping payment and proceeding directly to generation');
+    setStep('uk-generating');
+  };
+  
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -119,12 +126,9 @@ export function UKProductSelection() {
       className="container max-w-6xl mx-auto px-4 py-12"
     >
       <div className="text-center mb-12">
-        <h1 className="text-4xl font-bold text-foreground mb-4">
+        <h1 className="text-4xl font-bold text-gray-900 mb-4">
           Choose Your Format
         </h1>
-        <p className="text-xl text-muted-foreground">
-          18 personalized coloring pages - 80% more content than typical books!
-        </p>
       </div>
       
       {/* Product Cards */}
@@ -132,10 +136,10 @@ export function UKProductSelection() {
         {Object.values(UK_BOOK_OPTIONS).map((option) => (
           <Card
             key={option.type}
-            className={`relative cursor-pointer transition-all duration-300 ${
+            className={`relative cursor-pointer transition-all duration-300 hover:bg-gray-50 ${
               selectedProduct === option.type
-                ? 'ring-4 ring-primary shadow-2xl scale-105'
-                : 'hover:shadow-xl hover:scale-102'
+                ? 'ring-4 ring-primary ring-offset-2 shadow-2xl scale-105'
+                : 'hover:shadow-xl hover:scale-[1.02]'
             }`}
             onClick={() => handleProductSelect(option.type)}
           >
@@ -166,17 +170,17 @@ export function UKProductSelection() {
                 )}
               </div>
               
-              <h3 className="text-2xl font-bold mb-2 text-foreground">{option.name}</h3>
+              <h3 className="text-2xl font-bold mb-2 text-gray-900">{option.name}</h3>
               <p className="text-3xl font-bold text-primary mb-2">
                 £{option.price.toFixed(2)}
               </p>
-              <p className="text-muted-foreground mb-4">{option.description}</p>
+              <p className="text-gray-600 mb-4">{option.description}</p>
               
               <ul className="space-y-2">
                 {option.features.map((feature, i) => (
                   <li key={i} className="flex items-start gap-2 text-sm">
                     <Check className="w-4 h-4 text-green-500 flex-shrink-0 mt-0.5" />
-                    <span className="text-foreground">{feature}</span>
+                    <span className="text-gray-700">{feature}</span>
                   </li>
                 ))}
               </ul>
@@ -196,11 +200,11 @@ export function UKProductSelection() {
             className="overflow-hidden"
           >
             <Card className="p-6 mb-8">
-              <h3 className="text-2xl font-bold mb-6 text-foreground">Shipping Address</h3>
+              <h3 className="text-2xl font-bold mb-6 text-gray-900">Shipping Address</h3>
               
               <form className="grid md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
-                  <Label htmlFor="name">Full Name *</Label>
+                  <Label htmlFor="name" className="text-gray-900">Full Name *</Label>
                   <Input 
                     id="name" 
                     {...form.register('name')}
@@ -214,7 +218,7 @@ export function UKProductSelection() {
                 </div>
                 
                 <div className="md:col-span-2">
-                  <Label htmlFor="line1">Address Line 1 *</Label>
+                  <Label htmlFor="line1" className="text-gray-900">Address Line 1 *</Label>
                   <Input 
                     id="line1" 
                     {...form.register('line1')}
@@ -228,7 +232,7 @@ export function UKProductSelection() {
                 </div>
                 
                 <div className="md:col-span-2">
-                  <Label htmlFor="line2">Address Line 2</Label>
+                  <Label htmlFor="line2" className="text-gray-900">Address Line 2</Label>
                   <Input 
                     id="line2" 
                     {...form.register('line2')}
@@ -237,7 +241,7 @@ export function UKProductSelection() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="city">City *</Label>
+                  <Label htmlFor="city" className="text-gray-900">City *</Label>
                   <Input 
                     id="city" 
                     {...form.register('city')}
@@ -251,7 +255,7 @@ export function UKProductSelection() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="postcode">Postcode *</Label>
+                  <Label htmlFor="postcode" className="text-gray-900">Postcode *</Label>
                   <Input 
                     id="postcode" 
                     {...form.register('postcode')}
@@ -266,7 +270,7 @@ export function UKProductSelection() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="phone">Phone Number *</Label>
+                  <Label htmlFor="phone" className="text-gray-900">Phone Number *</Label>
                   <Input 
                     id="phone" 
                     type="tel"
@@ -282,7 +286,7 @@ export function UKProductSelection() {
                 </div>
                 
                 <div>
-                  <Label htmlFor="email">Email *</Label>
+                  <Label htmlFor="email" className="text-gray-900">Email *</Label>
                   <Input 
                     id="email" 
                     type="email"
@@ -297,7 +301,7 @@ export function UKProductSelection() {
                 </div>
                 
                 <div className="md:col-span-2">
-                  <Label htmlFor="specialInstructions">
+                  <Label htmlFor="specialInstructions" className="text-gray-900">
                     Special Delivery Instructions (Optional)
                   </Label>
                   <Textarea 
@@ -329,6 +333,19 @@ export function UKProductSelection() {
         >
           Back
         </Button>
+        
+        {isAdmin && (
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={handleAdminSkipPayment}
+            className="px-8 border-amber-500 text-amber-700 hover:bg-amber-50"
+          >
+            <Shield className="w-4 h-4 mr-2" />
+            Skip Payment (Admin)
+          </Button>
+        )}
+        
         <Button
           size="lg"
           disabled={!canContinue}
