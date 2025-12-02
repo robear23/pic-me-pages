@@ -25,14 +25,14 @@ export const Navigation = () => {
 
   return (
     <nav className="sticky top-0 z-50 w-full bg-white/10 backdrop-blur-lg border-b border-white/20 shadow-lg">
-      <div className="container mx-auto py-4 px-6">
+        <div className="container mx-auto py-6 px-6">
         <div className="flex items-center justify-between">
           {/* Logo/Brand */}
           <Link 
             to="/dashboard" 
             className="flex items-center hover:opacity-90 transition-opacity"
           >
-            <img src={logoNarrow} alt="Color Me In Books" className="h-8" />
+            <img src={logoNarrow} alt="Color Me In Books" className="h-12" />
           </Link>
 
           {/* Desktop Navigation */}

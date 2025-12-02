@@ -131,6 +131,13 @@ const getLineArtSystemMessage = (complexity?: string): string => {
   
   return `CRITICAL: Convert the INPUT IMAGE ONLY to pure black and white line art. Do NOT regenerate the scene.
 
+CRITICAL COLOR RULES - ABSOLUTE REQUIREMENT:
+- Output MUST be PURE BLACK AND WHITE ONLY
+- NO red, blue, green, yellow, orange, purple, pink, or ANY other colors allowed
+- If you see ANY color in the input, convert it to black or white
+- The final image must pass RGB variance test (R≈G≈B for all pixels)
+- ANY colored pixels will cause AUTOMATIC REJECTION
+
 CONVERSION REQUIREMENTS:
 - Transform EVERY pixel to either pure black (#000000) OR pure white (#FFFFFF)
 - ABSOLUTELY NO gray tones, shading, shadows, gradients, or photographic elements
@@ -153,15 +160,17 @@ VALIDATION CRITERIA (you will be checked):
 1. <8% of pixels can be gray (compression artifacts only)
 2. <4% of pixels can be mid-tone gray (50-200 range)
 3. >50% gray means COMPLETE FAILURE
-4. Must look like a hand-drawn coloring book page
+4. <5% colored pixels allowed (RGB variance check)
+5. Must look like a hand-drawn coloring book page
 
 CRITICAL RULES:
 1. Convert the PROVIDED IMAGE - do NOT create new image from text
 2. Binary output only: pure black OR pure white pixels
 3. Remove ALL photographic shadows by converting them to white
-4. Must be printer-ready with crisp black lines on white background
+4. Remove ALL colors - convert to grayscale then to black/white
+5. Must be printer-ready with crisp black lines on white background
 
-OUTPUT: Clean black and white line drawing with NO gray tones or photographic shadows.`;
+OUTPUT: Clean black and white line drawing with NO gray tones, NO colors, and NO photographic shadows.`;
 };
 
 // PHASE 5: Safety filter word blacklist + PHASE 2: Cartoon trigger words
@@ -232,17 +241,20 @@ const getModelForComplexity = (complexity?: string): string => {
 
 // PHASE 4: Enhanced validation with brightness boost capability
 // PHASE 2: Added gradient detection and line quality measurement
+// PHASE 6: Added color detection - reject images with actual colors (not grayscale)
 async function validateLineArt(base64Image: string, pageIndex?: number, totalPages?: number): Promise<{ 
   valid: boolean; 
   grayPixelPercentage: number;
   hasPhotographicElements: boolean;
   hasGradients: boolean;
   lineQuality: number;
+  hasColor?: boolean;
+  colorPercentage?: number;
 }> {
   try {
     const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
     if (!base64Data || base64Data.length < 100) {
-      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0 };
+      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0, hasColor: false, colorPercentage: 0 };
     }
 
     // Decode and validate image dimensions
@@ -252,7 +264,7 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
     // Safety check for valid dimensions
     if (image.width < 10 || image.height < 10) {
       console.error('Image dimensions too small:', image.width, 'x', image.height);
-      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0 };
+      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0, hasColor: false, colorPercentage: 0 };
     }
     
     let totalPixels = 0;
@@ -260,6 +272,7 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
     let nearGrayPixels = 0;
     let gradientPixels = 0; // PHASE 2: Count pixels that form gradients
     let edgePixels = 0; // PHASE 2: Count crisp black/white edges (good line art)
+    let coloredPixels = 0; // PHASE 6: Count pixels with actual color (RGB variance)
     const threshold = 30;
     
     // Sample every 100th pixel for faster validation (optimized for performance)
@@ -275,6 +288,18 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
           const g = (color >> 16) & 0xFF;
           const b = (color >> 8) & 0xFF;
           const avg = (r + g + b) / 3;
+          
+          // PHASE 6: Color detection - check if RGB channels differ significantly
+          // For grayscale images, R ≈ G ≈ B. For colored images, they differ.
+          const rg_diff = Math.abs(r - g);
+          const rb_diff = Math.abs(r - b);
+          const gb_diff = Math.abs(g - b);
+          const maxColorDiff = Math.max(rg_diff, rb_diff, gb_diff);
+          
+          // If RGB channels differ by more than 25, it's colored (not grayscale)
+          if (maxColorDiff > 25) {
+            coloredPixels++;
+          }
           
           const isBlack = r <= threshold && g <= threshold && b <= threshold;
           const isWhite = r >= (255 - threshold) && g >= (255 - threshold) && b >= (255 - threshold);
@@ -313,7 +338,7 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
     }
     
     if (totalPixels === 0) {
-      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0 };
+      return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0, hasColor: false, colorPercentage: 0 };
     }
     
     const grayPercentage = (grayPixels / totalPixels) * 100;
@@ -325,10 +350,29 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
     const edgePercentage = (edgePixels / totalPixels) * 100;
     const lineQuality = edgePercentage / Math.max(gradientPercentage, 1); // Higher = better line art
     
+    // PHASE 6: Calculate color percentage
+    const colorPercentage = (coloredPixels / totalPixels) * 100;
+    const COLOR_THRESHOLD = 5; // Max 5% colored pixels allowed
+    const hasColor = colorPercentage > COLOR_THRESHOLD;
+    
+    // PHASE 6: CRITICAL - Reject images with actual colors (not grayscale)
+    if (hasColor) {
+      console.error(`CRITICAL: Image has ${colorPercentage.toFixed(1)}% colored pixels (threshold: ${COLOR_THRESHOLD}%) - not grayscale line art!`);
+      return { 
+        valid: false, 
+        grayPixelPercentage: grayPercentage, 
+        hasPhotographicElements: true, 
+        hasGradients: true, 
+        lineQuality: 0,
+        hasColor: true,
+        colorPercentage: colorPercentage
+      };
+    }
+    
     // CRITICAL: Check for complete conversion failure
     if (grayPercentage > 50) {
       console.error(`CRITICAL: Image is ${grayPercentage.toFixed(1)}% gray - still a photo!`);
-      return { valid: false, grayPixelPercentage: grayPercentage, hasPhotographicElements: true, hasGradients: true, lineQuality: 0 };
+      return { valid: false, grayPixelPercentage: grayPercentage, hasPhotographicElements: true, hasGradients: true, lineQuality: 0, hasColor: false, colorPercentage: colorPercentage };
     }
     
     // PHASE 2: Relaxed thresholds for better success rate
@@ -353,12 +397,14 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
     
     // PHASE 1: Enhanced logging with detailed pixel analysis
     // PHASE 2: Added gradient and line quality metrics
+    // PHASE 6: Added color detection metrics
     const pageInfo = pageIndex !== undefined && totalPages !== undefined ? ` for page ${pageIndex + 1}/${totalPages}` : '';
     console.log(`[VALIDATION DETAIL] Line art validation${pageInfo}:
   - Gray pixels: ${grayPercentage.toFixed(2)}% (threshold: ${GRAY_THRESHOLD}%)
   - Mid-tone gray: ${nearGrayPercentage.toFixed(2)}% (threshold: ${MID_GRAY_THRESHOLD}%)
   - Black/White: ${blackPercentage.toFixed(2)}%
   - Gradients: ${gradientPercentage.toFixed(2)}% (threshold: ${GRADIENT_THRESHOLD}%)
+  - Colored pixels: ${colorPercentage.toFixed(2)}% (threshold: ${COLOR_THRESHOLD}%)
   - Line quality: ${lineQuality.toFixed(2)} (min: ${MIN_LINE_QUALITY})
   - Photo-like: ${isPhotoLike ? 'Yes (>50% gray)' : 'No'}
   - Borderline: ${isBorderline ? 'Yes (accepting)' : 'No'}
@@ -372,7 +418,9 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
         grayPixelPercentage: grayPercentage,
         hasPhotographicElements: false, // Override since we're accepting
         hasGradients: false,
-        lineQuality: lineQuality
+        lineQuality: lineQuality,
+        hasColor: false,
+        colorPercentage: colorPercentage
       };
     }
     
@@ -381,12 +429,14 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
       grayPixelPercentage: grayPercentage,
       hasPhotographicElements: hasPhotographicElements,
       hasGradients: hasGradients,
-      lineQuality: lineQuality
+      lineQuality: lineQuality,
+      hasColor: false,
+      colorPercentage: colorPercentage
     };
     
   } catch (error) {
     console.error('Line art validation error:', error);
-    return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0 };
+    return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0, hasColor: false, colorPercentage: 0 };
   }
 }
 
