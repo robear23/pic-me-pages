@@ -15,7 +15,7 @@ export const VideoHeroSection = () => {
           className="w-full h-full object-cover"
           poster="/placeholder.svg"
         >
-          <source src="/videos/Final-2.mp4" type="video/mp4" />
+          <source src="/videos/Final-3.mp4" type="video/mp4" />
         </video>
         {/* Dark overlay for contrast */}
         <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/40 to-background/60" />

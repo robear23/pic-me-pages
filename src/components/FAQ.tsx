@@ -79,10 +79,10 @@ export const FAQ = () => {
           viewport={{ once: true }}
           className="text-center mb-12"
         >
-          <h2 className="text-4xl md:text-5xl font-bold mb-4">
+          <h2 className="text-4xl md:text-5xl font-bold mb-4 text-white">
             Frequently Asked Questions
           </h2>
-          <p className="text-xl text-muted-foreground">
+          <p className="text-xl text-white/80">
             Everything you need to know about creating your personalized coloring book
           </p>
         </motion.div>
@@ -92,15 +92,15 @@ export const FAQ = () => {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
           transition={{ delay: 0.2 }}
-          className="bg-card border border-border rounded-2xl p-6 md:p-8 shadow-lg"
+          className="bg-gray-900/80 border border-white/20 rounded-2xl p-6 md:p-8 shadow-lg"
         >
           <Accordion type="single" collapsible className="w-full">
             {faqs.map((faq, index) => (
-              <AccordionItem key={index} value={`item-${index}`} className="border-b border-border/50 last:border-0">
-                <AccordionTrigger className="text-left text-base md:text-lg font-semibold hover:text-primary py-4">
+              <AccordionItem key={index} value={`item-${index}`} className="border-b border-white/20 last:border-0">
+                <AccordionTrigger className="text-left text-base md:text-lg font-semibold text-white hover:text-primary py-4">
                   {faq.question}
                 </AccordionTrigger>
-                <AccordionContent className="text-base text-muted-foreground leading-relaxed pb-4">
+                <AccordionContent className="text-base text-white/70 leading-relaxed pb-4">
                   {faq.answer}
                 </AccordionContent>
               </AccordionItem>
