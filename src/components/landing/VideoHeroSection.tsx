@@ -1,10 +1,11 @@
 import { motion } from 'framer-motion';
 import { Camera, Sparkles, BookOpen, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import heroTagline from '@/assets/hero-tagline.png';
 
 export const VideoHeroSection = () => {
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
+    <section className="relative min-h-[80vh] flex items-center justify-center overflow-hidden pt-32">
       {/* Video Background */}
       <div className="absolute inset-0 -z-10">
         <video
@@ -15,31 +16,33 @@ export const VideoHeroSection = () => {
           className="w-full h-full object-cover"
           poster="/placeholder.svg"
         >
-          <source src="/videos/Final-3.mp4" type="video/mp4" />
+          <source src="/videos/Final-4.mp4" type="video/mp4" />
         </video>
         {/* Dark overlay for contrast */}
         <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/40 to-background/60" />
       </div>
 
       {/* Hero Content */}
-      <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
+      <div className="relative z-10 max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5 }}
           className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8 md:p-12 text-center"
         >
-          {/* Headline */}
-          <motion.h1
+          {/* Logo/Headline Image */}
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 }}
-            className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black mb-6 leading-tight"
+            className="mb-6"
           >
-            Every Page Stars
-            <br />
-            <span className="text-primary">YOUR Child</span>
-          </motion.h1>
+            <img 
+              src={heroTagline} 
+              alt="Every Page Stars YOUR Child" 
+              className="h-20 sm:h-28 md:h-36 lg:h-44 mx-auto object-contain"
+            />
+          </motion.div>
 
           {/* Subheadline */}
           <motion.p

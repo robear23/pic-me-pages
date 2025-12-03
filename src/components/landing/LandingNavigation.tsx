@@ -31,13 +31,13 @@ export const LandingNavigation = () => {
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-20">
+          <div className="flex items-center justify-between h-28">
             {/* Logo */}
             <button
               onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
               className="flex items-center"
             >
-              <img src={logoNarrow} alt="Color Me In Books" className="h-14" />
+              <img src={logoNarrow} alt="Color Me In Books" className="h-20" />
             </button>
 
             {/* Desktop Navigation */}
