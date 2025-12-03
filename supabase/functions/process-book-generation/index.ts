@@ -1040,9 +1040,48 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
             throw new Error('Invalid image URL format');
           }
           
+          // Fetch original character photo for photo-realistic cover
+          let characterPhotoBase64: string | null = null;
+          let characterPhotoMimeType = 'image/jpeg';
+          if (photoUrls && photoUrls.length > 0) {
+            console.log('Fetching original character photo for photo-realistic cover...');
+            try {
+              const photoResponse = await fetchWithTimeout(photoUrls[0], {}, 30000);
+              if (photoResponse.ok) {
+                const photoBuffer = await photoResponse.arrayBuffer();
+                characterPhotoBase64 = encode(photoBuffer);
+                characterPhotoMimeType = photoResponse.headers.get('content-type') || 'image/jpeg';
+                console.log(`✓ Character photo fetched (${(photoBuffer.byteLength / 1024).toFixed(2)} KB)`);
+              }
+            } catch (photoErr) {
+              console.warn('Could not fetch character photo for cover:', photoErr);
+            }
+          }
+          
           // Generate front cover with 90-second timeout
           console.log('Generating front cover with AI...');
-          const frontCoverPrompt = `Transform this coloring page into a vibrant book cover with border and title.
+          
+          // Build prompt based on whether we have original character photo
+          const frontCoverPrompt = characterPhotoBase64 
+            ? `Create a PHOTO-REALISTIC children's book cover featuring the REAL child from the reference photo.
+
+CRITICAL - PHOTO-REALISTIC RENDERING:
+- The attached reference photo shows the REAL child - recreate them EXACTLY as they appear
+- Render with realistic skin texture, natural hair, accurate facial features
+- NOT cartoon, NOT illustrated, NOT anime, NOT stylized - REAL photo-realistic appearance
+- The child should look like an actual photograph, not a drawing
+
+SCENE: Place the photo-realistic child in a colorful, magical scene matching theme: ${interestsText}
+- Vibrant, playful background with theme elements
+- Professional children's book cover composition
+- The child should be the main focus, large and prominent
+
+BORDER: Add decorative border (10-15% width) with playful theme elements (${interestsText})
+
+CHARACTER NAME: Add "${characterName}" in stylized, fun decorative font - prominent and playful
+
+OUTPUT: High resolution 2588x3375 pixels at 300 DPI, print-ready cover.`
+            : `Transform this coloring page into a vibrant book cover with border and title.
 
 CRITICAL - PRESERVE CHARACTER: Keep the EXACT character appearance from the source image - especially hair color, facial features, skin tone, clothing, and ALL visual details EXACTLY as shown. DO NOT change hair color or any character features.
 
@@ -1055,6 +1094,16 @@ CHARACTER NAME: Add the name "${characterName}" in a super stylized, fun, decora
 OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at 300 DPI.`;
 
           const frontCoverStartTime = Date.now();
+          
+          // Build content parts - include character photo if available for photo-realistic rendering
+          const contentParts: any[] = [{ text: frontCoverPrompt }];
+          if (characterPhotoBase64) {
+            // Add original character photo first for reference
+            contentParts.push({ inlineData: { mimeType: characterPhotoMimeType, data: characterPhotoBase64 } });
+          }
+          // Add line art for theme/scene context
+          contentParts.push({ inlineData: { mimeType, data: base64Data } });
+          
           // PHASE 2: Use timeout wrapper for front cover (90 second timeout)
           const frontResponse = await fetchWithTimeout(
             'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
@@ -1066,10 +1115,7 @@ OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at
               },
               body: JSON.stringify({
                 contents: [{
-                  parts: [
-                    { text: frontCoverPrompt },
-                    { inlineData: { mimeType, data: base64Data } }
-                  ]
+                  parts: contentParts
                 }],
                 generationConfig: { responseModalities: ['IMAGE'] }
               }),
@@ -1191,8 +1237,7 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
               // Clear intermediate data immediately
               const pdfOutput = doc.output('arraybuffer');
               
-              // Clear doc from memory
-              (doc as any) = null;
+              // Note: doc is const so we can't reassign, but it will be GC'd when out of scope
               
               const pdfBlob = new Blob([pdfOutput], { type: 'application/pdf' });
               const coverPdfPath = `${job.user_id}/${Date.now()}-cover.pdf`;
