@@ -24,7 +24,7 @@ const steps = [
 
 export const HowItWorksSection = () => {
   return (
-    <section id="how-it-works" className="relative py-20 bg-background">
+    <section id="how-it-works" className="relative pt-8 pb-20 bg-background">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <motion.div
