@@ -1,31 +1,67 @@
 import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { ChevronLeft, ChevronRight, User, FileText, BookOpen } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
-const examples = [
+const showcaseExamples = [
   {
-    src: '/examples/complexity-simple.png',
-    alt: 'Child as astronaut floating in space with planets',
+    id: 1,
+    childPhoto: '/placeholder.svg',
+    prompt: 'A magical adventure with dinosaurs and space exploration',
+    pages: ['/placeholder.svg', '/placeholder.svg', '/placeholder.svg', '/placeholder.svg'],
   },
   {
-    src: '/examples/complexity-medium.png',
-    alt: 'Child riding a friendly dinosaur through a jungle',
+    id: 2,
+    childPhoto: '/placeholder.svg',
+    prompt: 'Princess castle adventure with friendly dragons',
+    pages: ['/placeholder.svg', '/placeholder.svg', '/placeholder.svg', '/placeholder.svg'],
   },
   {
-    src: '/examples/complexity-detailed.png',
-    alt: 'Child as an artist painting in a colorful studio',
-  },
-  {
-    src: '/examples/complexity-simple.png',
-    alt: 'Child playing soccer in a stadium',
-  },
-  {
-    src: '/examples/complexity-medium.png',
-    alt: 'Child as a princess in a magical castle',
-  },
-  {
-    src: '/examples/complexity-detailed.png',
-    alt: 'Child swimming with ocean creatures',
+    id: 3,
+    childPhoto: '/placeholder.svg',
+    prompt: 'Underwater ocean explorer discovering sea creatures',
+    pages: ['/placeholder.svg', '/placeholder.svg', '/placeholder.svg', '/placeholder.svg'],
   },
 ];
+
+const PDFViewer = ({ pages }: { pages: string[] }) => {
+  const [currentPage, setCurrentPage] = useState(0);
+
+  return (
+    <div className="flex flex-col">
+      <div className="relative aspect-[3/4] bg-white rounded-lg overflow-hidden shadow-inner">
+        <img
+          src={pages[currentPage]}
+          alt={`Page ${currentPage + 1}`}
+          className="w-full h-full object-contain"
+        />
+      </div>
+      <div className="flex items-center justify-center gap-3 mt-3">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCurrentPage(Math.max(0, currentPage - 1))}
+          disabled={currentPage === 0}
+          className="h-8 px-2"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </Button>
+        <span className="text-sm text-muted-foreground min-w-[80px] text-center">
+          Page {currentPage + 1} of {pages.length}
+        </span>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCurrentPage(Math.min(pages.length - 1, currentPage + 1))}
+          disabled={currentPage === pages.length - 1}
+          className="h-8 px-2"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+};
 
 export const ExampleGallery = () => {
   return (
@@ -51,26 +87,55 @@ export const ExampleGallery = () => {
           </p>
         </motion.div>
 
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {examples.map((example, index) => (
+        <div className="space-y-16">
+          {showcaseExamples.map((example, index) => (
             <motion.div
-              key={index}
-              initial={{ opacity: 0, scale: 0.95 }}
-              whileInView={{ opacity: 1, scale: 1 }}
+              key={example.id}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ delay: index * 0.1 }}
-              className="group relative overflow-hidden rounded-xl bg-white/10 backdrop-blur-sm border border-white/20 shadow-xl hover:shadow-2xl hover:scale-105 transition-all duration-300"
+              className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-2xl p-6 md:p-8"
             >
-              <img
-                src={example.src}
-                alt={example.alt}
-                className="w-full h-auto"
-                loading="lazy"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-background/90 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4">
-                <p className="text-sm text-foreground font-medium">
-                  {example.alt}
-                </p>
+              <div className="grid md:grid-cols-3 gap-6 md:gap-8">
+                {/* Child Photo */}
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2 mb-3">
+                    <User className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium text-muted-foreground">Child Photo</span>
+                  </div>
+                  <div className="aspect-square bg-white/10 rounded-xl overflow-hidden border border-white/20">
+                    <img
+                      src={example.childPhoto}
+                      alt="Child"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                </div>
+
+                {/* Prompt Box */}
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2 mb-3">
+                    <FileText className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium text-muted-foreground">Story Prompt</span>
+                  </div>
+                  <div className="flex-1 bg-white/10 rounded-xl p-5 border border-white/20 flex items-center">
+                    <p className="text-foreground text-lg italic leading-relaxed">
+                      "{example.prompt}"
+                    </p>
+                  </div>
+                </div>
+
+                {/* PDF Viewer */}
+                <div className="flex flex-col">
+                  <div className="flex items-center gap-2 mb-3">
+                    <BookOpen className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium text-muted-foreground">Preview Book</span>
+                  </div>
+                  <div className="bg-white/10 rounded-xl p-4 border border-white/20">
+                    <PDFViewer pages={example.pages} />
+                  </div>
+                </div>
               </div>
             </motion.div>
           ))}

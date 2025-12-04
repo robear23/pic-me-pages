@@ -11,7 +11,7 @@ const steps = [
   {
     number: '2',
     icon: Star,
-    title: 'Choose Your Adventure',
+    title: 'Choose Your Interests',
     description: 'Pick as many interests as you like—or select from our curated stories to place your child in magical adventures.',
   },
   {
@@ -63,8 +63,8 @@ export const HowItWorksSection = () => {
                 </div>
 
                 {/* Content */}
-                <h3 className="text-2xl font-bold mb-3 text-center">{step.title}</h3>
-                <p className="text-muted-foreground text-center leading-relaxed">
+                <h3 className="text-2xl font-bold mb-3 text-center text-gray-900 dark:text-gray-100">{step.title}</h3>
+                <p className="text-gray-600 dark:text-gray-400 text-center leading-relaxed">
                   {step.description}
                 </p>
               </motion.div>
