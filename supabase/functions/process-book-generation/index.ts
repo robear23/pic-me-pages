@@ -435,76 +435,98 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       console.log(`🔄 Rework mode: regenerating ${selectedPagesForRework.length} page(s): ${selectedPagesForRework.join(', ')}`);
     }
 
-    // Step 1: Generate prompts with error handling
-    console.log('📝 Starting prompt generation...');
+    // Step 1: Generate prompts with error handling (or use cached prompts on resume)
     logMemoryUsage('Before Prompts');
     await updateJobProgress(supabase, job.id, { currentStep: 'Creating story prompts', currentPage: savedPageCount, totalPages: targetPages });
     
     let prompts;
-    try {
-      const promptStartTime = Date.now();
-      
-      // Use direct HTTP fetch instead of supabase.functions.invoke to avoid relay errors
-      const supabaseUrl = Deno.env.get('SUPABASE_URL');
-      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-      
-      if (!supabaseUrl || !supabaseServiceKey) {
-        throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables');
-      }
-      
-      const promptsUrl = `${supabaseUrl}/functions/v1/generate-prompts`;
-      console.log(`📡 Calling generate-prompts via direct HTTP: ${promptsUrl}`);
-      
-      const promptsFetchResponse = await fetchWithTimeout(promptsUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseServiceKey}`,
-        },
-        body: JSON.stringify({
-          characters,
-          interests,
-          customPrompt,
-          consistentCharacters,
-          targetPageCount: targetPages,
-          complexityLevel,
-        }),
-      }, 120000); // 2 minute timeout for prompt generation
-      
-      console.log('Prompts response status:', promptsFetchResponse.status);
-      
-      if (!promptsFetchResponse.ok) {
-        const errorText = await promptsFetchResponse.text();
-        console.error('❌ Prompt generation HTTP error:', {
-          status: promptsFetchResponse.status,
-          statusText: promptsFetchResponse.statusText,
-          body: errorText.substring(0, 500)
-        });
+    
+    // Check if prompts are already cached in generation_data (from previous run)
+    const cachedPrompts = (generation_data as any).cachedPrompts;
+    
+    if (cachedPrompts && Array.isArray(cachedPrompts) && cachedPrompts.length > 0 && savedPageCount > 0) {
+      // Resuming - use cached prompts to save compute resources
+      console.log(`📝 Using ${cachedPrompts.length} cached prompts (resuming from page ${savedPageCount + 1})`);
+      prompts = cachedPrompts;
+      logMemoryUsage('After Using Cached Prompts');
+    } else {
+      // First run or no cache - generate new prompts
+      console.log('📝 Starting prompt generation...');
+      try {
+        const promptStartTime = Date.now();
         
-        // Check for specific error types
-        if (promptsFetchResponse.status === 402) {
-          throw new Error('CREDITS_DEPLETED: Not enough AI credits available. Please add more credits to continue.');
-        } else if (promptsFetchResponse.status === 429) {
-          throw new Error('RATE_LIMITED: Too many requests. Please try again in a few moments.');
-        } else {
-          throw new Error(`Prompt generation failed: HTTP ${promptsFetchResponse.status} - ${errorText.substring(0, 200)}`);
+        // Use direct HTTP fetch instead of supabase.functions.invoke to avoid relay errors
+        const supabaseUrl = Deno.env.get('SUPABASE_URL');
+        const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+        
+        if (!supabaseUrl || !supabaseServiceKey) {
+          throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables');
         }
+        
+        const promptsUrl = `${supabaseUrl}/functions/v1/generate-prompts`;
+        console.log(`📡 Calling generate-prompts via direct HTTP: ${promptsUrl}`);
+        
+        const promptsFetchResponse = await fetchWithTimeout(promptsUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            characters,
+            interests,
+            customPrompt,
+            consistentCharacters,
+            targetPageCount: targetPages,
+            complexityLevel,
+          }),
+        }, 120000); // 2 minute timeout for prompt generation
+        
+        console.log('Prompts response status:', promptsFetchResponse.status);
+        
+        if (!promptsFetchResponse.ok) {
+          const errorText = await promptsFetchResponse.text();
+          console.error('❌ Prompt generation HTTP error:', {
+            status: promptsFetchResponse.status,
+            statusText: promptsFetchResponse.statusText,
+            body: errorText.substring(0, 500)
+          });
+          
+          // Check for specific error types
+          if (promptsFetchResponse.status === 402) {
+            throw new Error('CREDITS_DEPLETED: Not enough AI credits available. Please add more credits to continue.');
+          } else if (promptsFetchResponse.status === 429) {
+            throw new Error('RATE_LIMITED: Too many requests. Please try again in a few moments.');
+          } else {
+            throw new Error(`Prompt generation failed: HTTP ${promptsFetchResponse.status} - ${errorText.substring(0, 200)}`);
+          }
+        }
+        
+        const promptsData = await promptsFetchResponse.json();
+        
+        if (!promptsData || !promptsData.prompts) {
+          console.error('❌ No prompts in response:', JSON.stringify(promptsData).substring(0, 200));
+          throw new Error('No prompts returned from generate-prompts function');
+        }
+        
+        prompts = promptsData.prompts;
+        console.log(`✓ Generated ${prompts.length} prompts in ${Date.now() - promptStartTime}ms`);
+        
+        // Cache prompts in generation_data for potential resume
+        await supabase
+          .from('book_generation_jobs')
+          .update({ 
+            generation_data: { ...generation_data, cachedPrompts: prompts }
+          })
+          .eq('id', job.id);
+        console.log('💾 Cached prompts for potential resume');
+        
+        logMemoryUsage('After Prompts');
+      } catch (error) {
+        console.error('❌ Prompt generation failed:', error);
+        await logError('Prompt Generation', error);
+        throw error;
       }
-      
-      const promptsData = await promptsFetchResponse.json();
-      
-      if (!promptsData || !promptsData.prompts) {
-        console.error('❌ No prompts in response:', JSON.stringify(promptsData).substring(0, 200));
-        throw new Error('No prompts returned from generate-prompts function');
-      }
-      
-      prompts = promptsData.prompts;
-      console.log(`✓ Generated ${prompts.length} prompts in ${Date.now() - promptStartTime}ms`);
-      logMemoryUsage('After Prompts');
-    } catch (error) {
-      console.error('❌ Prompt generation failed:', error);
-      await logError('Prompt Generation', error);
-      throw error;
     }
 
     // PHASE 1: Create book record early to enable incremental saves
