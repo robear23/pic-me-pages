@@ -1229,62 +1229,71 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
             }
           }
           
-          // Generate cover PDF if we have both covers
+          // Generate cover PDF if we have both covers AND memory is not critically high
           if (coverImageUrl && backCoverImageUrl) {
-            console.log('Generating print-ready cover PDF...');
+            // Check memory before attempting PDF generation
+            const memUsage = Deno.memoryUsage();
+            const memoryPercent = memUsage.heapUsed / memUsage.heapTotal * 100;
             
-            try {
-              const frontTest = await fetchWithTimeout(coverImageUrl, {}, 30000);
-              if (!frontTest.ok) {
-                throw new Error(`Front cover not accessible: ${frontTest.status}`);
-              }
+            if (memoryPercent > 85) {
+              console.log(`⚠️ Skipping cover PDF generation - memory at ${memoryPercent.toFixed(1)}% (threshold: 85%)`);
+              console.log('📝 Client will generate cover PDF on completion');
+            } else {
+              console.log(`Generating print-ready cover PDF... (memory: ${memoryPercent.toFixed(1)}%)`);
               
-              const backTest = await fetchWithTimeout(backCoverImageUrl, {}, 30000);
-              if (!backTest.ok) {
-                throw new Error(`Back cover not accessible: ${backTest.status}`);
-              }
-              
-              // Process front cover
-              const frontArrayBuffer = await frontTest.arrayBuffer();
-              const frontBase64 = encode(frontArrayBuffer);
-              const frontDataUrl = `data:image/png;base64,${frontBase64}`;
-              
-              // Process back cover
-              const backArrayBuffer = await backTest.arrayBuffer();
-              const backBase64 = encode(backArrayBuffer);
-              const backDataUrl = `data:image/png;base64,${backBase64}`;
-              
-              // Create PDF immediately and clear base64 data
-              const doc = new jsPDF({
-                orientation: 'landscape',
-                unit: 'in',
-                format: [17.176, 8.625],
-              });
-              
-              doc.addImage(backDataUrl, 'PNG', 0, 0, 8.588, 8.625);
-              doc.addImage(frontDataUrl, 'PNG', 8.588, 0, 8.588, 8.625);
-              
-              // Clear intermediate data immediately
-              const pdfOutput = doc.output('arraybuffer');
-              
-              // Note: doc is const so we can't reassign, but it will be GC'd when out of scope
-              
-              const pdfBlob = new Blob([pdfOutput], { type: 'application/pdf' });
-              const coverPdfPath = `${job.user_id}/${Date.now()}-cover.pdf`;
-              
-              const { error: pdfUploadError } = await supabase.storage
-                .from('pdfs')
-                .upload(coverPdfPath, pdfBlob, { contentType: 'application/pdf' });
-              
-              if (!pdfUploadError) {
-                const { data: pdfUrlData } = supabase.storage
+              try {
+                const frontTest = await fetchWithTimeout(coverImageUrl, {}, 30000);
+                if (!frontTest.ok) {
+                  throw new Error(`Front cover not accessible: ${frontTest.status}`);
+                }
+                
+                const backTest = await fetchWithTimeout(backCoverImageUrl, {}, 30000);
+                if (!backTest.ok) {
+                  throw new Error(`Back cover not accessible: ${backTest.status}`);
+                }
+                
+                // Process front cover
+                const frontArrayBuffer = await frontTest.arrayBuffer();
+                const frontBase64 = encode(frontArrayBuffer);
+                const frontDataUrl = `data:image/png;base64,${frontBase64}`;
+                
+                // Process back cover
+                const backArrayBuffer = await backTest.arrayBuffer();
+                const backBase64 = encode(backArrayBuffer);
+                const backDataUrl = `data:image/png;base64,${backBase64}`;
+                
+                // Create PDF immediately and clear base64 data
+                const doc = new jsPDF({
+                  orientation: 'landscape',
+                  unit: 'in',
+                  format: [17.176, 8.625],
+                });
+                
+                doc.addImage(backDataUrl, 'PNG', 0, 0, 8.588, 8.625);
+                doc.addImage(frontDataUrl, 'PNG', 8.588, 0, 8.588, 8.625);
+                
+                // Clear intermediate data immediately
+                const pdfOutput = doc.output('arraybuffer');
+                
+                // Note: doc is const so we can't reassign, but it will be GC'd when out of scope
+                
+                const pdfBlob = new Blob([pdfOutput], { type: 'application/pdf' });
+                const coverPdfPath = `${job.user_id}/${Date.now()}-cover.pdf`;
+                
+                const { error: pdfUploadError } = await supabase.storage
                   .from('pdfs')
-                  .getPublicUrl(coverPdfPath);
-                coverUrl = pdfUrlData.publicUrl;
-                console.log('✅ Cover PDF generated and uploaded');
+                  .upload(coverPdfPath, pdfBlob, { contentType: 'application/pdf' });
+                
+                if (!pdfUploadError) {
+                  const { data: pdfUrlData } = supabase.storage
+                    .from('pdfs')
+                    .getPublicUrl(coverPdfPath);
+                  coverUrl = pdfUrlData.publicUrl;
+                  console.log('✅ Cover PDF generated and uploaded');
+                }
+              } catch (pdfError) {
+                console.error('⚠️ Cover PDF generation failed:', pdfError);
               }
-            } catch (pdfError) {
-              console.error('⚠️ Cover PDF generation failed:', pdfError);
             }
           }
         }
