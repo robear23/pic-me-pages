@@ -443,54 +443,62 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     let prompts;
     try {
       const promptStartTime = Date.now();
-      const promptsResponse = await supabase.functions.invoke('generate-prompts', {
-        body: {
+      
+      // Use direct HTTP fetch instead of supabase.functions.invoke to avoid relay errors
+      const supabaseUrl = Deno.env.get('SUPABASE_URL');
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+      
+      if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables');
+      }
+      
+      const promptsUrl = `${supabaseUrl}/functions/v1/generate-prompts`;
+      console.log(`📡 Calling generate-prompts via direct HTTP: ${promptsUrl}`);
+      
+      const promptsFetchResponse = await fetchWithTimeout(promptsUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({
           characters,
           interests,
           customPrompt,
           consistentCharacters,
           targetPageCount: targetPages,
           complexityLevel,
-        }
-      });
-
-      // FIX #3: Log the full response for debugging
-      console.log('Prompts response:', {
-        error: promptsResponse.error,
-        data: promptsResponse.data ? 'present' : 'missing',
-        status: (promptsResponse as any).status
-      });
-
-      if (promptsResponse.error) {
-        // Extract status from error.context (FunctionsHttpError structure)
-        const errorContext = (promptsResponse.error as any).context;
-        const actualStatus = errorContext?.status || (promptsResponse.error as any).status;
-        
-        const errorDetails = {
-          message: promptsResponse.error.message,
-          status: actualStatus,
-          statusText: errorContext?.statusText,
-          details: (promptsResponse.error as any).details || JSON.stringify(promptsResponse.error)
-        };
-        
-        console.error('❌ Prompt generation error details:', errorDetails);
-        await logError('Prompt Generation', errorDetails);
+        }),
+      }, 120000); // 2 minute timeout for prompt generation
+      
+      console.log('Prompts response status:', promptsFetchResponse.status);
+      
+      if (!promptsFetchResponse.ok) {
+        const errorText = await promptsFetchResponse.text();
+        console.error('❌ Prompt generation HTTP error:', {
+          status: promptsFetchResponse.status,
+          statusText: promptsFetchResponse.statusText,
+          body: errorText.substring(0, 500)
+        });
         
         // Check for specific error types
-        if (actualStatus === 402) {
+        if (promptsFetchResponse.status === 402) {
           throw new Error('CREDITS_DEPLETED: Not enough AI credits available. Please add more credits to continue.');
-        } else if (actualStatus === 429) {
+        } else if (promptsFetchResponse.status === 429) {
           throw new Error('RATE_LIMITED: Too many requests. Please try again in a few moments.');
         } else {
-          throw new Error(`Prompt generation failed: ${errorDetails.message} (Status: ${actualStatus || 'unknown'})`);
+          throw new Error(`Prompt generation failed: HTTP ${promptsFetchResponse.status} - ${errorText.substring(0, 200)}`);
         }
       }
       
-      if (!promptsResponse.data || !promptsResponse.data.prompts) {
+      const promptsData = await promptsFetchResponse.json();
+      
+      if (!promptsData || !promptsData.prompts) {
+        console.error('❌ No prompts in response:', JSON.stringify(promptsData).substring(0, 200));
         throw new Error('No prompts returned from generate-prompts function');
       }
       
-      prompts = promptsResponse.data.prompts;
+      prompts = promptsData.prompts;
       console.log(`✓ Generated ${prompts.length} prompts in ${Date.now() - promptStartTime}ms`);
       logMemoryUsage('After Prompts');
     } catch (error) {
