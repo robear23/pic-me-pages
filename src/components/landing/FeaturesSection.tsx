@@ -26,7 +26,7 @@ const features = [
 
 export const FeaturesSection = () => {
   return (
-    <section className="relative py-16 bg-muted/30">
+    <section className="relative py-16 bg-gradient-to-b from-muted/50 to-background">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {features.map((feature, index) => {
@@ -38,13 +38,15 @@ export const FeaturesSection = () => {
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: index * 0.1 }}
-                className="bg-card border border-border rounded-xl p-6 shadow-md hover:shadow-lg transition-shadow"
+                className="group relative text-center p-6"
               >
-                <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
-                  <Icon className="w-6 h-6 text-primary" />
+                {/* Icon with gradient background */}
+                <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                  <Icon className="w-8 h-8 text-primary-foreground" />
                 </div>
-                <h3 className="text-lg font-bold mb-2 text-gray-900 dark:text-gray-100">{feature.title}</h3>
-                <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">
+                
+                <h3 className="text-lg font-bold mb-2 text-foreground">{feature.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
                   {feature.description}
                 </p>
               </motion.div>

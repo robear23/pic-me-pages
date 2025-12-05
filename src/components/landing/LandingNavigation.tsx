@@ -27,7 +27,9 @@ export const LandingNavigation = () => {
     <>
       <nav
         className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-          isScrolled ? 'bg-background/95 backdrop-blur-md shadow-lg' : 'bg-background/80 backdrop-blur-sm'
+          isScrolled 
+            ? 'bg-card/70 backdrop-blur-xl border-b border-border/30 shadow-lg' 
+            : 'bg-card/30 backdrop-blur-lg border-b border-border/20'
         }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
