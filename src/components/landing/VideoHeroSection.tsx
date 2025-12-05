@@ -18,9 +18,9 @@ export const VideoHeroSection = () => {
   return (
     <section className="relative min-h-[80vh] flex items-center justify-center overflow-hidden pt-32">
       {/* Video Background */}
-      <div className="absolute inset-0 -z-10">
+      <div className="absolute inset-0 z-0">
         {/* Fallback gradient if video doesn't load */}
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-background to-secondary/20" />
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/30 via-background to-secondary/30" />
         
         <video
           ref={videoRef}
@@ -28,12 +28,12 @@ export const VideoHeroSection = () => {
           loop
           muted
           playsInline
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-cover opacity-80"
         >
           <source src="/videos/Final-4.mp4" type="video/mp4" />
         </video>
-        {/* Lighter overlay for better video visibility */}
-        <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/20 to-background/40" />
+        {/* Subtle overlay for readability */}
+        <div className="absolute inset-0 bg-background/40" />
       </div>
 
       {/* Hero Content */}
@@ -42,7 +42,7 @@ export const VideoHeroSection = () => {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5 }}
-          className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8 md:p-12 text-center"
+          className="bg-card/80 backdrop-blur-xl border border-border/50 rounded-3xl shadow-2xl p-8 md:p-12 text-center"
         >
           {/* Logo/Headline Image */}
           {/* Logo */}
