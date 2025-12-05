@@ -41,7 +41,7 @@ export const FeaturesSection = () => {
                 className="group relative text-center p-6"
               >
                 {/* Icon with gradient background */}
-                <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                <div className="w-16 h-16 mx-auto mb-4 gradient-rainbow rounded-full flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
                   <Icon className="w-8 h-8 text-primary-foreground" />
                 </div>
                 

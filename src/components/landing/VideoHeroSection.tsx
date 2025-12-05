@@ -42,7 +42,7 @@ export const VideoHeroSection = () => {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5 }}
-          className="bg-card/80 backdrop-blur-xl border border-border/50 rounded-3xl shadow-2xl p-8 md:p-12 text-center"
+          className="bg-background/70 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8 md:p-12 text-center"
         >
           {/* Logo/Headline Image */}
           {/* Logo */}
@@ -99,7 +99,7 @@ export const VideoHeroSection = () => {
             <Button
               onClick={() => window.location.href = '/auth'}
               size="lg"
-              className="bg-gradient-to-r from-primary to-secondary hover:scale-105 transition-all duration-300 shadow-xl text-lg px-8 py-6 rounded-full font-semibold"
+              className="gradient-rainbow hover:scale-105 transition-all duration-300 shadow-xl text-lg px-8 py-6 rounded-full font-semibold text-white"
             >
               Create Your Book Now
               <ArrowRight className="ml-2 w-5 h-5" />

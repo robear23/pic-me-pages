@@ -106,6 +106,19 @@ All colors MUST be HSL.
   }
 }
 
+/* Rainbow gradient utility */
+.gradient-rainbow {
+  background: linear-gradient(
+    90deg,
+    hsl(0 100% 60%),
+    hsl(30 100% 60%),
+    hsl(60 100% 50%),
+    hsl(120 100% 40%),
+    hsl(200 100% 50%),
+    hsl(280 100% 60%)
+  );
+}
+
 @layer base {
   * {
     @apply border-border;
