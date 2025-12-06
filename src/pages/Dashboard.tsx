@@ -18,7 +18,6 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { repairBookPdf, toDataUrl } from '@/lib/repairPdf';
 import { jsPDF } from 'jspdf';
 import { validateBookCompleteness, getMissingComponents, getBookStatusLabel, findIncompleteBooks as getIncompleteBooksList } from '@/lib/bookValidation';
-
 interface Book {
   id: string;
   character_name: string;
@@ -43,7 +42,6 @@ interface Book {
   selected_binding_type?: string;
   selected_pod_package_id?: string;
 }
-
 interface Order {
   id: string;
   book_id: string;
@@ -52,7 +50,6 @@ interface Order {
   created_at: string;
   price_paid: number;
 }
-
 interface RetryCredit {
   id: string;
   book_id: string | null;
@@ -60,10 +57,13 @@ interface RetryCredit {
   granted_at: string;
   used_at: string | null;
 }
-
 const Dashboard = () => {
-  const { user } = useAuth();
-  const { isAdmin } = useAdmin();
+  const {
+    user
+  } = useAuth();
+  const {
+    isAdmin
+  } = useAdmin();
   const navigate = useNavigate();
   const [books, setBooks] = useState<Book[]>([]);
   const [orders, setOrders] = useState<Record<string, Order[]>>({});
@@ -77,7 +77,10 @@ const Dashboard = () => {
   const [deletingBookId, setDeletingBookId] = useState<string | null>(null);
   const [selectedBookPages, setSelectedBookPages] = useState<any[] | null>(null);
   const [loadingPages, setLoadingPages] = useState(false);
-  const [pdfProgress, setPdfProgress] = useState<{ current: number; total: number } | null>(null);
+  const [pdfProgress, setPdfProgress] = useState<{
+    current: number;
+    total: number;
+  } | null>(null);
   const [downloadingBookId, setDownloadingBookId] = useState<string | null>(null);
   const [downloadingCoverId, setDownloadingCoverId] = useState<string | null>(null);
   const [autoFixAttempted, setAutoFixAttempted] = useState<Set<string>>(new Set());
@@ -85,7 +88,6 @@ const Dashboard = () => {
   const [selectedPageImage, setSelectedPageImage] = useState<string | null>(null);
   const [selectedPageIndex, setSelectedPageIndex] = useState<number | null>(null);
   const [isSendingTestEmail, setIsSendingTestEmail] = useState(false);
-
   useEffect(() => {
     if (user) {
       console.log('[Dashboard] User authenticated, loading books...', user.id);
@@ -101,24 +103,18 @@ const Dashboard = () => {
   useEffect(() => {
     const fixIncompleteBooks = async () => {
       // Only process books that haven't been attempted yet
-      const booksNeedingPdfs = books.filter(book => 
-        book.status === 'completed' && 
-        (!book.pdf_url || !book.cover_url) &&
-        book.pages &&
-        Array.isArray(book.pages) &&
-        book.pages.length > 0 &&
-        !isGeneratingPdf && // Don't trigger if already generating
-        !autoFixAttempted.has(book.id) // Don't retry if already attempted
+      const booksNeedingPdfs = books.filter(book => book.status === 'completed' && (!book.pdf_url || !book.cover_url) && book.pages && Array.isArray(book.pages) && book.pages.length > 0 && !isGeneratingPdf &&
+      // Don't trigger if already generating
+      !autoFixAttempted.has(book.id) // Don't retry if already attempted
       );
-
       if (booksNeedingPdfs.length > 0) {
         console.log(`🔧 Found ${booksNeedingPdfs.length} completed books missing PDFs`);
-        
+
         // Mark all these books as attempted immediately to prevent retries
         const newAttempted = new Set(autoFixAttempted);
         booksNeedingPdfs.forEach(book => newAttempted.add(book.id));
         setAutoFixAttempted(newAttempted);
-        
+
         // Fix them one at a time to avoid overwhelming the system
         for (const book of booksNeedingPdfs) {
           try {
@@ -143,7 +139,7 @@ const Dashboard = () => {
     if (books.length > 0) {
       const newAttempted = new Set(autoFixAttempted);
       let changed = false;
-      
+
       // Remove books from attempted tracking if they now need PDFs again
       autoFixAttempted.forEach(bookId => {
         const book = books.find(b => b.id === bookId);
@@ -153,7 +149,6 @@ const Dashboard = () => {
           console.log(`🔧 Clearing auto-fix attempt for ${bookId} - book needs PDFs again`);
         }
       });
-      
       if (changed) {
         setAutoFixAttempted(newAttempted);
       }
@@ -164,30 +159,24 @@ const Dashboard = () => {
   useEffect(() => {
     const syncFailedJobs = async () => {
       if (!user) return;
-      
+
       // Find books stuck in "generating" state
       const generatingBooks = books.filter(b => b.status === 'generating');
       if (generatingBooks.length === 0) return;
-      
       try {
         // Check if their jobs have actually failed
-        const { data: failedJobs } = await supabase
-          .from('book_generation_jobs')
-          .select('id, book_id, status, error_message')
-          .in('book_id', generatingBooks.map(b => b.id))
-          .eq('status', 'failed');
-        
+        const {
+          data: failedJobs
+        } = await supabase.from('book_generation_jobs').select('id, book_id, status, error_message').in('book_id', generatingBooks.map(b => b.id)).eq('status', 'failed');
         if (failedJobs && failedJobs.length > 0) {
           console.log(`🔧 Found ${failedJobs.length} books with failed jobs, updating status...`);
-          
+
           // Update book statuses to failed
           const bookIdsToUpdate = failedJobs.map(j => j.book_id).filter(Boolean);
           if (bookIdsToUpdate.length > 0) {
-            await supabase
-              .from('books')
-              .update({ status: 'failed' })
-              .in('id', bookIdsToUpdate);
-            
+            await supabase.from('books').update({
+              status: 'failed'
+            }).in('id', bookIdsToUpdate);
             toast.info(`${bookIdsToUpdate.length} incomplete book(s) marked as failed. You have retry credits available.`);
             loadBooks(); // Refresh the book list
           }
@@ -196,7 +185,6 @@ const Dashboard = () => {
         console.error('Failed to sync job statuses:', error);
       }
     };
-    
     syncFailedJobs();
   }, [books.map(b => b.id).join(','), user]);
 
@@ -205,59 +193,46 @@ const Dashboard = () => {
     if (!user) return;
 
     // Subscribe to job status changes
-    const jobChannel = supabase
-      .channel('job-status-changes')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'book_generation_jobs',
-          filter: `user_id=eq.${user.id}`
-        },
-        (payload) => {
-          console.log('Job status changed:', payload);
-          const job = payload.new as any;
-          
-          if (job.status === 'failed' && job.book_id) {
-            toast.error(`Book generation failed: ${job.error_message}`);
-            loadBooks(); // Refresh to show failed status
-            loadRetryCredits(); // Refresh retry credits
-          } else if (job.status === 'completed' && job.book_id) {
-            toast.success('Book generation completed!');
-            loadBooks(); // Refresh to show completed book
-          }
-        }
-      )
-      .subscribe();
-
+    const jobChannel = supabase.channel('job-status-changes').on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'book_generation_jobs',
+      filter: `user_id=eq.${user.id}`
+    }, payload => {
+      console.log('Job status changed:', payload);
+      const job = payload.new as any;
+      if (job.status === 'failed' && job.book_id) {
+        toast.error(`Book generation failed: ${job.error_message}`);
+        loadBooks(); // Refresh to show failed status
+        loadRetryCredits(); // Refresh retry credits
+      } else if (job.status === 'completed' && job.book_id) {
+        toast.success('Book generation completed!');
+        loadBooks(); // Refresh to show completed book
+      }
+    }).subscribe();
     return () => {
       supabase.removeChannel(jobChannel);
     };
   }, [user]);
-
   const loadBooks = async () => {
     if (!user) {
       console.log('[Dashboard] Cannot load books - no user');
       return;
     }
-
     console.log('[Dashboard] Starting books fetch for user:', user.id);
     setLoading(true);
     setError(null);
-
     try {
-      const { data, error } = await supabase
-        .from('books')
-        .select('id, character_name, interests, custom_prompt, pdf_url, cover_url, cover_image_url, back_cover_image_url, status, created_at, user_id, pages, missing_covers, missing_components, selected_page_count, reworked_page_numbers, complexity, selected_binding_type, selected_pod_package_id, consistent_characters, photo_urls')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-
+      const {
+        data,
+        error
+      } = await supabase.from('books').select('id, character_name, interests, custom_prompt, pdf_url, cover_url, cover_image_url, back_cover_image_url, status, created_at, user_id, pages, missing_covers, missing_components, selected_page_count, reworked_page_numbers, complexity, selected_binding_type, selected_pod_package_id, consistent_characters, photo_urls').eq('user_id', user.id).order('created_at', {
+        ascending: false
+      });
       if (error) {
         console.error('[Dashboard] Supabase error loading books:', error);
         throw error;
       }
-      
       console.log('[Dashboard] Books loaded successfully:', data?.length || 0);
       setBooks(data || []);
     } catch (error: any) {
@@ -269,45 +244,39 @@ const Dashboard = () => {
       setLoading(false);
     }
   };
-
   const handleRetry = () => {
     console.log('[Dashboard] Manual retry triggered');
     setRetryCount(prev => prev + 1);
   };
-
   const loadRetryCredits = async () => {
     if (!user) return;
-    
     try {
-      const { data, error } = await supabase
-        .from('retry_credits')
-        .select('*')
-        .eq('user_id', user.id)
-        .is('used_at', null)
-        .order('granted_at', { ascending: false });
-      
+      const {
+        data,
+        error
+      } = await supabase.from('retry_credits').select('*').eq('user_id', user.id).is('used_at', null).order('granted_at', {
+        ascending: false
+      });
       if (error) throw error;
       setRetryCredits(data || []);
     } catch (error) {
       console.error('Failed to load retry credits:', error);
     }
   };
-
   const fetchOrders = async () => {
     try {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('*')
-        .eq('user_id', user?.id)
-        .eq('order_type', 'physical')
-        .neq('lulu_status', 'rejected') // Filter out rejected orders
-        .order('created_at', { ascending: false });
-
+      const {
+        data,
+        error
+      } = await supabase.from('orders').select('*').eq('user_id', user?.id).eq('order_type', 'physical').neq('lulu_status', 'rejected') // Filter out rejected orders
+      .order('created_at', {
+        ascending: false
+      });
       if (error) throw error;
 
       // Group orders by book_id
       const ordersByBook: Record<string, Order[]> = {};
-      data?.forEach((order) => {
+      data?.forEach(order => {
         if (order.book_id) {
           if (!ordersByBook[order.book_id]) {
             ordersByBook[order.book_id] = [];
@@ -315,13 +284,11 @@ const Dashboard = () => {
           ordersByBook[order.book_id].push(order as Order);
         }
       });
-
       setOrders(ordersByBook);
     } catch (error: any) {
       console.error('Error fetching orders:', error);
     }
   };
-
   const handleSendTestEmail = async () => {
     if (!user?.email) {
       toast.error("No user email available");
@@ -334,20 +301,16 @@ const Dashboard = () => {
       toast.error("No orders available to test");
       return;
     }
-
     setIsSendingTestEmail(true);
     try {
       const latestOrder = allOrders[0];
-      
+
       // Fetch book details
-      const { data: book, error: bookError } = await supabase
-        .from('books')
-        .select('character_name, interests')
-        .eq('id', latestOrder.book_id)
-        .single();
-
+      const {
+        data: book,
+        error: bookError
+      } = await supabase.from('books').select('character_name, interests').eq('id', latestOrder.book_id).single();
       if (bookError) throw bookError;
-
       console.log('Sending test email with:', {
         templateName: 'order_confirmation',
         recipientEmail: user.email,
@@ -355,7 +318,9 @@ const Dashboard = () => {
       });
 
       // Send test email
-      const { error: emailError } = await supabase.functions.invoke('send-email', {
+      const {
+        error: emailError
+      } = await supabase.functions.invoke('send-email', {
         body: {
           templateName: 'order_confirmation',
           recipientEmail: user.email,
@@ -367,9 +332,7 @@ const Dashboard = () => {
           }
         }
       });
-
       if (emailError) throw emailError;
-
       toast.success(`Test email sent to ${user.email}`);
     } catch (error: any) {
       console.error('Error sending test email:', error);
@@ -378,69 +341,46 @@ const Dashboard = () => {
       setIsSendingTestEmail(false);
     }
   };
-
   const findDuplicateBooks = () => {
     const groups: Record<string, Book[]> = {};
-    
     books.forEach(book => {
       const key = `${book.character_name}-${book.interests.join(',')}-${book.status}`;
       if (!groups[key]) groups[key] = [];
       groups[key].push(book);
     });
-
     return Object.values(groups).filter(group => group.length > 1);
   };
-
   const getIncompleteBooks = () => {
     return getIncompleteBooksList(books);
   };
-  
   const getPartialBooks = () => {
     // Books with status 'partial' or explicitly marked as missing covers
-    return books.filter(book => 
-      book.status === 'partial' || book.missing_covers
-    );
+    return books.filter(book => book.status === 'partial' || book.missing_covers);
   };
-
   const handleCleanupIncomplete = async () => {
     const incompleteBooks = getIncompleteBooks();
     if (incompleteBooks.length === 0) return;
-
-    const systemFailures = incompleteBooks.filter(book => 
-      book.status === 'partial' || (book.status === 'failed' && !book.pdf_url)
-    );
-
-    const message = systemFailures.length > 0
-      ? `Delete ${incompleteBooks.length} incomplete book(s)? ${systemFailures.length} appear to be system failures and will grant you retry credits.`
-      : `Delete ${incompleteBooks.length} incomplete book(s)? These books are missing PDFs or cover images and cannot be used.`;
-
+    const systemFailures = incompleteBooks.filter(book => book.status === 'partial' || book.status === 'failed' && !book.pdf_url);
+    const message = systemFailures.length > 0 ? `Delete ${incompleteBooks.length} incomplete book(s)? ${systemFailures.length} appear to be system failures and will grant you retry credits.` : `Delete ${incompleteBooks.length} incomplete book(s)? These books are missing PDFs or cover images and cannot be used.`;
     const confirmed = window.confirm(message);
     if (!confirmed) return;
-
     try {
       // Grant retry credits for system failures
       if (systemFailures.length > 0 && user) {
         const creditInserts = systemFailures.map(book => ({
           user_id: user.id,
           book_id: book.id,
-          reason: `System failure during generation - ${book.status} status`,
+          reason: `System failure during generation - ${book.status} status`
         }));
-
         await supabase.from('retry_credits').insert(creditInserts);
       }
 
       // Delete the incomplete books
-      const { error } = await supabase
-        .from('books')
-        .delete()
-        .in('id', incompleteBooks.map(b => b.id));
-
+      const {
+        error
+      } = await supabase.from('books').delete().in('id', incompleteBooks.map(b => b.id));
       if (error) throw error;
-
-      const creditsMessage = systemFailures.length > 0 
-        ? ` Granted ${systemFailures.length} retry credit(s).`
-        : '';
-      
+      const creditsMessage = systemFailures.length > 0 ? ` Granted ${systemFailures.length} retry credit(s).` : '';
       toast.success(`Deleted ${incompleteBooks.length} incomplete book(s).${creditsMessage}`);
       loadBooks();
       loadRetryCredits();
@@ -449,27 +389,19 @@ const Dashboard = () => {
       toast.error('Failed to delete incomplete books');
     }
   };
-
   const loadBookPages = async (bookId: string) => {
     setLoadingPages(true);
     try {
       // Set a timeout to prevent hanging on large pages data
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Loading pages timed out after 10 seconds')), 10000)
-      );
-      
-      const fetchPromise = supabase
-        .from('books')
-        .select('pages')
-        .eq('id', bookId)
-        .single();
-      
-      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]) as any;
-      
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Loading pages timed out after 10 seconds')), 10000));
+      const fetchPromise = supabase.from('books').select('pages').eq('id', bookId).single();
+      const {
+        data,
+        error
+      } = (await Promise.race([fetchPromise, timeoutPromise])) as any;
       if (error) throw error;
-      
       const pages = data?.pages;
-      
+
       // Validate that pages contain URLs, not base64 data
       if (Array.isArray(pages) && pages.length > 0) {
         const firstPage = pages[0];
@@ -480,65 +412,58 @@ const Dashboard = () => {
           return;
         }
       }
-      
       setSelectedBookPages(Array.isArray(pages) ? pages : []);
     } catch (error: any) {
       console.error('[Dashboard] Failed to load book pages:', error);
-      
       if (error.message?.includes('timed out')) {
         toast.error('Book pages are too large to load. Please delete and regenerate this book.');
       } else {
         toast.error('Failed to load book pages');
       }
-      
       setSelectedBookPages([]);
       setSelectedBook(null);
     } finally {
       setLoadingPages(false);
     }
   };
-
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate('/');
   };
-
   const handleDownloadPDF = async (pdfUrl: string, bookName: string) => {
     try {
       toast.info('Starting download...');
-      
+
       // Fetch the PDF from Supabase Storage
       const response = await fetch(pdfUrl);
-      
       if (!response.ok) {
         throw new Error('Failed to fetch PDF');
       }
-      
+
       // Get the PDF as a blob
       const blob = await response.blob();
-      
+
       // Create a local blob URL
       const blobUrl = URL.createObjectURL(blob);
-      
+
       // Create link and trigger download
       const link = document.createElement('a');
       link.href = blobUrl;
       link.download = `${bookName}-coloring-book.pdf`;
       document.body.appendChild(link);
       link.click();
-      
+
       // Clean up
       document.body.removeChild(link);
-      
+
       // Revoke the blob URL after a short delay to ensure download started
       setTimeout(() => {
         URL.revokeObjectURL(blobUrl);
       }, 100);
-      
       toast.success('Download complete!');
     } catch (error: any) {
       console.error('Download error:', error);
-      
+
       // Better error messages
       if (error.message?.includes('Failed to fetch')) {
         toast.error('Unable to download. Please check your internet connection and try again.');
@@ -547,7 +472,7 @@ const Dashboard = () => {
       } else {
         toast.error('Failed to download PDF. Please try again or contact support.');
       }
-      
+
       // Offer retry option
       setTimeout(() => {
         if (window.confirm('Download failed. Would you like to retry?')) {
@@ -556,7 +481,6 @@ const Dashboard = () => {
       }, 1000);
     }
   };
-
   const handleGeneratePdf = async (book: Book, quickPreview = false) => {
     if (!book.pages || book.pages.length === 0) {
       toast.error('No pages available to generate PDF');
@@ -568,46 +492,43 @@ const Dashboard = () => {
       console.log('⚠️ PDF generation already in progress for this book');
       return null;
     }
-
     setIsGeneratingPdf(book.id);
-    setPdfProgress({ current: 0, total: book.pages.length });
-    
+    setPdfProgress({
+      current: 0,
+      total: book.pages.length
+    });
+
     // Create a timeout promise (2 minutes)
     const timeoutPromise = new Promise<null>((_, reject) => {
       setTimeout(() => reject(new Error('PDF generation timed out after 2 minutes')), 120000);
     });
-
     try {
       toast.info(quickPreview ? 'Generating quick preview PDF...' : 'Generating PDF with padding...');
-      
       const pdfPromise = repairBookPdf(book.id, book.pages, {
         minPages: quickPreview ? 0 : 24,
         pageCount: quickPreview ? book.pages.length : undefined,
         onProgress: (current, total) => {
-          setPdfProgress({ current, total });
+          setPdfProgress({
+            current,
+            total
+          });
         }
       });
-
       const pdfUrl = await Promise.race([pdfPromise, timeoutPromise]);
-      
       if (!pdfUrl) {
         throw new Error('PDF generation failed');
       }
-      
+
       // Update local state
-      setBooks(prevBooks => 
-        prevBooks.map(b => b.id === book.id ? { ...b, pdf_url: pdfUrl } : b)
-      );
-      
+      setBooks(prevBooks => prevBooks.map(b => b.id === book.id ? {
+        ...b,
+        pdf_url: pdfUrl
+      } : b));
       toast.success('PDF generated successfully!');
       return pdfUrl;
     } catch (error: any) {
       console.error('❌ Error generating PDF:', error);
-      
-      const errorMessage = error.message?.includes('timed out') 
-        ? 'PDF generation took too long. Please try again or contact support.'
-        : error.message || 'Failed to generate PDF';
-      
+      const errorMessage = error.message?.includes('timed out') ? 'PDF generation took too long. Please try again or contact support.' : error.message || 'Failed to generate PDF';
       toast.error(errorMessage);
       return null;
     } finally {
@@ -615,42 +536,38 @@ const Dashboard = () => {
       setPdfProgress(null);
     }
   };
-
   const handleQuickPreview = async (book: Book) => {
     if (!book.pages || book.pages.length === 0) {
       toast.error('No pages available');
       return;
     }
-    
     setIsGeneratingPdf(book.id);
-    setPdfProgress({ current: 0, total: book.pages.length });
-    
+    setPdfProgress({
+      current: 0,
+      total: book.pages.length
+    });
     try {
       toast.info('Generating preview...');
-      
+
       // Generate PDF directly in browser without uploading to Supabase
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'in',
-        format: 'letter',
+        format: 'letter'
       });
-      
       for (let i = 0; i < book.pages.length; i++) {
         if (i > 0) pdf.addPage();
-        
-        setPdfProgress({ current: i + 1, total: book.pages.length });
-        
+        setPdfProgress({
+          current: i + 1,
+          total: book.pages.length
+        });
         const page = book.pages[i];
-        const dataUrl = page.imageUrl.startsWith('data:') 
-          ? page.imageUrl 
-          : await toDataUrl(page.imageUrl);
-        
+        const dataUrl = page.imageUrl.startsWith('data:') ? page.imageUrl : await toDataUrl(page.imageUrl);
         pdf.addImage(dataUrl, 'PNG', 0, 0, 8.5, 11);
       }
-      
+
       // Download directly without uploading to Supabase
       pdf.save(`${book.character_name}-preview.pdf`);
-      
       toast.success('Preview downloaded!');
     } catch (error: any) {
       console.error('Error generating preview:', error);
@@ -660,166 +577,140 @@ const Dashboard = () => {
       setPdfProgress(null);
     }
   };
-
   const handleRetryCoverGeneration = async (book: Book, e: React.MouseEvent) => {
     e.stopPropagation();
-    
+
     // DEBUG: Log which book we're regenerating
     console.log('🎨 Regenerating cover for:', {
       bookId: book.id,
       characterName: book.character_name,
       createdAt: book.created_at
     });
-    
+
     // Confirm with user which book they're regenerating
     const confirmMsg = `Regenerate cover for "${book.character_name}'s Coloring Book"?\n\nThis will create a new cover with the character name prominently displayed.`;
     if (!confirm(confirmMsg)) {
       return;
     }
-    
     if (!book.pages || book.pages.length === 0) {
       toast.error('Cannot generate covers without pages');
       return;
     }
-    
     setRetryingCoverId(book.id);
-    
     try {
       toast.info('Retrying cover generation...');
-      
       const firstPageImageUrl = book.pages[0]?.imageUrl;
       if (!firstPageImageUrl) {
         throw new Error('First page image not found');
       }
-      
+
       // Call generate-cover edge function
-      const { data, error } = await supabase.functions.invoke('generate-cover', {
+      const {
+        data,
+        error
+      } = await supabase.functions.invoke('generate-cover', {
         body: {
           characterName: book.character_name,
           interests: book.interests,
           photoUrl: null,
           pageCount: book.pages.length,
-          firstPageImageUrl,
+          firstPageImageUrl
         }
       });
-      
       if (error) {
         throw new Error(error.message || 'Cover generation failed');
       }
-      
       if (!data?.frontCover || !data?.backCover) {
         throw new Error('Cover generation did not return images');
       }
-      
+
       // Convert base64 to blobs and upload to storage
       const frontCoverBlob = await fetch(data.frontCover).then(r => r.blob());
       const backCoverBlob = await fetch(data.backCover).then(r => r.blob());
-      
       const timestamp = Date.now();
       const frontCoverPath = `${user!.id}/${timestamp}-cover.png`;
       const backCoverPath = `${user!.id}/${timestamp}-back-cover.png`;
-      
+
       // Upload front cover
-      const { error: frontUploadError } = await supabase.storage
-        .from('generated-pages')
-        .upload(frontCoverPath, frontCoverBlob, {
-          contentType: 'image/png',
-          cacheControl: '3600',
-          upsert: false
-        });
-      
+      const {
+        error: frontUploadError
+      } = await supabase.storage.from('generated-pages').upload(frontCoverPath, frontCoverBlob, {
+        contentType: 'image/png',
+        cacheControl: '3600',
+        upsert: false
+      });
       if (frontUploadError) {
         throw new Error('Front cover upload failed: ' + frontUploadError.message);
       }
-      
-      const { data: frontUrlData } = supabase.storage
-        .from('generated-pages')
-        .getPublicUrl(frontCoverPath);
-      
+      const {
+        data: frontUrlData
+      } = supabase.storage.from('generated-pages').getPublicUrl(frontCoverPath);
+
       // Upload back cover
-      const { error: backUploadError } = await supabase.storage
-        .from('generated-pages')
-        .upload(backCoverPath, backCoverBlob, {
-          contentType: 'image/png',
-          cacheControl: '3600',
-          upsert: false
-        });
-      
+      const {
+        error: backUploadError
+      } = await supabase.storage.from('generated-pages').upload(backCoverPath, backCoverBlob, {
+        contentType: 'image/png',
+        cacheControl: '3600',
+        upsert: false
+      });
       if (backUploadError) {
         throw new Error('Back cover upload failed: ' + backUploadError.message);
       }
-      
-      const { data: backUrlData } = supabase.storage
-        .from('generated-pages')
-        .getPublicUrl(backCoverPath);
-      
+      const {
+        data: backUrlData
+      } = supabase.storage.from('generated-pages').getPublicUrl(backCoverPath);
+
       // Update book record with new covers
-      const { error: updateError } = await supabase
-        .from('books')
-        .update({
-          cover_image_url: frontUrlData.publicUrl,
-          back_cover_image_url: backUrlData.publicUrl,
-          missing_covers: false,
-          missing_components: [],
-          status: 'completed',
-        })
-        .eq('id', book.id);
-      
+      const {
+        error: updateError
+      } = await supabase.from('books').update({
+        cover_image_url: frontUrlData.publicUrl,
+        back_cover_image_url: backUrlData.publicUrl,
+        missing_covers: false,
+        missing_components: [],
+        status: 'completed'
+      }).eq('id', book.id);
       if (updateError) {
         throw new Error('Failed to update book: ' + updateError.message);
       }
-      
+
       // Update local state
-      setBooks(prevBooks => 
-        prevBooks.map(b => 
-          b.id === book.id 
-            ? { 
-                ...b, 
-                cover_image_url: frontUrlData.publicUrl,
-                back_cover_image_url: backUrlData.publicUrl,
-                missing_covers: false,
-                missing_components: [],
-                status: 'completed'
-              } 
-            : b
-        )
-      );
-      
+      setBooks(prevBooks => prevBooks.map(b => b.id === book.id ? {
+        ...b,
+        cover_image_url: frontUrlData.publicUrl,
+        back_cover_image_url: backUrlData.publicUrl,
+        missing_covers: false,
+        missing_components: [],
+        status: 'completed'
+      } : b));
+
       // Clear auto-fix tracking so book can be auto-fixed if needed
       setAutoFixAttempted(prev => {
         const newSet = new Set(prev);
         newSet.delete(book.id);
         return newSet;
       });
-      
       toast.success('Covers generated successfully! Generating cover PDF...');
-      
+
       // Auto-generate cover PDF using the actual client-side function
       try {
-        const { generateCoverWrapPdf } = await import('@/lib/repairPdf');
-        
-        const pdfUrl = await generateCoverWrapPdf(
-          book.id,
-          frontUrlData.publicUrl,
-          backUrlData.publicUrl,
-          book.selected_pod_package_id
-        );
-        
+        const {
+          generateCoverWrapPdf
+        } = await import('@/lib/repairPdf');
+        const pdfUrl = await generateCoverWrapPdf(book.id, frontUrlData.publicUrl, backUrlData.publicUrl, book.selected_pod_package_id);
+
         // Update local state with new PDF URL
-        setBooks(prevBooks => 
-          prevBooks.map(b => 
-            b.id === book.id 
-              ? { ...b, cover_url: pdfUrl, missing_components: [] } 
-              : b
-          )
-        );
-        
+        setBooks(prevBooks => prevBooks.map(b => b.id === book.id ? {
+          ...b,
+          cover_url: pdfUrl,
+          missing_components: []
+        } : b));
         toast.success('Cover images and PDF generated successfully! Book is now complete.');
       } catch (pdfError) {
         console.error('Cover PDF generation error:', pdfError);
         toast.error('Cover images created, but PDF generation failed.');
       }
-      
     } catch (error: any) {
       console.error('Error retrying cover generation:', error);
       toast.error(error.message || 'Failed to generate covers');
@@ -827,7 +718,6 @@ const Dashboard = () => {
       setRetryingCoverId(null);
     }
   };
-
   const handleDownloadOrGenerate = async (book: Book) => {
     setDownloadingBookId(book.id);
     try {
@@ -837,21 +727,18 @@ const Dashboard = () => {
           // Extract timestamp from PDF URL (format: interior-1763984230390.pdf)
           const pdfTimestamp = book.pdf_url.match(/interior-(\d+)\.pdf/)?.[1];
           if (!pdfTimestamp) return false;
-          
           const pdfDate = new Date(parseInt(pdfTimestamp));
           const updateDate = new Date(book.updated_at);
-          
+
           // Only regenerate if PDF is more than 5 minutes older than last update
           // This prevents regeneration loops while catching genuinely stale PDFs
           const fiveMinutesInMs = 5 * 60 * 1000;
           const timeDiff = updateDate.getTime() - pdfDate.getTime();
-          
           return timeDiff > fiveMinutesInMs;
         } catch {
           return false;
         }
       })();
-      
       if (pdfNeedsRegeneration) {
         toast.info('Your book has been updated. Regenerating PDF with latest pages...');
         const pdfUrl = await handleGeneratePdf(book, false);
@@ -870,23 +757,18 @@ const Dashboard = () => {
       setDownloadingBookId(null);
     }
   };
-
   const handleDownloadCoverPDF = async (book: Book) => {
     if (!book.cover_url) {
       toast.error('Cover PDF not available');
       return;
     }
-    
     setDownloadingCoverId(book.id);
     try {
       toast.info('Preparing cover download...');
-      
       const response = await fetch(book.cover_url);
-      
       if (!response.ok) {
         throw new Error('Failed to fetch cover PDF');
       }
-      
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -896,7 +778,6 @@ const Dashboard = () => {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
       toast.success('Cover PDF downloaded successfully!');
     } catch (error: any) {
       console.error('Error downloading cover PDF:', error);
@@ -905,53 +786,43 @@ const Dashboard = () => {
       setDownloadingCoverId(null);
     }
   };
-
   const handleRetryGeneration = async (book: Book) => {
     // Check if retry credit is available for this book
-    const availableCredit = retryCredits.find(
-      credit => credit.book_id === book.id && !credit.used_at
-    );
-
+    const availableCredit = retryCredits.find(credit => credit.book_id === book.id && !credit.used_at);
     if (!availableCredit) {
       toast.error('No retry credit available for this book');
       return;
     }
-
     if (!confirm(`Retry generating PDFs for "${book.character_name}'s Coloring Book"? This will use your free retry credit.`)) {
       return;
     }
-    
     setIsGeneratingPdf(book.id);
     try {
       toast.info('Using retry credit to regenerate book...');
-      
+
       // Mark retry credit as used
-      const { error: creditError } = await supabase
-        .from('retry_credits')
-        .update({ used_at: new Date().toISOString() })
-        .eq('id', availableCredit.id);
-      
+      const {
+        error: creditError
+      } = await supabase.from('retry_credits').update({
+        used_at: new Date().toISOString()
+      }).eq('id', availableCredit.id);
       if (creditError) {
         console.error('Error marking credit as used:', creditError);
         throw new Error('Failed to use retry credit');
       }
-      
       if (!book.pages || book.pages.length === 0) {
         throw new Error('Cannot retry: Book has no page data');
       }
-      
       const pdfUrl = await handleGeneratePdf(book, false);
-      
       if (pdfUrl) {
-        const { error: updateError } = await supabase
-          .from('books')
-          .update({ status: 'completed' })
-          .eq('id', book.id);
-        
+        const {
+          error: updateError
+        } = await supabase.from('books').update({
+          status: 'completed'
+        }).eq('id', book.id);
         if (updateError) {
           console.error('Error updating book status:', updateError);
         }
-        
         toast.success('Book generation completed successfully!');
         await loadBooks();
         await loadRetryCredits(); // Refresh retry credits
@@ -964,11 +835,9 @@ const Dashboard = () => {
       setPdfProgress(null);
     }
   };
-
   const hasAssociatedOrders = (bookId: string): boolean => {
     return orders[bookId] && orders[bookId].length > 0;
   };
-
   const handleOrderFromModal = async (book: Book) => {
     if (!book.pdf_url) {
       toast.info("Preparing book for printing...");
@@ -981,32 +850,30 @@ const Dashboard = () => {
     setSelectedBook(null);
     setOrderingBook(book);
   };
-
   const handleReworkPages = async (book: Book) => {
     try {
       console.log('[Dashboard] Loading book for rework:', book.id);
-      
+
       // Load full book data with pages
-      const { data: fullBook, error: bookError } = await supabase
-        .from('books')
-        .select('*')
-        .eq('id', book.id)
-        .single();
-      
+      const {
+        data: fullBook,
+        error: bookError
+      } = await supabase.from('books').select('*').eq('id', book.id).single();
       if (bookError) throw bookError;
       if (!fullBook?.pages) throw new Error('Book pages not found');
-      
+
       // Populate book store with all necessary data
       const bookStore = useBookStore.getState();
-      
+
       // Add character data to store (CRITICAL FIX for rework bug)
       // Reset characters and add the book's character
       bookStore.addCharacter();
       const firstCharacterId = bookStore.characters[0]?.id;
-      
       if (firstCharacterId) {
-        bookStore.updateCharacter(firstCharacterId, { name: fullBook.character_name });
-        
+        bookStore.updateCharacter(firstCharacterId, {
+          name: fullBook.character_name
+        });
+
         // If there are photo URLs, add them to the character
         if (fullBook.photo_urls && fullBook.photo_urls.length > 0) {
           fullBook.photo_urls.forEach((url, idx) => {
@@ -1017,51 +884,44 @@ const Dashboard = () => {
           });
         }
       }
-      
+
       // Set all required state for rework mode (filter out null pages)
-      const validPages = ((fullBook.pages as any[]) || []).filter((p: any) => p != null && p.imageUrl);
+      const validPages = (fullBook.pages as any[] || []).filter((p: any) => p != null && p.imageUrl);
       bookStore.setGeneratedPages(validPages);
       bookStore.setGeneratedBookId(fullBook.id);
       bookStore.setReworkedPageNumbers((fullBook.reworked_page_numbers || []) as number[]);
-      bookStore.setBookOptions(
-        (fullBook.selected_page_count || 24) as PageCount,
-        (fullBook.selected_binding_type || 'premium') as BindingType
-      );
+      bookStore.setBookOptions((fullBook.selected_page_count || 24) as PageCount, (fullBook.selected_binding_type || 'premium') as BindingType);
       bookStore.setCoverImageUrl(fullBook.cover_image_url);
       bookStore.setBackCoverImageUrl(fullBook.back_cover_image_url);
       bookStore.setComplexityLevel((fullBook.complexity || 'medium') as ComplexityLevel);
       bookStore.setInterests((fullBook.interests || []) as string[]);
-      
+
       // Set step to complete so user sees their book with rework options
       bookStore.setStep('complete');
-      
+
       // Navigate to app
       navigate('/app');
-      
       toast.success('Book loaded for reworking');
     } catch (error: any) {
       console.error('[Dashboard] Error loading book for rework:', error);
       toast.error('Failed to load book: ' + error.message);
     }
   };
-
   const handleFixMissingPages = async (book: Book) => {
     try {
       console.log('[Dashboard] Fixing missing pages for book:', book.id);
-      
+
       // Load full book data
-      const { data: fullBook, error: bookError } = await supabase
-        .from('books')
-        .select('*')
-        .eq('id', book.id)
-        .single();
-      
+      const {
+        data: fullBook,
+        error: bookError
+      } = await supabase.from('books').select('*').eq('id', book.id).single();
       if (bookError) throw bookError;
-      
+
       // Identify missing pages
       const expectedPageCount = fullBook.selected_page_count || 12;
       const existingPages = (fullBook.pages || []) as any[];
-      
+
       // Find which page numbers are missing (1-indexed)
       const missingPageNumbers: number[] = [];
       for (let i = 1; i <= expectedPageCount; i++) {
@@ -1070,22 +930,22 @@ const Dashboard = () => {
           missingPageNumbers.push(i);
         }
       }
-      
       if (missingPageNumbers.length === 0) {
         toast.success('No missing pages found!');
         return;
       }
-      
+
       // Populate book store with all necessary data
       const bookStore = useBookStore.getState();
-      
+
       // Reset and set up character
       bookStore.addCharacter();
       const firstCharacterId = bookStore.characters[0]?.id;
-      
       if (firstCharacterId) {
-        bookStore.updateCharacter(firstCharacterId, { name: fullBook.character_name });
-        
+        bookStore.updateCharacter(firstCharacterId, {
+          name: fullBook.character_name
+        });
+
         // Add photo URLs if available
         if (fullBook.photo_urls?.length > 0) {
           fullBook.photo_urls.forEach((url: string, idx: number) => {
@@ -1095,24 +955,21 @@ const Dashboard = () => {
           });
         }
       }
-      
+
       // Set up existing valid pages (filter out nulls)
       const validPages = existingPages.filter((p: any) => p != null && p.imageUrl);
       bookStore.setGeneratedPages(validPages);
       bookStore.setGeneratedBookId(fullBook.id);
       bookStore.setReworkedPageNumbers((fullBook.reworked_page_numbers || []) as number[]);
-      bookStore.setBookOptions(
-        (fullBook.selected_page_count || 24) as PageCount,
-        (fullBook.selected_binding_type || 'premium') as BindingType
-      );
+      bookStore.setBookOptions((fullBook.selected_page_count || 24) as PageCount, (fullBook.selected_binding_type || 'premium') as BindingType);
       bookStore.setCoverImageUrl(fullBook.cover_image_url);
       bookStore.setBackCoverImageUrl(fullBook.back_cover_image_url);
       bookStore.setComplexityLevel((fullBook.complexity || 'medium') as ComplexityLevel);
       bookStore.setInterests((fullBook.interests || []) as string[]);
-      
+
       // CRITICAL: Set state for direct generation (skip rework-settings, interests, etc)
       // User already paid - just regenerate missing pages directly
-      useBookStore.setState({ 
+      useBookStore.setState({
         selectedPagesForRework: missingPageNumbers,
         isReworkMode: true,
         currentStep: 'generating',
@@ -1124,45 +981,34 @@ const Dashboard = () => {
           consistentCharacters: true,
           interests: fullBook.interests || [],
           complexityLevel: (fullBook.complexity || 'medium') as ComplexityLevel,
-          customPrompt: fullBook.custom_prompt || '',
-        },
+          customPrompt: fullBook.custom_prompt || ''
+        }
       });
-      
+
       // Navigate directly to generating step
       navigate('/app');
-      
       toast.success(`Fixing ${missingPageNumbers.length} missing page(s): ${missingPageNumbers.join(', ')}`);
     } catch (error: any) {
       console.error('[Dashboard] Error fixing missing pages:', error);
       toast.error('Failed to fix missing pages: ' + error.message);
     }
   };
-
   const handleDeleteBook = async (bookId: string, e?: React.MouseEvent) => {
     if (e) {
       e.stopPropagation();
     }
-
     const book = books.find(b => b.id === bookId);
     const pageCount = book?.pages?.length || 0;
     const isIncomplete = pageCount > 0 && pageCount < 12;
-    
-    const message = isIncomplete 
-      ? `This book is incomplete (${pageCount}/12 pages). Are you sure you want to delete it?`
-      : 'Are you sure you want to delete this book? This action cannot be undone.';
-
+    const message = isIncomplete ? `This book is incomplete (${pageCount}/12 pages). Are you sure you want to delete it?` : 'Are you sure you want to delete this book? This action cannot be undone.';
     if (!confirm(message)) {
       return;
     }
-
     setDeletingBookId(bookId);
-    
     try {
-      const { error } = await supabase
-        .from('books')
-        .delete()
-        .eq('id', bookId);
-
+      const {
+        error
+      } = await supabase.from('books').delete().eq('id', bookId);
       if (error) throw error;
 
       // Update local state
@@ -1175,91 +1021,55 @@ const Dashboard = () => {
       setDeletingBookId(null);
     }
   };
-
   const getBookCoverImage = (book: Book) => {
     return book.cover_image_url || '/placeholder.svg';
   };
-
-  return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
+  return <div className="min-h-screen bg-background relative overflow-hidden">
       {/* Background Gradient */}
-      <div
-        className="fixed inset-0 -z-10"
-        style={{
-          background: 'linear-gradient(to bottom right, hsl(222 47% 11%), hsl(280 80% 20% / 0.2), hsl(222 47% 11%))',
-        }}
-      />
+      <div className="fixed inset-0 -z-10" style={{
+      background: 'linear-gradient(to bottom right, hsl(222 47% 11%), hsl(280 80% 20% / 0.2), hsl(222 47% 11%))'
+    }} />
 
       {/* Header */}
-      <div className="border-b border-border/50 bg-card/50 backdrop-blur-xl">
-        <div className="container mx-auto px-6 py-4">
-          <h1 className="text-2xl font-bold text-foreground">My Books</h1>
-        </div>
-      </div>
+      
 
       {/* Content */}
       <div className="container mx-auto px-6 py-12">
         <div className="mb-8 flex items-center gap-4 flex-wrap">
-          <Button 
-            size="lg" 
-            onClick={() => {
-              useBookStore.getState().reset();
-              navigate('/app');
-            }} 
-            className="gap-2"
-          >
+          <Button size="lg" onClick={() => {
+          useBookStore.getState().reset();
+          navigate('/app');
+        }} className="gap-2">
             <Plus className="w-5 h-5" />
             Create New Book
           </Button>
           
-          {isAdmin && Object.values(orders).flat().length > 0 && (
-            <Button
-              variant="outline"
-              onClick={handleSendTestEmail}
-              disabled={isSendingTestEmail}
-              className="gap-2"
-            >
-              {isSendingTestEmail ? (
-                <>
+          {isAdmin && Object.values(orders).flat().length > 0 && <Button variant="outline" onClick={handleSendTestEmail} disabled={isSendingTestEmail} className="gap-2">
+              {isSendingTestEmail ? <>
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" />
                   Sending...
-                </>
-              ) : (
-                <>
+                </> : <>
                   <Send className="w-4 h-4" />
                   Test Order Email
-                </>
-              )}
-            </Button>
-          )}
+                </>}
+            </Button>}
           
-          {!loading && retryCredits.length > 0 && (
-            <Badge variant="secondary" className="text-sm gap-2 py-2 px-4">
+          {!loading && retryCredits.length > 0 && <Badge variant="secondary" className="text-sm gap-2 py-2 px-4">
               <Zap className="w-4 h-4 text-yellow-500" />
               {retryCredits.length} Free {retryCredits.length === 1 ? 'Retry' : 'Retries'} Available
-            </Badge>
-          )}
+            </Badge>}
           
-          {!loading && getIncompleteBooks().length > 0 && (
-            <Button
-              variant="outline"
-              onClick={handleCleanupIncomplete}
-              className="gap-2 border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50"
-            >
+          {!loading && getIncompleteBooks().length > 0 && <Button variant="outline" onClick={handleCleanupIncomplete} className="gap-2 border-amber-500/50 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/50">
               <Trash2 className="w-4 h-4" />
               Clean Up {getIncompleteBooks().length} Incomplete
-            </Button>
-          )}
+            </Button>}
         </div>
 
         {!loading && books.length > 0 && (() => {
-          const incompleteBooks = getIncompleteBooks();
-          const duplicateGroups = findDuplicateBooks();
-          
-          return (
-            <>
-              {incompleteBooks.length > 0 && (
-                <Alert className="mb-6 bg-amber-50 dark:bg-amber-950/50 border-amber-500/50">
+        const incompleteBooks = getIncompleteBooks();
+        const duplicateGroups = findDuplicateBooks();
+        return <>
+              {incompleteBooks.length > 0 && <Alert className="mb-6 bg-amber-50 dark:bg-amber-950/50 border-amber-500/50">
                   <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                   <AlertTitle className="text-amber-900 dark:text-amber-200">
                     {incompleteBooks.length} Incomplete Book(s) Found
@@ -1269,43 +1079,34 @@ const Dashboard = () => {
                       <p>The following books have missing components:</p>
                       <ul className="list-disc list-inside space-y-1 ml-2">
                         {incompleteBooks.map(book => {
-                          const missing = getMissingComponents(book);
-                          return (
-                            <li key={book.id}>
+                    const missing = getMissingComponents(book);
+                    return <li key={book.id}>
                               <strong>{book.character_name}'s Book</strong>: {missing.join(', ')}
-                            </li>
-                          );
-                        })}
+                            </li>;
+                  })}
                       </ul>
                       <p className="mt-2">
                         Books with missing PDFs will be auto-generated when you click download.
                       </p>
                     </div>
                   </AlertDescription>
-                </Alert>
-              )}
+                </Alert>}
               
-              {duplicateGroups.length > 0 && (
-                <Alert className="mb-6 bg-amber-50 dark:bg-amber-950/50 border-amber-500/50">
+              {duplicateGroups.length > 0 && <Alert className="mb-6 bg-amber-50 dark:bg-amber-950/50 border-amber-500/50">
                   <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
                   <AlertTitle className="text-amber-900 dark:text-amber-200">Duplicate Books Detected</AlertTitle>
                   <AlertDescription className="text-amber-800 dark:text-amber-300">
                     You have {duplicateGroups.length} set(s) of books with identical settings. 
                     Consider keeping only the complete versions.
                   </AlertDescription>
-                </Alert>
-              )}
-            </>
-          );
-        })()}
+                </Alert>}
+            </>;
+      })()}
 
-        {loading ? (
-          <div className="text-center py-12">
+        {loading ? <div className="text-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
             <p className="mt-4 text-muted-foreground">Loading your books...</p>
-          </div>
-        ) : error ? (
-          <div className="text-center py-12">
+          </div> : error ? <div className="text-center py-12">
             <div className="max-w-md mx-auto">
               <div className="text-red-500 mb-4">⚠️ Error Loading Books</div>
               <p className="text-muted-foreground mb-6">{error}</p>
@@ -1313,13 +1114,13 @@ const Dashboard = () => {
                 Try Again
               </Button>
             </div>
-          </div>
-        ) : books.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="text-center py-12"
-          >
+          </div> : books.length === 0 ? <motion.div initial={{
+        opacity: 0,
+        y: 20
+      }} animate={{
+        opacity: 1,
+        y: 0
+      }} className="text-center py-12">
             <BookOpen className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
             <h2 className="text-2xl font-semibold text-foreground mb-2">
               No books yet
@@ -1327,53 +1128,42 @@ const Dashboard = () => {
             <p className="text-muted-foreground mb-6">
               Create your first personalized coloring book
             </p>
-            <Button 
-              onClick={() => {
-                useBookStore.getState().reset();
-                navigate('/app');
-              }}
-            >
+            <Button onClick={() => {
+          useBookStore.getState().reset();
+          navigate('/app');
+        }}>
               <Plus className="w-4 h-4 mr-2" />
               Create Your First Book
             </Button>
-          </motion.div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {books.map((book, index) => (
-              <motion.div
-                key={book.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-              >
-                <Card 
-                  className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer bg-card/80 backdrop-blur-sm border-border/50"
-                  onClick={async () => {
-                    if (book.status === 'completed') {
-                      setSelectedBook(book);
-                      await loadBookPages(book.id);
-                    }
-                  }}
-                >
+          </motion.div> : <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {books.map((book, index) => <motion.div key={book.id} initial={{
+          opacity: 0,
+          y: 20
+        }} animate={{
+          opacity: 1,
+          y: 0
+        }} transition={{
+          delay: index * 0.1
+        }}>
+                <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer bg-card/80 backdrop-blur-sm border-border/50" onClick={async () => {
+            if (book.status === 'completed') {
+              setSelectedBook(book);
+              await loadBookPages(book.id);
+            }
+          }}>
                   <CardContent className="p-0">
                 <div className="aspect-[3/4] relative overflow-hidden bg-muted">
-                  <img
-                    src={getBookCoverImage(book)}
-                    alt={book.character_name}
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={getBookCoverImage(book)} alt={book.character_name} className="w-full h-full object-cover" />
                   {/* DEBUG: Show book ID on hover */}
                   <div className="absolute bottom-2 left-2 bg-black/70 text-white text-xs px-2 py-1 rounded opacity-0 hover:opacity-100 transition-opacity pointer-events-none">
                     {book.character_name} - {book.id.slice(0, 8)}
                   </div>
                       {(() => {
-                        const missing = getMissingComponents(book);
-                        return missing.length > 0 && (
-                          <div className="absolute top-2 right-2 bg-amber-500 text-white rounded-full p-1.5 shadow-lg">
+                  const missing = getMissingComponents(book);
+                  return missing.length > 0 && <div className="absolute top-2 right-2 bg-amber-500 text-white rounded-full p-1.5 shadow-lg">
                             <AlertCircle className="w-4 h-4" />
-                          </div>
-                        );
-                      })()}
+                          </div>;
+                })()}
                     </div>
                     <div className="p-4">
                       <div className="flex items-center justify-between mb-2">
@@ -1381,118 +1171,80 @@ const Dashboard = () => {
                           {book.character_name}'s Coloring Book
                         </h3>
                         <div className="flex gap-1 flex-wrap justify-end">
-                          {book.pages && (
-                            <Badge variant={(() => {
-                              const validPages = (book.pages || []).filter((p: any) => p?.imageUrl);
-                              const expectedPages = book.selected_page_count || 12;
-                              return validPages.length === expectedPages ? "default" : "destructive";
-                            })()} className="text-xs">
+                          {book.pages && <Badge variant={(() => {
+                      const validPages = (book.pages || []).filter((p: any) => p?.imageUrl);
+                      const expectedPages = book.selected_page_count || 12;
+                      return validPages.length === expectedPages ? "default" : "destructive";
+                    })()} className="text-xs">
                               {(() => {
-                                const validPages = (book.pages || []).filter((p: any) => p?.imageUrl);
-                                const expectedPages = book.selected_page_count || 12;
-                                return `${validPages.length}/${expectedPages}`;
-                              })()}
-                            </Badge>
-                          )}
+                        const validPages = (book.pages || []).filter((p: any) => p?.imageUrl);
+                        const expectedPages = book.selected_page_count || 12;
+                        return `${validPages.length}/${expectedPages}`;
+                      })()}
+                            </Badge>}
                           {(() => {
-                            const status = getBookStatusLabel(book);
-                            return (
-                              <Badge variant={status.variant} className="text-xs">
+                      const status = getBookStatusLabel(book);
+                      return <Badge variant={status.variant} className="text-xs">
                                 {status.label}
-                              </Badge>
-                            );
-                          })()}
+                              </Badge>;
+                    })()}
                         </div>
                       </div>
                       <p className="text-sm text-muted-foreground mb-3">
                         {new Date(book.created_at).toLocaleDateString()}
                       </p>
                       {(() => {
-                        const validPages = (book.pages || []).filter((p: any) => p?.imageUrl);
-                        const expectedPages = book.selected_page_count || 12;
-                        const missingPageCount = expectedPages - validPages.length;
-                        
-                        return missingPageCount > 0 && (
-                          <div className="mb-2">
+                  const validPages = (book.pages || []).filter((p: any) => p?.imageUrl);
+                  const expectedPages = book.selected_page_count || 12;
+                  const missingPageCount = expectedPages - validPages.length;
+                  return missingPageCount > 0 && <div className="mb-2">
                             <div className="p-2 bg-amber-100 dark:bg-amber-950/50 border border-amber-500/50 rounded text-xs text-amber-700 dark:text-amber-300 mb-2">
                               ⚠️ This book has {missingPageCount} missing {missingPageCount === 1 ? 'page' : 'pages'} ({validPages.length}/{expectedPages})
                             </div>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="w-full border-orange-500/50 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/50"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleFixMissingPages(book);
-                              }}
-                            >
+                            <Button size="sm" variant="outline" className="w-full border-orange-500/50 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/50" onClick={e => {
+                      e.stopPropagation();
+                      handleFixMissingPages(book);
+                    }}>
                               <Zap className="w-4 h-4 mr-1" />
                               Fix Missing Pages
                             </Button>
-                          </div>
-                        );
-                      })()}
-                      {book.missing_covers && (
-                        <div className="mb-2 p-2 bg-amber-100 dark:bg-amber-950/50 border border-amber-500/50 rounded text-xs text-amber-700 dark:text-amber-300">
+                          </div>;
+                })()}
+                      {book.missing_covers && <div className="mb-2 p-2 bg-amber-100 dark:bg-amber-950/50 border border-amber-500/50 rounded text-xs text-amber-700 dark:text-amber-300">
                           ⚠️ Book covers are missing
-                        </div>
-                      )}
+                        </div>}
                       <div className="flex flex-wrap gap-1 mb-4">
-                        {book.interests.length > 0 ? (
-                          book.interests.slice(0, 3).map((interest, i) => (
-                            <span
-                              key={i}
-                              className="text-xs px-2 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full"
-                            >
+                        {book.interests.length > 0 ? book.interests.slice(0, 3).map((interest, i) => <span key={i} className="text-xs px-2 py-1 bg-primary/10 text-primary border border-primary/20 rounded-full">
                               {interest}
-                            </span>
-                          ))
-                        ) : book.custom_prompt ? (
-                          <span className="text-xs px-2 py-1 bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 border border-purple-500/20 rounded-full">
+                            </span>) : book.custom_prompt ? <span className="text-xs px-2 py-1 bg-purple-50 dark:bg-purple-950/50 text-purple-600 dark:text-purple-400 border border-purple-500/20 rounded-full">
                             📖 {book.custom_prompt}
-                          </span>
-                        ) : null}
+                          </span> : null}
                       </div>
                       
                       <div className="space-y-2">
-                        {isGeneratingPdf === book.id && pdfProgress && (
-                          <div className="space-y-1 mb-2 p-3 bg-secondary/50 rounded-lg border border-border/50">
+                        {isGeneratingPdf === book.id && pdfProgress && <div className="space-y-1 mb-2 p-3 bg-secondary/50 rounded-lg border border-border/50">
                             <div className="flex justify-between text-xs text-foreground font-medium">
                               <span>Generating PDF...</span>
                               <span>{pdfProgress.current} / {pdfProgress.total} pages</span>
                             </div>
-                            <Progress value={(pdfProgress.current / pdfProgress.total) * 100} />
-                          </div>
-                         )}
+                            <Progress value={pdfProgress.current / pdfProgress.total * 100} />
+                          </div>}
                          {(() => {
-                           const completeness = validateBookCompleteness(book);
-                           
-                           // Show download button for completed books
-                           return book.status === 'completed' ? (
-                             <div className="space-y-2">
-                               <Button
-                                 size="default"
-                                 variant="default"
-                                 className="w-full"
-                                 onClick={(e) => {
-                                   e.stopPropagation();
-                                   handleDownloadOrGenerate(book);
-                                 }}
-                                 disabled={isGeneratingPdf === book.id || downloadingBookId === book.id}
-                               >
+                    const completeness = validateBookCompleteness(book);
+
+                    // Show download button for completed books
+                    return book.status === 'completed' ? <div className="space-y-2">
+                               <Button size="default" variant="default" className="w-full" onClick={e => {
+                        e.stopPropagation();
+                        handleDownloadOrGenerate(book);
+                      }} disabled={isGeneratingPdf === book.id || downloadingBookId === book.id}>
                                  <BookOpen className="w-4 h-4 mr-1" />
                                  {downloadingBookId === book.id ? 'Downloading...' : isGeneratingPdf === book.id ? 'Generating...' : 'Download Book (Interior)'}
                                </Button>
-                            <Button
-                              size="sm"
-                              variant="default"
-                              className="w-full bg-purple-600 hover:bg-purple-700 text-white"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDownloadCoverPDF(book);
-                              }}
-                              disabled={!book.cover_url || downloadingCoverId === book.id}
-                            >
+                            <Button size="sm" variant="default" className="w-full bg-purple-600 hover:bg-purple-700 text-white" onClick={e => {
+                        e.stopPropagation();
+                        handleDownloadCoverPDF(book);
+                      }} disabled={!book.cover_url || downloadingCoverId === book.id}>
                               <FileText className="w-4 h-4 mr-1" />
                               {downloadingCoverId === book.id ? 'Downloading...' : 'Download Cover (Printing)'}
                             </Button>
@@ -1503,148 +1255,87 @@ const Dashboard = () => {
                             
                             {/* Rework button - only show if reworks are available */}
                             {(() => {
-                              const pageCount = book.selected_page_count || 12;
-                              const maxReworks = Math.floor(pageCount * 0.5);
-                              const usedReworks = (book.reworked_page_numbers || []).length;
-                              const reworksRemaining = maxReworks - usedReworks;
-                              
-                              return reworksRemaining > 0 ? (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="w-full border-purple-500/50 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/50"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleReworkPages(book);
-                                  }}
-                                >
+                        const pageCount = book.selected_page_count || 12;
+                        const maxReworks = Math.floor(pageCount * 0.5);
+                        const usedReworks = (book.reworked_page_numbers || []).length;
+                        const reworksRemaining = maxReworks - usedReworks;
+                        return reworksRemaining > 0 ? <Button size="sm" variant="outline" className="w-full border-purple-500/50 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/50" onClick={e => {
+                          e.stopPropagation();
+                          handleReworkPages(book);
+                        }}>
                                   <Zap className="w-4 h-4 mr-1" />
                                   Rework Pages ({reworksRemaining} left)
-                                </Button>
-                              ) : (
-                                <div className="text-xs text-muted-foreground text-center py-2 px-3 bg-muted/50 rounded border border-border/50">
+                                </Button> : <div className="text-xs text-muted-foreground text-center py-2 px-3 bg-muted/50 rounded border border-border/50">
                                   All reworks used ({maxReworks}/{maxReworks})
-                                </div>
-                              );
-                            })()}
+                                </div>;
+                      })()}
                             
                             {/* Regenerate Cover button */}
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="w-full border-pink-500/50 text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950/50"
-                              onClick={(e) => handleRetryCoverGeneration(book, e)}
-                              disabled={retryingCoverId === book.id}
-                            >
+                            <Button size="sm" variant="outline" className="w-full border-pink-500/50 text-pink-600 dark:text-pink-400 hover:bg-pink-50 dark:hover:bg-pink-950/50" onClick={e => handleRetryCoverGeneration(book, e)} disabled={retryingCoverId === book.id}>
                               <Sparkles className="w-4 h-4 mr-1" />
                               {retryingCoverId === book.id ? 'Regenerating...' : 'Regenerate Cover'}
                             </Button>
                             
-                               <OrderPhysicalBookDialog 
-                                 bookId={book.id}
-                                 bookTitle={`${book.character_name}'s Coloring Book`}
-                               />
-                             </div>
-                           ) : book.status === 'partial' || book.missing_covers ? (
-                             <Button 
-                               size="sm" 
-                               variant="default" 
-                               className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                               onClick={(e) => handleRetryCoverGeneration(book, e)}
-                               disabled={retryingCoverId === book.id}
-                             >
+                               <OrderPhysicalBookDialog bookId={book.id} bookTitle={`${book.character_name}'s Coloring Book`} />
+                             </div> : book.status === 'partial' || book.missing_covers ? <Button size="sm" variant="default" className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white" onClick={e => handleRetryCoverGeneration(book, e)} disabled={retryingCoverId === book.id}>
                                <Zap className="w-4 h-4 mr-1" />
                                {retryingCoverId === book.id ? 'Generating Covers...' : 'Retry Cover Generation'}
-                             </Button>
-                            ) : book.status === 'failed' || (book.status === 'processing' && hasAssociatedOrders(book.id)) ? (
-                              (() => {
-                                // PHASE 1: Accept ANY unused credit (not just book-specific)
-                                const hasRetryCredit = retryCredits.some(
-                                  credit => !credit.used_at
-                                );
-                                
-                                return hasRetryCredit ? (
-                                  <Button 
-                                    size="sm" 
-                                    variant="outline" 
-                                    className="w-full border-green-500/50 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/50"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRetryGeneration(book);
-                                    }}
-                                    disabled={isGeneratingPdf === book.id}
-                                  >
+                             </Button> : book.status === 'failed' || book.status === 'processing' && hasAssociatedOrders(book.id) ? (() => {
+                      // PHASE 1: Accept ANY unused credit (not just book-specific)
+                      const hasRetryCredit = retryCredits.some(credit => !credit.used_at);
+                      return hasRetryCredit ? <Button size="sm" variant="outline" className="w-full border-green-500/50 text-green-600 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-950/50" onClick={e => {
+                        e.stopPropagation();
+                        handleRetryGeneration(book);
+                      }} disabled={isGeneratingPdf === book.id}>
                                     <Zap className="w-4 h-4 mr-1" />
                                     {isGeneratingPdf === book.id ? 'Retrying...' : 'Use Free Retry'}
-                                  </Button>
-                                ) : (
-                                  <div className="p-3 bg-amber-50 dark:bg-amber-950/50 border border-amber-500/50 rounded text-xs text-amber-700 dark:text-amber-300">
+                                  </Button> : <div className="p-3 bg-amber-50 dark:bg-amber-950/50 border border-amber-500/50 rounded text-xs text-amber-700 dark:text-amber-300">
                                     ⚠️ Book generation failed. Please contact support for assistance.
-                                  </div>
-                                );
-                              })()
-                            ) : (
-                              <Button size="sm" variant="outline" className="w-full" disabled>
+                                  </div>;
+                    })() : <Button size="sm" variant="outline" className="w-full" disabled>
                                 Processing...
-                              </Button>
-                            );
-                         })()}
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="w-full text-destructive hover:bg-destructive hover:text-destructive-foreground border-destructive/50"
-                          onClick={(e) => handleDeleteBook(book.id, e)}
-                          disabled={deletingBookId === book.id}
-                        >
+                              </Button>;
+                  })()}
+                        <Button size="sm" variant="outline" className="w-full text-destructive hover:bg-destructive hover:text-destructive-foreground border-destructive/50" onClick={e => handleDeleteBook(book.id, e)} disabled={deletingBookId === book.id}>
                           <Trash2 className="w-4 h-4 mr-1" />
                           {deletingBookId === book.id ? 'Deleting...' : 'Delete Book'}
                         </Button>
                       </div>
 
                       {/* Show orders for this book */}
-                      {orders[book.id] && orders[book.id].length > 0 && (
-                        <div className="mt-4 pt-4 border-t border-border/50">
+                      {orders[book.id] && orders[book.id].length > 0 && <div className="mt-4 pt-4 border-t border-border/50">
                           <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground">
                             <Package className="w-4 h-4" />
                             Physical Orders
                           </h4>
                           <div className="space-y-2 p-3 bg-secondary/30 rounded-lg">
-                            {orders[book.id].map((order) => (
-                              <div key={order.id} className="flex items-center justify-between text-sm">
+                            {orders[book.id].map(order => <div key={order.id} className="flex items-center justify-between text-sm">
                                 <div className="flex items-center gap-2">
                                   <Truck className="w-4 h-4 text-muted-foreground" />
                                   <span className="text-muted-foreground">
                                     {new Date(order.created_at).toLocaleDateString()}
                                   </span>
                                 </div>
-                                <Badge variant={
-                                  order.status === 'completed' ? 'default' :
-                                  order.status === 'processing' ? 'secondary' :
-                                  'outline'
-                                }>
+                                <Badge variant={order.status === 'completed' ? 'default' : order.status === 'processing' ? 'secondary' : 'outline'}>
                                   {order.status}
                                 </Badge>
-                              </div>
-                            ))}
+                              </div>)}
                           </div>
-                        </div>
-                      )}
+                        </div>}
                     </div>
                   </CardContent>
                 </Card>
-              </motion.div>
-            ))}
-          </div>
-        )}
+              </motion.div>)}
+          </div>}
       </div>
 
       {/* Book Pages Modal */}
-      <Dialog open={!!selectedBook} onOpenChange={(open) => {
-        if (!open) {
-          setSelectedBook(null);
-          setSelectedBookPages(null);
-        }
-      }}>
+      <Dialog open={!!selectedBook} onOpenChange={open => {
+      if (!open) {
+        setSelectedBook(null);
+        setSelectedBookPages(null);
+      }
+    }}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-2xl font-bold">
@@ -1652,115 +1343,70 @@ const Dashboard = () => {
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
-            {loadingPages ? (
-              <div className="col-span-full text-center py-8">
+            {loadingPages ? <div className="col-span-full text-center py-8">
                 <p className="text-muted-foreground">Loading pages...</p>
-              </div>
-            ) : selectedBookPages?.filter(page => page != null).map((page: any, index: number) => (
-              <div 
-                key={index} 
-                className="relative aspect-[3/4] rounded-lg overflow-hidden border border-border cursor-pointer hover:ring-2 hover:ring-primary transition-all group"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setSelectedPageImage(page.imageUrl || page);
-                  setSelectedPageIndex(index);
-                }}
-              >
-                <img
-                  src={page.imageUrl || page}
-                  alt={`Page ${index + 1}`}
-                  className="w-full h-full object-contain bg-muted"
-                />
+              </div> : selectedBookPages?.filter(page => page != null).map((page: any, index: number) => <div key={index} className="relative aspect-[3/4] rounded-lg overflow-hidden border border-border cursor-pointer hover:ring-2 hover:ring-primary transition-all group" onClick={e => {
+            e.stopPropagation();
+            setSelectedPageImage(page.imageUrl || page);
+            setSelectedPageIndex(index);
+          }}>
+                <img src={page.imageUrl || page} alt={`Page ${index + 1}`} className="w-full h-full object-contain bg-muted" />
                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
                   <Eye className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
                 </div>
                 <div className="absolute bottom-2 right-2 bg-background/80 backdrop-blur-sm px-2 py-1 rounded text-xs font-medium">
                   Page {index + 1}
                 </div>
-              </div>
-            ))}
+              </div>)}
           </div>
-          {selectedBook && (
-            <div className="mt-6 flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => handleDownloadOrGenerate(selectedBook)}
-                disabled={isGeneratingPdf === selectedBook.id || downloadingBookId === selectedBook.id}
-                className="flex-1"
-              >
+          {selectedBook && <div className="mt-6 flex gap-2">
+              <Button variant="outline" onClick={() => handleDownloadOrGenerate(selectedBook)} disabled={isGeneratingPdf === selectedBook.id || downloadingBookId === selectedBook.id} className="flex-1">
                 <Download className="w-4 h-4 mr-2" />
                 {downloadingBookId === selectedBook.id ? 'Downloading...' : isGeneratingPdf === selectedBook.id ? 'Generating...' : 'Download PDF'}
               </Button>
-              <Button
-                variant="default"
-                onClick={() => handleOrderFromModal(selectedBook)}
-                disabled={isGeneratingPdf === selectedBook.id}
-                className="flex-1"
-              >
+              <Button variant="default" onClick={() => handleOrderFromModal(selectedBook)} disabled={isGeneratingPdf === selectedBook.id} className="flex-1">
                 <Package className="w-4 h-4 mr-2" />
                 Order Physical Book
               </Button>
-            </div>
-          )}
+            </div>}
         </DialogContent>
       </Dialog>
 
       {/* Image Preview Dialog */}
-      <Dialog open={!!selectedPageImage} onOpenChange={(open) => !open && setSelectedPageImage(null)}>
+      <Dialog open={!!selectedPageImage} onOpenChange={open => !open && setSelectedPageImage(null)}>
         <DialogContent className="max-w-5xl">
           <DialogHeader>
             <DialogTitle>Page {(selectedPageIndex ?? 0) + 1} - Full View</DialogTitle>
           </DialogHeader>
           <div className="relative w-full max-h-[80vh] flex items-center justify-center bg-muted rounded-lg p-4">
-            <img 
-              src={selectedPageImage || ''} 
-              alt={`Page ${(selectedPageIndex ?? 0) + 1}`}
-              className="max-w-full max-h-[75vh] object-contain rounded"
-            />
+            <img src={selectedPageImage || ''} alt={`Page ${(selectedPageIndex ?? 0) + 1}`} className="max-w-full max-h-[75vh] object-contain rounded" />
           </div>
           <div className="flex gap-2 justify-between">
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                if (selectedPageIndex !== null && selectedPageIndex > 0 && selectedBookPages) {
-                  const validPages = selectedBookPages.filter(page => page != null);
-                  setSelectedPageIndex(selectedPageIndex - 1);
-                  const prevPage = validPages[selectedPageIndex - 1];
-                  setSelectedPageImage(prevPage?.imageUrl || prevPage);
-                }
-              }}
-              disabled={selectedPageIndex === null || selectedPageIndex === 0}
-            >
+            <Button variant="outline" onClick={() => {
+            if (selectedPageIndex !== null && selectedPageIndex > 0 && selectedBookPages) {
+              const validPages = selectedBookPages.filter(page => page != null);
+              setSelectedPageIndex(selectedPageIndex - 1);
+              const prevPage = validPages[selectedPageIndex - 1];
+              setSelectedPageImage(prevPage?.imageUrl || prevPage);
+            }
+          }} disabled={selectedPageIndex === null || selectedPageIndex === 0}>
               Previous
             </Button>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                if (selectedPageIndex !== null && selectedBookPages && selectedPageIndex < selectedBookPages.length - 1) {
-                  const validPages = selectedBookPages.filter(page => page != null);
-                  setSelectedPageIndex(selectedPageIndex + 1);
-                  const nextPage = validPages[selectedPageIndex + 1];
-                  setSelectedPageImage(nextPage?.imageUrl || nextPage);
-                }
-              }}
-              disabled={selectedPageIndex === null || !selectedBookPages || selectedPageIndex === selectedBookPages.length - 1}
-            >
+            <Button variant="outline" onClick={() => {
+            if (selectedPageIndex !== null && selectedBookPages && selectedPageIndex < selectedBookPages.length - 1) {
+              const validPages = selectedBookPages.filter(page => page != null);
+              setSelectedPageIndex(selectedPageIndex + 1);
+              const nextPage = validPages[selectedPageIndex + 1];
+              setSelectedPageImage(nextPage?.imageUrl || nextPage);
+            }
+          }} disabled={selectedPageIndex === null || !selectedBookPages || selectedPageIndex === selectedBookPages.length - 1}>
               Next
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      {orderingBook && (
-        <OrderPhysicalBookDialog
-          bookId={orderingBook.id}
-          bookTitle={`${orderingBook.character_name}'s Coloring Book`}
-          open={!!orderingBook}
-          onOpenChange={(open) => !open && setOrderingBook(null)}
-        />
-      )}
-    </div>
-  );
+      {orderingBook && <OrderPhysicalBookDialog bookId={orderingBook.id} bookTitle={`${orderingBook.character_name}'s Coloring Book`} open={!!orderingBook} onOpenChange={open => !open && setOrderingBook(null)} />}
+    </div>;
 };
-
 export default Dashboard;
