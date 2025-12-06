@@ -55,7 +55,7 @@ export const VideoHeroSection = () => {
             <img 
               src={logoNarrow}
               alt="Color Me In Books" 
-              className="h-24 sm:h-32 md:h-40 lg:h-48 mx-auto object-contain"
+              className="h-24 sm:h-32 md:h-40 lg:h-48 mx-auto object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.9)]"
             />
           </motion.div>
 
@@ -99,7 +99,7 @@ export const VideoHeroSection = () => {
             <Button
               onClick={() => window.location.href = '/auth'}
               size="lg"
-              className="gradient-rainbow hover:scale-105 transition-all duration-300 shadow-xl text-lg px-8 py-6 rounded-full font-semibold text-white"
+              className="bg-gradient-to-r from-primary to-secondary hover:scale-105 transition-all duration-300 shadow-xl text-lg px-8 py-6 rounded-full font-semibold"
             >
               Create Your Book Now
               <ArrowRight className="ml-2 w-5 h-5" />
