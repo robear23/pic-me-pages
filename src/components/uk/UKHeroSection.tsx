@@ -94,7 +94,7 @@ export const UKHeroSection = () => {
             <Button
               onClick={() => setStep('uk-upload')}
               size="lg"
-              className="gradient-rainbow hover:scale-105 transition-transform duration-300 text-lg px-8 py-6 rounded-xl shadow-lg text-white"
+              className="bg-gradient-to-r from-primary to-secondary hover:scale-105 transition-transform duration-300 text-lg px-8 py-6 rounded-xl shadow-lg"
             >
               <Sparkles className="w-5 h-5 mr-2" />
               Start Creating

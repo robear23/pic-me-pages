@@ -52,7 +52,7 @@ export const FinalCTASection = () => {
             <Button
               onClick={() => window.location.href = '/auth'}
               size="lg"
-              className="gradient-rainbow hover:scale-105 transition-all duration-300 shadow-xl text-lg px-10 py-6 rounded-full font-semibold text-white"
+              className="bg-gradient-to-r from-primary to-secondary hover:scale-105 transition-all duration-300 shadow-xl text-lg px-10 py-6 rounded-full font-semibold"
             >
               Get Started
               <ArrowRight className="ml-2 w-5 h-5" />

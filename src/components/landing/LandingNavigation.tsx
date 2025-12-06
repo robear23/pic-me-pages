@@ -39,7 +39,7 @@ export const LandingNavigation = () => {
               onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
               className="flex items-center"
             >
-              <img src={logoNarrow} alt="Color Me In Books" className="h-20" />
+              <img src={logoNarrow} alt="Color Me In Books" className="h-20 drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]" />
             </button>
 
             {/* Desktop Navigation */}
@@ -64,7 +64,7 @@ export const LandingNavigation = () => {
               </button>
               <Button
                 onClick={() => window.location.href = '/auth'}
-                className="gradient-rainbow hover:scale-105 transition-transform text-white"
+                className="bg-gradient-to-r from-primary to-secondary hover:scale-105 transition-transform"
               >
                 Sign In
               </Button>
@@ -106,7 +106,7 @@ export const LandingNavigation = () => {
             <Button
               onClick={() => window.location.href = '/auth'}
               size="lg"
-              className="gradient-rainbow hover:scale-105 transition-transform text-white"
+              className="bg-gradient-to-r from-primary to-secondary hover:scale-105 transition-transform"
             >
               Sign In
             </Button>
