@@ -1110,13 +1110,25 @@ const Dashboard = () => {
       bookStore.setComplexityLevel((fullBook.complexity || 'medium') as ComplexityLevel);
       bookStore.setInterests((fullBook.interests || []) as string[]);
       
-      // CRITICAL: Set the missing pages for rework before entering rework mode
-      useBookStore.setState({ selectedPagesForRework: missingPageNumbers });
+      // CRITICAL: Set state for direct generation (skip rework-settings, interests, etc)
+      // User already paid - just regenerate missing pages directly
+      useBookStore.setState({ 
+        selectedPagesForRework: missingPageNumbers,
+        isReworkMode: true,
+        currentStep: 'generating',
+        generationProgress: 0,
+        generationStatus: '',
+        apiError: null,
+        originalGenerationParams: {
+          characters: bookStore.characters,
+          consistentCharacters: true,
+          interests: fullBook.interests || [],
+          complexityLevel: (fullBook.complexity || 'medium') as ComplexityLevel,
+          customPrompt: fullBook.custom_prompt || '',
+        },
+      });
       
-      // Enter rework mode (which will set step to 'rework-settings')
-      bookStore.enterReworkMode();
-      
-      // Navigate to app (will be at rework-settings step)
+      // Navigate directly to generating step
       navigate('/app');
       
       toast.success(`Fixing ${missingPageNumbers.length} missing page(s): ${missingPageNumbers.join(', ')}`);
