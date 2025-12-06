@@ -32,7 +32,7 @@ export const Navigation = () => {
             to="/dashboard" 
             className="flex items-center hover:opacity-90 transition-opacity"
           >
-            <img src={logoNarrow} alt="Color Me In Books" className="h-12" />
+            <img src={logoNarrow} alt="Color Me In Books" className="h-12 drop-shadow-[0_0_10px_rgba(255,255,255,0.8)]" />
           </Link>
 
           {/* Desktop Navigation */}

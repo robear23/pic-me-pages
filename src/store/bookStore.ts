@@ -43,6 +43,7 @@ interface BookState {
   selectedPagesForRework: number[];
   originalGenerationParams: GenerationParams | null;
   isReworkMode: boolean;
+  isFixingMissingPages: boolean; // NEW: distinguishes "fix missing" from "intentional rework"
   maxReworksReached: boolean;
   reworkedPageNumbers: number[];
   generatedBookId: string | null;
@@ -108,6 +109,7 @@ const initialState = {
   selectedPagesForRework: [] as number[],
   originalGenerationParams: null as GenerationParams | null,
   isReworkMode: false,
+  isFixingMissingPages: false, // NEW: when true, pages do NOT count toward rework limit
   maxReworksReached: false,
   reworkedPageNumbers: [] as number[],
   generatedBookId: null as string | null,
@@ -262,8 +264,11 @@ export const useBookStore = create<BookState>((set, get) => ({
   
   completeRework: () =>
     set((state) => {
-      // Add newly reworked pages to the cumulative list
-      const newReworkedPages = [...new Set([...state.reworkedPageNumbers, ...state.selectedPagesForRework])];
+      // If fixing missing pages, do NOT count toward rework limit
+      // Only intentional reworks (user didn't like page) count
+      const newReworkedPages = state.isFixingMissingPages
+        ? state.reworkedPageNumbers // Keep existing count, don't add new ones
+        : [...new Set([...state.reworkedPageNumbers, ...state.selectedPagesForRework])];
       
       // Calculate if we've reached the 50% limit
       const totalPages = state.selectedPageCount;
@@ -272,6 +277,7 @@ export const useBookStore = create<BookState>((set, get) => ({
       
       return {
         isReworkMode: false,
+        isFixingMissingPages: false, // Reset this flag
         selectedPagesForRework: [],
         originalGenerationParams: null,
         reworkedPageNumbers: newReworkedPages,

@@ -969,9 +969,11 @@ const Dashboard = () => {
 
       // CRITICAL: Set state for direct generation (skip rework-settings, interests, etc)
       // User already paid - just regenerate missing pages directly
+      // isFixingMissingPages flag ensures these pages do NOT consume rework credits
       useBookStore.setState({
         selectedPagesForRework: missingPageNumbers,
         isReworkMode: true,
+        isFixingMissingPages: true, // NEW FLAG: prevents counting toward rework limit
         currentStep: 'generating',
         generationProgress: 0,
         generationStatus: '',
