@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { BindingType, PageCount, BookOption } from '@/types/bookOptions';
 import { getBookOption } from '@/types/bookOptions';
 
-export type BookStep = 'hero' | 'upload' | 'complexity' | 'interests' | 'book-options' | 'payment' | 'generating' | 'complete' | 'rework-settings';
+export type BookStep = 'hero' | 'upload' | 'complexity' | 'interests' | 'book-options' | 'payment' | 'generating' | 'complete' | 'rework-settings' | 'preview';
 export type ComplexityLevel = 'simple' | 'medium' | 'detailed';
 
 export interface Character {
@@ -282,7 +282,7 @@ export const useBookStore = create<BookState>((set, get) => ({
         originalGenerationParams: null,
         reworkedPageNumbers: newReworkedPages,
         maxReworksReached: limitReached,
-        currentStep: 'complete',
+        currentStep: 'preview', // Navigate to preview step instead of complete
         generatedBookId: state.generatedBookId,
         coverImageUrl: state.coverImageUrl,
         selectedPageCount: state.selectedPageCount,

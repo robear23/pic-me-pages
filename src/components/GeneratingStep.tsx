@@ -711,9 +711,12 @@ export const GeneratingStep = () => {
               });
             }
 
-            // Navigate to dashboard after processing
+            // Navigate to preview step instead of dashboard
             setTimeout(() => {
-              navigate('/dashboard');
+              // Set step to preview and navigate to app
+              useBookStore.getState().setStep('preview');
+              useBookStore.getState().setGeneratedBookId(updatedJob.book_id);
+              navigate('/app');
             }, 2000);
           }
 

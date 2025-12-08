@@ -87,6 +87,7 @@ export type Database = {
           complexity: string | null
           consistent_characters: boolean | null
           cover_image_url: string | null
+          cover_regeneration_count: number | null
           cover_url: string | null
           created_at: string | null
           custom_prompt: string | null
@@ -114,6 +115,7 @@ export type Database = {
           complexity?: string | null
           consistent_characters?: boolean | null
           cover_image_url?: string | null
+          cover_regeneration_count?: number | null
           cover_url?: string | null
           created_at?: string | null
           custom_prompt?: string | null
@@ -141,6 +143,7 @@ export type Database = {
           complexity?: string | null
           consistent_characters?: boolean | null
           cover_image_url?: string | null
+          cover_regeneration_count?: number | null
           cover_url?: string | null
           created_at?: string | null
           custom_prompt?: string | null
