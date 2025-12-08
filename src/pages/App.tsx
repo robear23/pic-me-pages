@@ -9,6 +9,7 @@ import { PaymentStep } from '@/components/PaymentStep';
 import { GeneratingStep } from '@/components/GeneratingStep';
 import { CompleteStep } from '@/components/CompleteStep';
 import { ReworkSettingsStep } from '@/components/ReworkSettingsStep';
+import { BookPreviewStep } from '@/components/BookPreviewStep';
 
 const Index = () => {
   const currentStep = useBookStore((state) => state.currentStep);
@@ -35,6 +36,7 @@ const Index = () => {
         {currentStep === 'generating' && <GeneratingStep key="generating" />}
         {currentStep === 'complete' && <CompleteStep key="complete" />}
         {currentStep === 'rework-settings' && <ReworkSettingsStep key="rework-settings" />}
+        {currentStep === 'preview' && <BookPreviewStep key="preview" />}
       </AnimatePresence>
     </div>
   );

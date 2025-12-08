@@ -907,6 +907,66 @@ const Dashboard = () => {
       toast.error('Failed to load book: ' + error.message);
     }
   };
+  
+  // New unified preview and rework handler - navigates to preview step
+  const handlePreviewAndRework = async (book: Book) => {
+    try {
+      console.log('[Dashboard] Loading book for preview/rework:', book.id);
+
+      // Load full book data with pages
+      const {
+        data: fullBook,
+        error: bookError
+      } = await supabase.from('books').select('*').eq('id', book.id).single();
+      if (bookError) throw bookError;
+      if (!fullBook?.pages) throw new Error('Book pages not found');
+
+      // Populate book store with all necessary data
+      const bookStore = useBookStore.getState();
+
+      // Reset and add character data
+      bookStore.addCharacter();
+      const firstCharacterId = bookStore.characters[0]?.id;
+      if (firstCharacterId) {
+        bookStore.updateCharacter(firstCharacterId, {
+          name: fullBook.character_name
+        });
+
+        // Add photo URLs if available
+        if (fullBook.photo_urls && fullBook.photo_urls.length > 0) {
+          fullBook.photo_urls.forEach((url, idx) => {
+            if (url && idx < 3) {
+              bookStore.setCharacterPhoto(firstCharacterId, idx, url as any);
+            }
+          });
+        }
+      }
+
+      // Set all required state (filter out null pages)
+      const validPages = (fullBook.pages as any[] || []).filter((p: any) => p != null && p.imageUrl);
+      bookStore.setGeneratedPages(validPages);
+      bookStore.setGeneratedBookId(fullBook.id);
+      bookStore.setReworkedPageNumbers((fullBook.reworked_page_numbers || []) as number[]);
+      bookStore.setBookOptions((fullBook.selected_page_count || 24) as PageCount, (fullBook.selected_binding_type || 'premium') as BindingType);
+      bookStore.setCoverImageUrl(fullBook.cover_image_url);
+      bookStore.setBackCoverImageUrl(fullBook.back_cover_image_url);
+      bookStore.setComplexityLevel((fullBook.complexity || 'medium') as ComplexityLevel);
+      bookStore.setInterests((fullBook.interests || []) as string[]);
+      
+      // Clear any previous page selections
+      useBookStore.setState({ selectedPagesForRework: [] });
+
+      // Navigate to the new preview step
+      bookStore.setStep('preview');
+
+      // Navigate to app
+      navigate('/app');
+      toast.success('Book loaded - select pages to rework or change cover');
+    } catch (error: any) {
+      console.error('[Dashboard] Error loading book for preview:', error);
+      toast.error('Failed to load book: ' + error.message);
+    }
+  };
   const handleFixMissingPages = async (book: Book) => {
     try {
       console.log('[Dashboard] Fixing missing pages for book:', book.id);
@@ -1263,10 +1323,10 @@ const Dashboard = () => {
                         const reworksRemaining = maxReworks - usedReworks;
                         return reworksRemaining > 0 ? <Button size="sm" variant="outline" className="w-full border-purple-500/50 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-950/50" onClick={e => {
                           e.stopPropagation();
-                          handleReworkPages(book);
+                          handlePreviewAndRework(book);
                         }}>
                                   <Zap className="w-4 h-4 mr-1" />
-                                  Rework Pages ({reworksRemaining} left)
+                                  Rework Pages / Select Cover ({reworksRemaining} left)
                                 </Button> : <div className="text-xs text-muted-foreground text-center py-2 px-3 bg-muted/50 rounded border border-border/50">
                                   All reworks used ({maxReworks}/{maxReworks})
                                 </div>;

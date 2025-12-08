@@ -118,7 +118,7 @@ serve(async (req) => {
       .from('generated-pages')
       .getPublicUrl(backCoverPath);
 
-    // Update book record
+    // Update book record (increment cover_regeneration_count)
     const { error: updateError } = await supabase
       .from('books')
       .update({
