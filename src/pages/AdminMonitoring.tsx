@@ -7,15 +7,26 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAdmin } from '@/hooks/useAdmin';
 import { Navigate } from 'react-router-dom';
-import { Activity, AlertTriangle, CheckCircle, Clock, DollarSign, RefreshCw, Settings, XCircle, Zap } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle, Clock, DollarSign, RefreshCw, Settings, XCircle, Zap, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
+
+interface PartialJob {
+  id: string;
+  user_id: string;
+  error_message: string | null;
+  completed_at: string;
+  retry_count: number;
+  generation_data: any;
+  book_id: string | null;
+}
 
 interface QueueStats {
   pending_jobs: number;
   processing_jobs: number;
   completed_today: number;
   failed_today: number;
+  partial_today: number;
   daily_spend_usd: number;
   daily_limit_usd: number;
   max_concurrent_jobs: number;
@@ -23,6 +34,7 @@ interface QueueStats {
   success_rate: number;
   failed_jobs: FailedJob[];
   stale_jobs: StaleJob[];
+  partial_jobs: PartialJob[];
 }
 
 interface FailedJob {
@@ -260,6 +272,18 @@ export default function AdminMonitoring() {
 
           <Card>
             <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-orange-600" />
+                Partial (24h)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-orange-600">{stats?.partial_today || 0}</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Success Rate</CardTitle>
             </CardHeader>
             <CardContent>
@@ -412,16 +436,68 @@ export default function AdminMonitoring() {
           </Card>
         )}
 
+        {/* Partial Jobs */}
+        {stats?.partial_jobs && stats.partial_jobs.length > 0 && (
+          <Card className="border-orange-300 dark:border-orange-800">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-orange-800 dark:text-orange-200">
+                <AlertCircle className="w-5 h-5" />
+                Partial Jobs ({stats.partial_jobs.length})
+              </CardTitle>
+              <CardDescription>Jobs that completed with some issues in the last 24 hours</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {stats.partial_jobs.slice(0, 10).map((job) => (
+                <div key={job.id} className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-orange-200 dark:border-orange-800">
+                  <div className="flex justify-between items-start">
+                    <div className="space-y-1">
+                      <p className="font-mono text-sm">{job.id}</p>
+                      <p className="text-xs text-orange-600 dark:text-orange-400">
+                        {job.error_message || 'Completed with issues'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Completed: {formatDistanceToNow(new Date(job.completed_at), { addSuffix: true })}
+                      </p>
+                      {job.book_id && (
+                        <p className="text-xs text-muted-foreground">Book: {job.book_id}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">Retry: {job.retry_count || 0}</Badge>
+                      <Button size="sm" variant="outline" onClick={() => resetJob(job.id)}>
+                        <RefreshCw className="w-4 h-4 mr-1" />
+                        Retry
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Empty State */}
-        {stats && stats.stale_jobs?.length === 0 && stats.failed_jobs?.length === 0 && (
+        {stats && stats.stale_jobs?.length === 0 && stats.failed_jobs?.length === 0 && stats.partial_jobs?.length === 0 && (
           <Card className="border-green-300 bg-green-50 dark:bg-green-900/20">
             <CardContent className="py-8 text-center">
               <CheckCircle className="w-12 h-12 text-green-600 mx-auto mb-4" />
               <p className="text-lg font-medium text-green-800 dark:text-green-200">All Systems Healthy</p>
-              <p className="text-sm text-green-600 dark:text-green-400">No stale or failed jobs detected</p>
+              <p className="text-sm text-green-600 dark:text-green-400">No stale, failed, or partial jobs detected</p>
             </CardContent>
           </Card>
         )}
+
+        {/* Trigger Worker Info */}
+        <Card className="bg-muted/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">About the Queue System</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground space-y-2">
+            <p><strong>Trigger Worker:</strong> Manually invokes the queue-worker to process pending jobs. Useful if jobs are stuck or pg_cron is delayed.</p>
+            <p><strong>Reset Job:</strong> Resets a stuck/failed job to pending status so it can be picked up again.</p>
+            <p><strong>Partial Jobs:</strong> Books where some pages generated but covers or some pages failed. Users can still preview these.</p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
