@@ -81,6 +81,13 @@ Deno.serve(async (req) => {
       .eq('status', 'failed')
       .gte('completed_at', oneDayAgo);
 
+    // Count partial jobs (books that completed with issues)
+    const { count: partialToday } = await supabase
+      .from('book_generation_jobs')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'partial')
+      .gte('completed_at', oneDayAgo);
+
     // Average duration
     const { data: durationData } = await supabase
       .from('book_generation_jobs')
@@ -131,20 +138,31 @@ Deno.serve(async (req) => {
       .order('started_at', { ascending: true })
       .limit(20);
 
+    // Get partial jobs (books that completed with issues)
+    const { data: partialJobs } = await supabase
+      .from('book_generation_jobs')
+      .select('id, user_id, error_message, completed_at, retry_count, generation_data, book_id')
+      .eq('status', 'partial')
+      .gte('completed_at', oneDayAgo)
+      .order('completed_at', { ascending: false })
+      .limit(20);
+
     const stats = {
       pending_jobs: pendingCount || 0,
       processing_jobs: processingCount || 0,
       completed_today: completedToday || 0,
       failed_today: failedToday || 0,
+      partial_today: partialToday || 0,
       daily_spend_usd: Math.round(dailySpend * 100) / 100,
       daily_limit_usd: parseFloat(config.daily_spend_limit_usd || '50'),
       max_concurrent_jobs: parseInt(config.max_concurrent_jobs || '3'),
       avg_generation_time_minutes: Math.round(avgDurationMs / 60000 * 10) / 10,
-      success_rate: (completedToday || 0) + (failedToday || 0) > 0
-        ? Math.round(((completedToday || 0) / ((completedToday || 0) + (failedToday || 0))) * 100)
+      success_rate: (completedToday || 0) + (failedToday || 0) + (partialToday || 0) > 0
+        ? Math.round(((completedToday || 0) / ((completedToday || 0) + (failedToday || 0) + (partialToday || 0))) * 100)
         : 100,
       failed_jobs: failedJobs || [],
       stale_jobs: staleJobs || [],
+      partial_jobs: partialJobs || [],
     };
 
     console.log('Queue stats:', stats);

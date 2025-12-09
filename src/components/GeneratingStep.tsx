@@ -39,7 +39,7 @@ export const GeneratingStep = () => {
   const navigate = useNavigate();
   
   const [jobId, setJobId] = useState<string | null>(null);
-  const [jobStatus, setJobStatus] = useState<'pending' | 'processing' | 'completed' | 'failed'>('pending');
+  const [jobStatus, setJobStatus] = useState<'pending' | 'processing' | 'completed' | 'failed' | 'partial'>('pending');
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState('Preparing generation');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -53,7 +53,7 @@ export const GeneratingStep = () => {
 
   // Force re-render every 10 seconds to update elapsed time
   useEffect(() => {
-    if (jobStatus === 'completed' || jobStatus === 'failed') return;
+    if (jobStatus === 'completed' || jobStatus === 'failed' || jobStatus === 'partial') return;
     
     const timer = setInterval(() => {
       setTick(prev => prev + 1); // Force re-render
@@ -64,7 +64,7 @@ export const GeneratingStep = () => {
 
   // Check for stale progress (no updates for 2+ minutes)
   useEffect(() => {
-    if (jobStatus === 'completed' || jobStatus === 'failed') return;
+    if (jobStatus === 'completed' || jobStatus === 'failed' || jobStatus === 'partial') return;
     
     const checkInterval = setInterval(() => {
       const timeSinceUpdate = Date.now() - lastProgressUpdate;
@@ -363,7 +363,7 @@ export const GeneratingStep = () => {
   // Set up polling when we have a jobId
   // PHASE 2: Remove aggressive polling - trigger only once, rely on realtime
   useEffect(() => {
-    if (!jobId || jobStatus === 'completed' || jobStatus === 'failed') return;
+    if (!jobId || jobStatus === 'completed' || jobStatus === 'failed' || jobStatus === 'partial') return;
 
     console.log('Triggering initial processor for job:', jobId);
 
@@ -478,7 +478,7 @@ export const GeneratingStep = () => {
   
   // FIX 2: Add periodic polling as fallback to Realtime
   useEffect(() => {
-    if (!jobId || jobStatus === 'completed' || jobStatus === 'failed') return;
+    if (!jobId || jobStatus === 'completed' || jobStatus === 'failed' || jobStatus === 'partial') return;
     
     const checkJobStatus = async () => {
       const { data: job } = await supabase
@@ -605,11 +605,17 @@ export const GeneratingStep = () => {
 
           if (updatedJob.progress) {
             const { currentStep: step, currentPage, totalPages } = updatedJob.progress;
-            const progressPercent = totalPages > 0 
-              ? Math.round((currentPage / totalPages) * 90) + 5 
+            // FIX: Use selectedPageCount as fallback when totalPages is 0
+            const effectiveTotalPages = totalPages > 0 ? totalPages : (selectedPageCount || 12);
+            const progressPercent = effectiveTotalPages > 0 
+              ? Math.round((currentPage / effectiveTotalPages) * 90) + 5 
               : 5;
             
-            setProgress(Math.min(progressPercent, 95));
+            // Don't set 100% progress unless job is actually completed/partial
+            const cappedProgress = updatedJob.status === 'completed' || updatedJob.status === 'partial' 
+              ? 100 
+              : Math.min(progressPercent, 95);
+            setProgress(cappedProgress);
             setCurrentStep(step || 'Processing...');
             
             // Reset timeout if function is pausing for memory cleanup
@@ -775,10 +781,14 @@ export const GeneratingStep = () => {
     if (normalized.includes('prompt') || normalized.includes('story')) return 1;
     if (normalized.includes('generat') || normalized.includes('image') || normalized.includes('page') || normalized.includes('paused') || normalized.includes('pausing')) return 2;
     if (normalized.includes('cover')) return 3;
-    if (normalized.includes('finaliz') || normalized.includes('complet')) return 4;
+    // FIX: Include 'partial' as a completed state
+    if (normalized.includes('finaliz') || normalized.includes('complet') || normalized.includes('partial')) return 4;
     
     return -1; // Unknown step
   };
+
+  // Determine if job is in a terminal state
+  const isTerminalState = jobStatus === 'completed' || jobStatus === 'failed' || jobStatus === 'partial';
 
   const currentStepIndex = getCurrentStepIndex(currentStep);
 
@@ -849,7 +859,9 @@ export const GeneratingStep = () => {
               </motion.div>
 
               <h2 className="font-black text-4xl md:text-5xl mb-4">
-                {jobStatus === 'completed' ? 'Book Complete!' : 'Creating Your Coloring Book...'}
+                {jobStatus === 'completed' ? 'Book Complete!' : 
+                 jobStatus === 'partial' ? 'Book Partially Complete' : 
+                 'Creating Your Coloring Book...'}
               </h2>
 
               {/* Important Info Alert */}
@@ -931,8 +943,8 @@ export const GeneratingStep = () => {
               {/* Status Steps */}
               <div className="space-y-4">
                 {GENERATION_STEPS.map((step, index) => {
-                  const isComplete = (index < currentStepIndex && currentStepIndex >= 0) || jobStatus === 'completed';
-                  const isCurrent = index === currentStepIndex && jobStatus !== 'completed' && currentStepIndex >= 0;
+                  const isComplete = (index < currentStepIndex && currentStepIndex >= 0) || isTerminalState;
+                  const isCurrent = index === currentStepIndex && !isTerminalState && currentStepIndex >= 0;
 
                   return (
                     <motion.div
