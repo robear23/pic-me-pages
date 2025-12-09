@@ -384,7 +384,7 @@ export default function AdminMonitoring() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">Retry: {job.retry_count || 0}</Badge>
-                      <Button size="sm" onClick={() => resetJob(job.id)}>
+                      <Button size="sm" className="bg-yellow-600 hover:bg-yellow-700 text-white" onClick={() => resetJob(job.id)}>
                         <RefreshCw className="w-4 h-4 mr-1" />
                         Reset
                       </Button>
@@ -424,7 +424,7 @@ export default function AdminMonitoring() {
                         {job.failure_reason || 'unknown'}
                       </Badge>
                       <Badge variant="outline">Retry: {job.retry_count || 0}</Badge>
-                      <Button size="sm" variant="outline" onClick={() => resetJob(job.id)}>
+                      <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={() => resetJob(job.id)}>
                         <RefreshCw className="w-4 h-4 mr-1" />
                         Retry
                       </Button>
@@ -464,7 +464,7 @@ export default function AdminMonitoring() {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">Retry: {job.retry_count || 0}</Badge>
-                      <Button size="sm" variant="outline" onClick={() => resetJob(job.id)}>
+                      <Button size="sm" className="bg-orange-600 hover:bg-orange-700 text-white" onClick={() => resetJob(job.id)}>
                         <RefreshCw className="w-4 h-4 mr-1" />
                         Retry
                       </Button>

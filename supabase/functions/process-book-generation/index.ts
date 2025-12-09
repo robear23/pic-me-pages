@@ -1426,20 +1426,22 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
       console.log(`✅ Updated reworked_page_numbers: ${existingReworked.length} → ${newReworked.length}`);
     }
 
-    // Mark job as completed based on BOTH pages AND PDFs
+    // Mark job as completed based on pages generated
+    // IMPORTANT: Book status and job status should match to avoid confusion
     const hasAllPages = totalGenerated === totalExpected;
-    const hasAllPdfs = hasCoverPdf; // Interior PDF generated client-side
     
+    // Book status determines job status - keep them in sync
     let finalStatus: string;
     let statusMessage: string | null = null;
     
-    if (hasAllPages && hasAllPdfs) {
+    if (hasAllPages) {
+      // All pages generated successfully - mark as completed
+      // Cover PDF status should not affect job completion since clients handle PDF generation
       finalStatus = 'completed';
-    } else if (hasAllPages && !hasAllPdfs) {
-      finalStatus = 'partial'; // Pages complete, PDFs missing - client will generate
-      statusMessage = 'Pages complete. PDFs will be generated on client.';
+      statusMessage = hasCoverPdf ? null : 'PDFs will be generated on client.';
     } else {
-      finalStatus = 'partial'; // Some pages failed
+      // Some pages failed - mark as partial
+      finalStatus = 'partial';
       statusMessage = `Generated ${totalGenerated}/${totalExpected} pages. Some pages failed.`;
     }
 
