@@ -141,7 +141,13 @@ export const BookPreviewStep = () => {
     togglePageForRework(pageNumber);
   };
 
-  const handleRegenerateSelected = () => {
+  const handleRegenerateSelected = async () => {
+    // Handle cover change without rework
+    if (selectedCoverPageIndex !== null && selectedPagesForRework.length === 0) {
+      await handleCoverChange();
+      return;
+    }
+    
     if (selectedPagesForRework.length === 0) {
       toast({
         title: 'No Pages Selected',
@@ -149,6 +155,11 @@ export const BookPreviewStep = () => {
         variant: 'destructive',
       });
       return;
+    }
+    
+    // Apply cover change before rework if selected
+    if (selectedCoverPageIndex !== null) {
+      await handleCoverChange();
     }
     
     // Enter rework mode and go to generating step
@@ -159,6 +170,52 @@ export const BookPreviewStep = () => {
       generationStatus: '',
       apiError: null,
     });
+  };
+  
+  const handleCoverChange = async () => {
+    if (selectedCoverPageIndex === null || !generatedBookId) return;
+    
+    const selectedPage = pagesToShow[selectedCoverPageIndex];
+    if (!selectedPage) return;
+    
+    try {
+      // Update the book's cover_image_url to use the selected page
+      const { error } = await supabase
+        .from('books')
+        .update({ 
+          cover_image_url: selectedPage.imageUrl,
+          cover_regeneration_count: coverRegenerationCount + 1
+        })
+        .eq('id', generatedBookId);
+      
+      if (error) throw error;
+      
+      setCoverRegenerationCount(prev => prev + 1);
+      setSelectedCoverPageIndex(null);
+      
+      // Reload book data
+      const { data: updatedBook } = await supabase
+        .from('books')
+        .select('*')
+        .eq('id', generatedBookId)
+        .single();
+      
+      if (updatedBook) {
+        setBookData(updatedBook);
+      }
+      
+      toast({
+        title: 'Cover Updated!',
+        description: `Page ${selectedPage.pageNumber} is now your cover image.`,
+      });
+    } catch (error: any) {
+      console.error('Cover change error:', error);
+      toast({
+        title: 'Cover Change Failed',
+        description: error.message || 'Unable to change cover. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleRegenerateCover = async () => {
@@ -348,7 +405,7 @@ export const BookPreviewStep = () => {
             Preview Your Book 📖
           </h2>
           <p className="text-lg text-muted-foreground">
-            Select pages to rework or change your cover image
+            Select pages to rework, or click a page to use as your cover
           </p>
         </motion.div>
 
@@ -399,28 +456,41 @@ export const BookPreviewStep = () => {
                 <div className="flex-1 text-center md:text-left">
                   <h3 className="text-xl font-bold mb-2">Book Cover</h3>
                   <p className="text-muted-foreground mb-4">
-                    {coverChangesRemaining > 0 
-                      ? `You can change the cover ${coverChangesRemaining} more time(s).`
-                      : 'You have used all cover changes.'}
+                    {selectedCoverPageIndex !== null 
+                      ? `Page ${pagesToShow[selectedCoverPageIndex]?.pageNumber} selected as new cover`
+                      : coverChangesRemaining > 0 
+                        ? `Click any page below to use as cover, or generate a new AI cover (${coverChangesRemaining} left).`
+                        : 'You have used all cover changes.'}
                   </p>
-                  <Button
-                    onClick={handleRegenerateCover}
-                    disabled={retryingCover || coverChangesRemaining <= 0}
-                    variant="outline"
-                    className="gap-2"
-                  >
-                    {retryingCover ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <RefreshCw className="w-4 h-4" />
-                        Generate New Cover ({coverChangesRemaining} left)
-                      </>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedCoverPageIndex !== null && (
+                      <Button
+                        onClick={() => setSelectedCoverPageIndex(null)}
+                        variant="outline"
+                        className="gap-2"
+                      >
+                        Clear Selection
+                      </Button>
                     )}
-                  </Button>
+                    <Button
+                      onClick={handleRegenerateCover}
+                      disabled={retryingCover || coverChangesRemaining <= 0}
+                      variant="outline"
+                      className="gap-2"
+                    >
+                      {retryingCover ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <RefreshCw className="w-4 h-4" />
+                          Generate AI Cover ({coverChangesRemaining} left)
+                        </>
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -479,15 +549,17 @@ export const BookPreviewStep = () => {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: 0.05 * index }}
                 className={`
-                  relative aspect-[3/4] rounded-lg overflow-hidden border-2 cursor-pointer
+                  group relative aspect-[3/4] rounded-lg overflow-hidden border-2 cursor-pointer bg-white
                   transition-all duration-200
-                  ${isSelected 
-                    ? 'border-primary ring-2 ring-primary/50 shadow-lg scale-105' 
-                    : wasReworked
-                      ? 'border-green-500/50 opacity-75'
-                      : canSelect
-                        ? 'border-border hover:border-primary/50 hover:shadow-md'
-                        : 'border-border opacity-50 cursor-not-allowed'
+                  ${selectedCoverPageIndex === index
+                    ? 'border-amber-500 ring-2 ring-amber-500/50 shadow-lg scale-105'
+                    : isSelected 
+                      ? 'border-primary ring-2 ring-primary/50 shadow-lg scale-105' 
+                      : wasReworked
+                        ? 'border-green-500/50 opacity-75'
+                        : canSelect
+                          ? 'border-border hover:border-primary/50 hover:shadow-md'
+                          : 'border-border opacity-50 cursor-not-allowed'
                   }
                 `}
                 onClick={() => canSelect && handleTogglePage(page.pageNumber)}
@@ -495,7 +567,7 @@ export const BookPreviewStep = () => {
                 <img
                   src={page.imageUrl}
                   alt={`Page ${page.pageNumber}`}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain bg-white"
                   loading="lazy"
                 />
                 
@@ -519,6 +591,30 @@ export const BookPreviewStep = () => {
                     <Check className="w-3 h-3" />
                   </div>
                 )}
+                
+                {/* Cover Selection Indicator */}
+                {selectedCoverPageIndex === index && (
+                  <div className="absolute top-2 right-2 bg-amber-500 text-white rounded-full px-2 py-0.5 text-xs font-bold">
+                    COVER
+                  </div>
+                )}
+                
+                {/* Use as Cover Button - only show for unselected rework pages */}
+                {!isSelected && !wasReworked && selectedCoverPageIndex !== index && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedCoverPageIndex(index);
+                      toast({
+                        title: 'Cover Selected',
+                        description: `Page ${page.pageNumber} will be used as the cover image.`,
+                      });
+                    }}
+                    className="absolute bottom-2 left-2 bg-background/90 hover:bg-background text-foreground rounded px-2 py-1 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity border"
+                  >
+                    Use as Cover
+                  </button>
+                )}
               </motion.div>
             );
           })}
@@ -533,12 +629,17 @@ export const BookPreviewStep = () => {
         >
           <Button
             onClick={handleRegenerateSelected}
-            disabled={selectedPagesForRework.length === 0}
+            disabled={selectedPagesForRework.length === 0 && selectedCoverPageIndex === null}
             size="lg"
-            className="gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+            className="gap-2 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
           >
             <RefreshCw className="w-5 h-5" />
-            Regenerate Selected ({selectedPagesForRework.length})
+            {selectedCoverPageIndex !== null && selectedPagesForRework.length > 0
+              ? `Rework ${selectedPagesForRework.length} Page(s) & Change Cover`
+              : selectedCoverPageIndex !== null
+                ? 'Change Cover'
+                : `Regenerate ${selectedPagesForRework.length} Page(s)`
+            }
           </Button>
           
           <Button
