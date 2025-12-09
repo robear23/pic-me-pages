@@ -5,14 +5,20 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface SystemConfig {
-  key: string;
-  value: number | string;
+// Helper to extract value from JSONB - handles both raw values and wrapped strings
+function extractValue(jsonbValue: any): string {
+  console.log('extractValue input:', typeof jsonbValue, jsonbValue);
+  if (jsonbValue === null || jsonbValue === undefined) return '';
+  if (typeof jsonbValue === 'string') {
+    return jsonbValue; // Don't parse - just use as-is
+  }
+  return String(jsonbValue);
 }
 
 Deno.serve(async (req) => {
   console.log('=== queue-worker invoked ===');
   console.log('Time:', new Date().toISOString());
+  console.log('Method:', req.method);
 
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -28,11 +34,15 @@ Deno.serve(async (req) => {
     console.log('Worker ID:', workerId);
 
     // Step 1: Check daily spend limit
-    const { data: spendConfig } = await supabase
+    const { data: spendConfig, error: spendError } = await supabase
       .from('system_config')
       .select('value')
       .eq('key', 'current_daily_spend_usd')
       .single();
+
+    if (spendError) {
+      console.log('No spend config found, using defaults');
+    }
 
     const { data: limitConfig } = await supabase
       .from('system_config')
@@ -40,8 +50,10 @@ Deno.serve(async (req) => {
       .eq('key', 'daily_spend_limit_usd')
       .single();
 
-    const currentSpend = parseFloat(spendConfig?.value as string || '0');
-    const dailyLimit = parseFloat(limitConfig?.value as string || '50');
+    const currentSpend = parseFloat(extractValue(spendConfig?.value) || '0');
+    const dailyLimit = parseFloat(extractValue(limitConfig?.value) || '50');
+
+    console.log(`Daily spend: $${currentSpend}/$${dailyLimit}`);
 
     // Reset daily spend if new day
     const { data: resetConfig } = await supabase
@@ -50,14 +62,15 @@ Deno.serve(async (req) => {
       .eq('key', 'daily_spend_reset_at')
       .single();
 
-    const lastReset = new Date(JSON.parse(resetConfig?.value as string || '""'));
+    const resetValue = extractValue(resetConfig?.value);
+    const lastReset = resetValue ? new Date(resetValue) : new Date(0);
     const now = new Date();
     
     if (lastReset.toDateString() !== now.toDateString()) {
       console.log('Resetting daily spend counter for new day');
       await supabase.from('system_config').upsert([
-        { key: 'current_daily_spend_usd', value: '0', updated_at: now.toISOString() },
-        { key: 'daily_spend_reset_at', value: JSON.stringify(now.toISOString()), updated_at: now.toISOString() }
+        { key: 'current_daily_spend_usd', value: 0, updated_at: now.toISOString() },
+        { key: 'daily_spend_reset_at', value: now.toISOString(), updated_at: now.toISOString() }
       ]);
     }
 
@@ -92,7 +105,7 @@ Deno.serve(async (req) => {
       .eq('key', 'max_concurrent_jobs')
       .single();
 
-    const maxConcurrent = parseInt(concurrentConfig?.value as string || '3');
+    const maxConcurrent = parseInt(extractValue(concurrentConfig?.value) || '3');
     console.log(`Active jobs: ${activeJobs || 0}/${maxConcurrent}`);
 
     if ((activeJobs || 0) >= maxConcurrent) {
