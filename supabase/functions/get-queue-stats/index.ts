@@ -147,6 +147,21 @@ Deno.serve(async (req) => {
       .order('completed_at', { ascending: false })
       .limit(20);
 
+    // Enrich partial jobs with book status to identify mismatches
+    const enrichedPartialJobs = await Promise.all(
+      (partialJobs || []).map(async (job) => {
+        if (job.book_id) {
+          const { data: book } = await supabase
+            .from('books')
+            .select('status')
+            .eq('id', job.book_id)
+            .single();
+          return { ...job, book_status: book?.status || 'unknown' };
+        }
+        return { ...job, book_status: null };
+      })
+    );
+
     const stats = {
       pending_jobs: pendingCount || 0,
       processing_jobs: processingCount || 0,
@@ -162,7 +177,7 @@ Deno.serve(async (req) => {
         : 100,
       failed_jobs: failedJobs || [],
       stale_jobs: staleJobs || [],
-      partial_jobs: partialJobs || [],
+      partial_jobs: enrichedPartialJobs || [],
     };
 
     console.log('Queue stats:', stats);
