@@ -1461,6 +1461,70 @@ Minimal or no decorative elements. Clean, professional, ready for text overlay i
 
     console.log(`✅ Job ${job.id} ${finalStatus}. Book ID: ${bookId} (${totalGenerated}/${totalExpected} pages)`);
     logMemoryUsage('Final');
+
+    // Send completion email if job is fully completed
+    if (finalStatus === 'completed') {
+      try {
+        // Get user email
+        const { data: userData } = await supabase.auth.admin.getUserById(job.user_id);
+        const userEmail = userData?.user?.email;
+        
+        if (userEmail) {
+          console.log(`📧 Sending completion email to ${userEmail}`);
+          
+          // Note: Using service role to call send-email
+          const emailResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-email`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+            },
+            body: JSON.stringify({
+              templateName: 'order_confirmation',
+              recipientEmail: userEmail,
+              variables: {
+                customerName: characterName || 'there',
+                childName: characterName || 'your child',
+                interests: interests?.join(', ') || 'adventures',
+                orderId: bookId,
+                orderDate: new Date().toLocaleDateString(),
+              }
+            }),
+          });
+          
+          if (emailResponse.ok) {
+            console.log('✅ Completion email sent successfully');
+          } else {
+            console.warn('⚠️ Failed to send completion email:', await emailResponse.text());
+          }
+        }
+      } catch (emailError) {
+        console.error('⚠️ Error sending completion email:', emailError);
+        // Don't fail the job if email fails
+      }
+    }
+
+    // Log API usage for cost tracking
+    try {
+      const estimatedCost = totalGenerated * 0.02; // ~$0.02 per image generation
+      await supabase
+        .from('api_usage_logs')
+        .insert({
+          job_id: job.id,
+          api_name: 'gemini_image_generation',
+          tokens_used: totalGenerated * 1000, // Estimated tokens
+          estimated_cost_usd: estimatedCost,
+          metadata: {
+            pages_generated: totalGenerated,
+            complexity: complexityLevel,
+            is_rework: isReworkMode || false,
+            is_uk_flow: isUK,
+          }
+        });
+      console.log(`📊 Logged API usage: ${totalGenerated} images, ~$${estimatedCost.toFixed(3)}`);
+    } catch (usageError) {
+      console.warn('⚠️ Failed to log API usage:', usageError);
+    }
     
     // FIX 1: Return success response for completed job
     return new Response(

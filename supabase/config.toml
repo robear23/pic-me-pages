@@ -45,3 +45,9 @@ verify_jwt = true
 
 [functions.uk-verify-payment]
 verify_jwt = true
+
+[functions.queue-worker]
+verify_jwt = false
+
+[functions.get-queue-stats]
+verify_jwt = true
