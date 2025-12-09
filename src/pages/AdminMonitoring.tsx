@@ -19,6 +19,7 @@ interface PartialJob {
   retry_count: number;
   generation_data: any;
   book_id: string | null;
+  book_status?: string | null;
 }
 
 interface QueueStats {
@@ -101,11 +102,18 @@ export default function AdminMonitoring() {
 
   const resetJob = async (jobId: string) => {
     try {
-      const { data: job } = await supabase
+      toast.info('Resetting job...');
+      
+      const { data: job, error: fetchError } = await supabase
         .from('book_generation_jobs')
-        .select('retry_count')
+        .select('retry_count, error_message')
         .eq('id', jobId)
         .single();
+
+      if (fetchError) {
+        console.error('Failed to fetch job:', fetchError);
+        throw new Error(`Could not fetch job: ${fetchError.message}`);
+      }
 
       const { error } = await supabase
         .from('book_generation_jobs')
@@ -114,6 +122,8 @@ export default function AdminMonitoring() {
           started_at: null,
           last_heartbeat: null,
           worker_id: null,
+          error_message: null,
+          failure_reason: null,
           retry_count: (job?.retry_count || 0) + 1,
           updated_at: new Date().toISOString(),
         })
@@ -121,11 +131,52 @@ export default function AdminMonitoring() {
 
       if (error) throw error;
 
-      toast.success('Job reset to pending');
+      toast.success('Job reset to pending - triggering worker...');
+      
+      // Automatically trigger the queue worker after reset
+      await triggerQueueWorker();
       loadStats();
     } catch (error) {
       console.error('Failed to reset job:', error);
-      toast.error('Failed to reset job');
+      toast.error(`Failed to reset job: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const markJobComplete = async (jobId: string, bookId: string) => {
+    try {
+      toast.info('Marking job as complete...');
+      
+      // Verify the book is actually completed
+      const { data: book, error: bookError } = await supabase
+        .from('books')
+        .select('status')
+        .eq('id', bookId)
+        .single();
+
+      if (bookError) throw new Error(`Could not verify book status: ${bookError.message}`);
+      
+      if (book.status !== 'completed') {
+        toast.error(`Book status is "${book.status}", not completed`);
+        return;
+      }
+
+      // Update job to match book status
+      const { error } = await supabase
+        .from('book_generation_jobs')
+        .update({
+          status: 'completed',
+          error_message: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', jobId);
+
+      if (error) throw error;
+
+      toast.success('Job marked as completed');
+      loadStats();
+    } catch (error) {
+      console.error('Failed to mark job complete:', error);
+      toast.error(`Failed to mark complete: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -448,26 +499,45 @@ export default function AdminMonitoring() {
             </CardHeader>
             <CardContent className="space-y-3">
               {stats.partial_jobs.slice(0, 10).map((job) => (
-                <div key={job.id} className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-orange-200 dark:border-orange-800">
+                <div key={job.id} className={`bg-white dark:bg-gray-800 p-4 rounded-lg border ${job.book_status === 'completed' ? 'border-green-300 dark:border-green-700' : 'border-orange-200 dark:border-orange-800'}`}>
                   <div className="flex justify-between items-start">
                     <div className="space-y-1">
-                      <p className="font-mono text-sm">{job.id}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-mono text-sm">{job.id}</p>
+                        {job.book_status === 'completed' && (
+                          <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                            Book Completed ✓
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-xs text-orange-600 dark:text-orange-400">
-                        {job.error_message || 'Completed with issues'}
+                        {job.book_status === 'completed' 
+                          ? 'Job status mismatch - book is actually completed' 
+                          : job.error_message || 'Completed with issues'}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Completed: {formatDistanceToNow(new Date(job.completed_at), { addSuffix: true })}
                       </p>
                       {job.book_id && (
-                        <p className="text-xs text-muted-foreground">Book: {job.book_id}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Book: {job.book_id} {job.book_status && `(${job.book_status})`}
+                        </p>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">Retry: {job.retry_count || 0}</Badge>
-                      <Button size="sm" className="bg-orange-600 hover:bg-orange-700 text-white" onClick={() => resetJob(job.id)}>
-                        <RefreshCw className="w-4 h-4 mr-1" />
-                        Retry
-                      </Button>
+                      {job.book_id && job.book_status === 'completed' && (
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => markJobComplete(job.id, job.book_id!)}>
+                          <CheckCircle className="w-4 h-4 mr-1" />
+                          Sync Status
+                        </Button>
+                      )}
+                      {(!job.book_status || job.book_status !== 'completed') && (
+                        <Button size="sm" className="bg-orange-600 hover:bg-orange-700 text-white" onClick={() => resetJob(job.id)}>
+                          <RefreshCw className="w-4 h-4 mr-1" />
+                          Retry
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
