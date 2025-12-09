@@ -14,8 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_usage_logs: {
+        Row: {
+          api_name: string
+          created_at: string | null
+          estimated_cost_usd: number | null
+          id: string
+          job_id: string | null
+          metadata: Json | null
+          tokens_used: number | null
+        }
+        Insert: {
+          api_name: string
+          created_at?: string | null
+          estimated_cost_usd?: number | null
+          id?: string
+          job_id?: string | null
+          metadata?: Json | null
+          tokens_used?: number | null
+        }
+        Update: {
+          api_name?: string
+          created_at?: string | null
+          estimated_cost_usd?: number | null
+          id?: string
+          job_id?: string | null
+          metadata?: Json | null
+          tokens_used?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_usage_logs_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "book_generation_jobs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       book_generation_jobs: {
         Row: {
+          attempts: number | null
           book_id: string | null
           completed_at: string | null
           created_at: string | null
@@ -25,15 +64,19 @@ export type Database = {
           id: string
           last_heartbeat: string | null
           max_retries: number | null
+          priority: number | null
           processing_duration_ms: number | null
           progress: Json | null
           retry_count: number | null
+          scheduled_at: string | null
           started_at: string | null
           status: string
           updated_at: string | null
           user_id: string
+          worker_id: string | null
         }
         Insert: {
+          attempts?: number | null
           book_id?: string | null
           completed_at?: string | null
           created_at?: string | null
@@ -43,15 +86,19 @@ export type Database = {
           id?: string
           last_heartbeat?: string | null
           max_retries?: number | null
+          priority?: number | null
           processing_duration_ms?: number | null
           progress?: Json | null
           retry_count?: number | null
+          scheduled_at?: string | null
           started_at?: string | null
           status?: string
           updated_at?: string | null
           user_id: string
+          worker_id?: string | null
         }
         Update: {
+          attempts?: number | null
           book_id?: string | null
           completed_at?: string | null
           created_at?: string | null
@@ -61,13 +108,16 @@ export type Database = {
           id?: string
           last_heartbeat?: string | null
           max_retries?: number | null
+          priority?: number | null
           processing_duration_ms?: number | null
           progress?: Json | null
           retry_count?: number | null
+          scheduled_at?: string | null
           started_at?: string | null
           status?: string
           updated_at?: string | null
           user_id?: string
+          worker_id?: string | null
         }
         Relationships: [
           {
@@ -398,6 +448,24 @@ export type Database = {
           },
         ]
       }
+      system_config: {
+        Row: {
+          key: string
+          updated_at: string | null
+          value: Json
+        }
+        Insert: {
+          key: string
+          updated_at?: string | null
+          value: Json
+        }
+        Update: {
+          key?: string
+          updated_at?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string | null
@@ -456,6 +524,17 @@ export type Database = {
           avg_duration_minutes: number
           completed_count: number
           failed_count: number
+          pending_count: number
+          processing_count: number
+        }[]
+      }
+      get_queue_stats: {
+        Args: { time_window_hours?: number }
+        Returns: {
+          avg_generation_time_minutes: number
+          completed_today: number
+          daily_spend_usd: number
+          failed_today: number
           pending_count: number
           processing_count: number
         }[]
