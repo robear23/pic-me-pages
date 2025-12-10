@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { supabase } from '@/integrations/supabase/client';
 import { useAdmin } from '@/hooks/useAdmin';
 import { Navigate } from 'react-router-dom';
-import { Activity, AlertTriangle, CheckCircle, Clock, DollarSign, RefreshCw, Settings, XCircle, Zap, AlertCircle } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle, Clock, DollarSign, RefreshCw, Settings, XCircle, Zap, AlertCircle, Play, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -20,6 +20,36 @@ interface PartialJob {
   generation_data: any;
   book_id: string | null;
   book_status?: string | null;
+}
+
+interface ProcessingJob {
+  id: string;
+  user_id: string;
+  status: string;
+  started_at: string;
+  last_heartbeat: string | null;
+  progress: {
+    currentPage: number;
+    totalPages: number;
+    currentStep: string;
+  } | null;
+  worker_id: string | null;
+  generation_data: any;
+  book_id: string | null;
+}
+
+interface PendingJob {
+  id: string;
+  user_id: string;
+  priority: number;
+  created_at: string;
+  scheduled_at: string;
+  generation_data: any;
+  progress: {
+    currentPage: number;
+    totalPages: number;
+    currentStep: string;
+  } | null;
 }
 
 interface QueueStats {
@@ -36,6 +66,8 @@ interface QueueStats {
   failed_jobs: FailedJob[];
   stale_jobs: StaleJob[];
   partial_jobs: PartialJob[];
+  processing_jobs_list: ProcessingJob[];
+  pending_jobs_list: PendingJob[];
 }
 
 interface FailedJob {
@@ -64,6 +96,7 @@ export default function AdminMonitoring() {
   const [stats, setStats] = useState<QueueStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [editingConfig, setEditingConfig] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(true);
   const [configValues, setConfigValues] = useState({
     max_concurrent_jobs: 3,
     daily_spend_limit_usd: 50,
@@ -95,10 +128,13 @@ export default function AdminMonitoring() {
   useEffect(() => {
     if (isAdmin) {
       loadStats();
-      const interval = setInterval(loadStats, 30000);
-      return () => clearInterval(interval);
+      // Auto-refresh every 10 seconds when enabled (faster for active monitoring)
+      if (autoRefresh) {
+        const interval = setInterval(loadStats, 10000);
+        return () => clearInterval(interval);
+      }
     }
-  }, [isAdmin]);
+  }, [isAdmin, autoRefresh]);
 
   const resetJob = async (jobId: string) => {
     try {
@@ -144,7 +180,7 @@ export default function AdminMonitoring() {
 
   const markJobComplete = async (jobId: string, bookId: string) => {
     try {
-      toast.info('Marking job as complete...');
+      toast.info('Syncing job status with book...');
       
       // Verify the book is actually completed
       const { data: book, error: bookError } = await supabase
@@ -153,7 +189,15 @@ export default function AdminMonitoring() {
         .eq('id', bookId)
         .single();
 
-      if (bookError) throw new Error(`Could not verify book status: ${bookError.message}`);
+      if (bookError) {
+        console.error('Book fetch error:', bookError);
+        throw new Error(`Could not verify book status: ${bookError.message}`);
+      }
+      
+      if (!book) {
+        toast.error('Book not found');
+        return;
+      }
       
       if (book.status !== 'completed') {
         toast.error(`Book status is "${book.status}", not completed`);
@@ -172,11 +216,46 @@ export default function AdminMonitoring() {
 
       if (error) throw error;
 
-      toast.success('Job marked as completed');
+      toast.success('Job status synced to completed');
       loadStats();
     } catch (error) {
       console.error('Failed to mark job complete:', error);
-      toast.error(`Failed to mark complete: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      toast.error(`Failed to sync status: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const bumpPriority = async (jobId: string) => {
+    try {
+      const { error } = await supabase
+        .from('book_generation_jobs')
+        .update({ priority: 100, updated_at: new Date().toISOString() })
+        .eq('id', jobId);
+
+      if (error) throw error;
+
+      toast.success('Job priority increased');
+      loadStats();
+    } catch (error) {
+      console.error('Failed to bump priority:', error);
+      toast.error('Failed to update priority');
+    }
+  };
+
+  const forceStartJob = async (jobId: string) => {
+    try {
+      toast.info('Force starting job...');
+      
+      // Bump priority and trigger worker
+      await supabase
+        .from('book_generation_jobs')
+        .update({ priority: 999, updated_at: new Date().toISOString() })
+        .eq('id', jobId);
+
+      await triggerQueueWorker();
+      loadStats();
+    } catch (error) {
+      console.error('Failed to force start job:', error);
+      toast.error('Failed to force start job');
     }
   };
 
@@ -222,6 +301,14 @@ export default function AdminMonitoring() {
     }
   };
 
+  const getHeartbeatStatus = (lastHeartbeat: string | null) => {
+    if (!lastHeartbeat) return { status: 'stale', color: 'text-red-600', label: 'No heartbeat' };
+    const age = Date.now() - new Date(lastHeartbeat).getTime();
+    if (age < 60000) return { status: 'healthy', color: 'text-green-600', label: 'Healthy' };
+    if (age < 180000) return { status: 'warning', color: 'text-yellow-600', label: 'Slow' };
+    return { status: 'stale', color: 'text-red-600', label: 'Stale' };
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -245,7 +332,16 @@ export default function AdminMonitoring() {
             <h1 className="text-4xl font-bold mb-2">Queue Monitoring</h1>
             <p className="text-muted-foreground">Real-time job queue, costs, and system health</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={autoRefresh}
+                onChange={(e) => setAutoRefresh(e.target.checked)}
+                className="rounded"
+              />
+              Auto-refresh
+            </label>
             <Button onClick={triggerQueueWorker} variant="secondary">
               <Zap className="w-4 h-4 mr-2" />
               Trigger Worker
@@ -258,7 +354,7 @@ export default function AdminMonitoring() {
         </div>
 
         {/* Main Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -344,6 +440,124 @@ export default function AdminMonitoring() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Currently Processing Jobs */}
+        {stats?.processing_jobs_list && stats.processing_jobs_list.length > 0 && (
+          <Card className="border-blue-300 dark:border-blue-800">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-blue-800 dark:text-blue-200">
+                <Activity className="w-5 h-5 animate-pulse" />
+                Currently Processing ({stats.processing_jobs_list.length})
+              </CardTitle>
+              <CardDescription>Jobs actively being generated</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {stats.processing_jobs_list.map((job) => {
+                const heartbeat = getHeartbeatStatus(job.last_heartbeat);
+                const progress = job.progress;
+                const elapsed = job.started_at 
+                  ? Math.round((Date.now() - new Date(job.started_at).getTime()) / 60000) 
+                  : 0;
+                
+                return (
+                  <div key={job.id} className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                    <div className="flex justify-between items-start">
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <p className="font-mono text-sm">{job.id.substring(0, 8)}...</p>
+                          <Badge className={`${heartbeat.color} bg-opacity-20`}>
+                            💓 {heartbeat.label}
+                          </Badge>
+                        </div>
+                        
+                        {/* Progress bar */}
+                        {progress && (
+                          <div className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span>{progress.currentStep}</span>
+                              <span>{progress.currentPage}/{progress.totalPages} pages</span>
+                            </div>
+                            <div className="w-64 bg-gray-200 rounded-full h-2">
+                              <div 
+                                className="bg-blue-600 h-2 rounded-full transition-all duration-500"
+                                style={{ width: `${(progress.currentPage / progress.totalPages) * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div className="flex gap-4 text-xs text-muted-foreground">
+                          <span>Started: {elapsed} min ago</span>
+                          {job.worker_id && <span>Worker: {job.worker_id.substring(0, 15)}...</span>}
+                          {job.book_id && <span>Book: {job.book_id.substring(0, 8)}...</span>}
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="outline" onClick={() => resetJob(job.id)}>
+                          <RefreshCw className="w-4 h-4 mr-1" />
+                          Reset
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Pending Jobs Queue */}
+        {stats?.pending_jobs_list && stats.pending_jobs_list.length > 0 && (
+          <Card className="border-yellow-300 dark:border-yellow-800">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200">
+                <Clock className="w-5 h-5" />
+                Pending Queue ({stats.pending_jobs_list.length})
+              </CardTitle>
+              <CardDescription>Jobs waiting to be processed</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {stats.pending_jobs_list.map((job, index) => {
+                const waitTime = Math.round((Date.now() - new Date(job.created_at).getTime()) / 60000);
+                const progress = job.progress;
+                const isResuming = progress && progress.currentPage > 0;
+                
+                return (
+                  <div key={job.id} className={`bg-white dark:bg-gray-800 p-4 rounded-lg border ${isResuming ? 'border-purple-300 dark:border-purple-700' : 'border-yellow-200 dark:border-yellow-800'}`}>
+                    <div className="flex justify-between items-start">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">#{index + 1}</span>
+                          <p className="font-mono text-sm">{job.id.substring(0, 8)}...</p>
+                          <Badge variant="outline">Priority: {job.priority}</Badge>
+                          {isResuming && (
+                            <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                              Resuming ({progress!.currentPage}/{progress!.totalPages})
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Waiting: {waitTime} min • Created: {formatDistanceToNow(new Date(job.created_at), { addSuffix: true })}
+                        </p>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        <Button size="sm" variant="outline" onClick={() => bumpPriority(job.id)}>
+                          ⬆️ Bump
+                        </Button>
+                        <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={() => forceStartJob(job.id)}>
+                          <Play className="w-4 h-4 mr-1" />
+                          Start Now
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Config Card */}
         <Card>
@@ -547,12 +761,12 @@ export default function AdminMonitoring() {
         )}
 
         {/* Empty State */}
-        {stats && stats.stale_jobs?.length === 0 && stats.failed_jobs?.length === 0 && stats.partial_jobs?.length === 0 && (
+        {stats && stats.stale_jobs?.length === 0 && stats.failed_jobs?.length === 0 && stats.partial_jobs?.length === 0 && !stats.processing_jobs_list?.length && !stats.pending_jobs_list?.length && (
           <Card className="border-green-300 bg-green-50 dark:bg-green-900/20">
             <CardContent className="py-8 text-center">
               <CheckCircle className="w-12 h-12 text-green-600 mx-auto mb-4" />
               <p className="text-lg font-medium text-green-800 dark:text-green-200">All Systems Healthy</p>
-              <p className="text-sm text-green-600 dark:text-green-400">No stale, failed, or partial jobs detected</p>
+              <p className="text-sm text-green-600 dark:text-green-400">No active, stale, failed, or partial jobs detected</p>
             </CardContent>
           </Card>
         )}
@@ -566,6 +780,7 @@ export default function AdminMonitoring() {
             <p><strong>Trigger Worker:</strong> Manually invokes the queue-worker to process pending jobs. Useful if jobs are stuck or pg_cron is delayed.</p>
             <p><strong>Reset Job:</strong> Resets a stuck/failed job to pending status so it can be picked up again.</p>
             <p><strong>Partial Jobs:</strong> Books where some pages generated but covers or some pages failed. Users can still preview these.</p>
+            <p><strong>Sync Status:</strong> Updates job status to match book status when they're out of sync.</p>
           </CardContent>
         </Card>
       </div>
