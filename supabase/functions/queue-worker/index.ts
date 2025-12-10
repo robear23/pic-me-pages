@@ -120,6 +120,7 @@ Deno.serve(async (req) => {
     }
 
     // Step 3: Claim the oldest pending job with highest priority
+    // Also pick up jobs that were paused for memory cleanup (status=pending with progress)
     const { data: pendingJobs, error: fetchError } = await supabase
       .from('book_generation_jobs')
       .select('*')
@@ -128,6 +129,8 @@ Deno.serve(async (req) => {
       .order('priority', { ascending: false })
       .order('scheduled_at', { ascending: true })
       .limit(1);
+
+    console.log(`Found ${pendingJobs?.length || 0} pending jobs (query: status=pending, worker_id=null)`);
 
     if (fetchError) {
       console.error('Error fetching pending jobs:', fetchError);

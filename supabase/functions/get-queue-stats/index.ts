@@ -129,13 +129,30 @@ Deno.serve(async (req) => {
       .order('completed_at', { ascending: false })
       .limit(20);
 
-    // Get stale/processing jobs
+    // Get stale/processing jobs (processing with stale heartbeat)
     const { data: staleJobs } = await supabase
       .from('book_generation_jobs')
       .select('id, user_id, status, started_at, last_heartbeat, retry_count, worker_id, generation_data')
       .eq('status', 'processing')
       .or(`last_heartbeat.is.null,last_heartbeat.lt.${fiveMinutesAgo}`)
       .order('started_at', { ascending: true })
+      .limit(20);
+
+    // Get ALL currently processing jobs (for real-time monitoring)
+    const { data: processingJobsList } = await supabase
+      .from('book_generation_jobs')
+      .select('id, user_id, status, started_at, last_heartbeat, progress, worker_id, generation_data, book_id')
+      .eq('status', 'processing')
+      .order('started_at', { ascending: true })
+      .limit(20);
+
+    // Get ALL pending jobs (for queue visibility)
+    const { data: pendingJobsList } = await supabase
+      .from('book_generation_jobs')
+      .select('id, user_id, priority, created_at, scheduled_at, generation_data, progress')
+      .eq('status', 'pending')
+      .order('priority', { ascending: false })
+      .order('scheduled_at', { ascending: true })
       .limit(20);
 
     // Get partial jobs (books that completed with issues)
@@ -178,9 +195,15 @@ Deno.serve(async (req) => {
       failed_jobs: failedJobs || [],
       stale_jobs: staleJobs || [],
       partial_jobs: enrichedPartialJobs || [],
+      processing_jobs_list: processingJobsList || [],
+      pending_jobs_list: pendingJobsList || [],
     };
 
-    console.log('Queue stats:', stats);
+    console.log('Queue stats:', {
+      ...stats,
+      processing_jobs_list: `${stats.processing_jobs_list.length} jobs`,
+      pending_jobs_list: `${stats.pending_jobs_list.length} jobs`,
+    });
 
     return new Response(JSON.stringify(stats), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

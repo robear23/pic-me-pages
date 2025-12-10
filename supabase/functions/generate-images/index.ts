@@ -553,9 +553,9 @@ async function generateRealisticImage(
   complexity?: string,
   maxRetries?: number
 ): Promise<string> {
-  const MAX_RETRIES = 1; // PHASE 1: Reduce retries to save memory
+  const MAX_RETRIES = 3; // Increased from 1 for better MODEL_REFUSED handling
   const selectedModel = getModelForComplexity(complexity);
-  const MODELS = [selectedModel]; // Use only the selected model
+  const MODELS = [selectedModel, ...['gemini-2.5-flash-image', 'gemini-2.0-flash-image-generation'].filter(m => m !== selectedModel)]; // Model fallback chain
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     for (const model of MODELS) {
@@ -780,9 +780,9 @@ async function convertToLineArt(
   complexity?: string,
   maxRetries?: number
 ): Promise<string> {
-  const MAX_RETRIES = 1; // PHASE 1: Reduce retries to save memory
+  const MAX_RETRIES = 3; // Increased from 1 for better MODEL_REFUSED handling
   const selectedModel = getModelForComplexity(complexity);
-  const MODELS = [selectedModel]; // Use only the selected model
+  const MODELS = [selectedModel, ...['gemini-2.5-flash-image', 'gemini-2.0-flash-image-generation'].filter(m => m !== selectedModel)]; // Model fallback chain
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     for (const model of MODELS) {
