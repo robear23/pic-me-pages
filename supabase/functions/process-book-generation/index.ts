@@ -235,6 +235,38 @@ Deno.serve(async (req) => {
 
     console.log(`✅ Successfully claimed job ${job.id}`);
 
+    // PHASE 2: Check if book is already in terminal state before processing
+    if (job.book_id) {
+      const { data: existingBook } = await supabase
+        .from('books')
+        .select('status')
+        .eq('id', job.book_id)
+        .single();
+      
+      if (existingBook?.status === 'completed' || existingBook?.status === 'failed') {
+        console.log(`📋 Book ${job.book_id} is already ${existingBook.status} - syncing job status`);
+        
+        // Sync job status with book status
+        await supabase
+          .from('book_generation_jobs')
+          .update({
+            status: existingBook.status === 'completed' ? 'completed' : 'failed',
+            completed_at: new Date().toISOString(),
+            error_message: existingBook.status === 'failed' ? 'Book was already marked as failed' : null,
+          })
+          .eq('id', job.id);
+        
+        return new Response(JSON.stringify({ 
+          message: `Job synced with book status: ${existingBook.status}`,
+          jobId: job.id,
+          bookId: job.book_id,
+          status: existingBook.status
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
     // FIX #4: Add diagnostic logging on resume
     console.log(`📊 Job state at start:`);
     console.log(`   - Status: ${job.status}`);
