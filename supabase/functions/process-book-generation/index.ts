@@ -45,6 +45,7 @@ interface GenerationJob {
   started_at: string | null;
   last_heartbeat: string | null;  // Added for FIX 2
   retry_count: number; // PHASE 5: Track retries for graceful degradation
+  attempts: number; // Track total attempts across all retries
   error_message?: string | null; // FIX #4: Add error_message for diagnostic logging
   progress: {
     currentPage: number;
@@ -66,6 +67,8 @@ interface GenerationJob {
 }
 
 const FUNCTION_TIMEOUT_MS = 840000; // 14 minutes (leave 1 min buffer before 15 min edge function timeout)
+const MAX_TOTAL_ATTEMPTS = 10; // Maximum attempts before permanent failure
+const MAX_CONSECUTIVE_PAGE_FAILURES = 3; // If 3 consecutive pages fail, stop trying
 
 // ============================================
 // PHASE 2: API TIMEOUT WRAPPER
@@ -273,7 +276,54 @@ Deno.serve(async (req) => {
     console.log(`   - Progress: ${JSON.stringify(job.progress)}`);
     console.log(`   - Book ID: ${job.book_id}`);
     console.log(`   - Retry count: ${job.retry_count}`);
+    console.log(`   - Attempts: ${job.attempts || 0}`);
     console.log(`   - Error message: ${job.error_message || 'none'}`);
+
+    // FIX #5: Check max attempts limit - fail permanently if exceeded
+    const currentAttempts = (job.attempts || 0) + 1;
+    await supabase
+      .from('book_generation_jobs')
+      .update({ attempts: currentAttempts })
+      .eq('id', job.id);
+    
+    if (currentAttempts > MAX_TOTAL_ATTEMPTS) {
+      console.error(`🛑 Job ${job.id} has exceeded max attempts (${currentAttempts}/${MAX_TOTAL_ATTEMPTS}) - failing permanently`);
+      
+      await supabase
+        .from('book_generation_jobs')
+        .update({
+          status: 'failed',
+          error_message: `Job failed after ${currentAttempts} attempts. Please contact support or try creating a new book.`,
+          failure_reason: 'max_attempts_exceeded',
+          completed_at: new Date().toISOString(),
+        })
+        .eq('id', job.id);
+      
+      if (job.book_id) {
+        await supabase
+          .from('books')
+          .update({ status: 'failed' })
+          .eq('id', job.book_id);
+      }
+      
+      // Grant retry credit for persistent failures
+      await supabase
+        .from('retry_credits')
+        .insert({
+          user_id: job.user_id,
+          book_id: job.book_id,
+          reason: `Job exceeded ${MAX_TOTAL_ATTEMPTS} attempts due to persistent generation failures`,
+        });
+      
+      return new Response(JSON.stringify({ 
+        error: `Job failed after ${currentAttempts} attempts`,
+        jobId: job.id,
+        status: 'failed'
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
     // Process the job with comprehensive error handling
     const startTime = Date.now();
@@ -679,6 +729,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
     
     // Dynamic memory-based circuit breaker (not fixed page count)
     let processedCount = 0; // Track how many pages we've processed in this run
+    let consecutiveFailures = 0; // Track consecutive page failures to detect persistent issues
     const MIN_PAGES_BEFORE_CHECK = 3; // Process at least 3 pages before checking
     const PAUSE_MEMORY_THRESHOLD = 92; // Graceful pause at 92% (before 95% emergency limit)
     
@@ -987,9 +1038,58 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
             await new Promise(resolve => setTimeout(resolve, 2000));
             continue;
           }
-          // Don't fail entire job, continue to next page
-          console.error(`  ⚠️ Skipping page ${pageIndex + 1} after ${MAX_PAGE_ATTEMPTS} attempts`);
+          // Track consecutive failures
+          consecutiveFailures++;
+          console.error(`  ⚠️ Skipping page ${pageIndex + 1} after ${MAX_PAGE_ATTEMPTS} attempts (consecutive failures: ${consecutiveFailures}/${MAX_CONSECUTIVE_PAGE_FAILURES})`);
+          
+          // FIX: If too many consecutive pages fail, something is systematically wrong
+          if (consecutiveFailures >= MAX_CONSECUTIVE_PAGE_FAILURES) {
+            const errorMsg = error instanceof Error ? error.message : String(error);
+            console.error(`🛑 ${consecutiveFailures} consecutive page failures - stopping job to prevent infinite loop`);
+            
+            // Mark job as failed immediately
+            await supabase
+              .from('book_generation_jobs')
+              .update({
+                status: 'failed',
+                error_message: `${consecutiveFailures} consecutive pages failed to generate. Last error: ${errorMsg}`,
+                failure_reason: 'consecutive_page_failures',
+                completed_at: new Date().toISOString(),
+              })
+              .eq('id', job.id);
+            
+            // Update book status
+            await supabase
+              .from('books')
+              .update({ status: 'failed' })
+              .eq('id', bookId);
+            
+            // Grant retry credit
+            await supabase
+              .from('retry_credits')
+              .insert({
+                user_id: job.user_id,
+                book_id: bookId,
+                reason: `Book generation failed after ${consecutiveFailures} consecutive page failures`,
+              });
+            
+            if (stopHeartbeat) stopHeartbeat();
+            
+            return new Response(
+              JSON.stringify({ 
+                error: `Generation failed: ${consecutiveFailures} consecutive pages could not be generated`,
+                jobId: job.id,
+                status: 'failed'
+              }),
+              { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
         }
+      }
+      
+      // Reset consecutive failures counter on success
+      if (pageSuccess) {
+        consecutiveFailures = 0;
       }
     }
 
