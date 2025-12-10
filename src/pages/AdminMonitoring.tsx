@@ -77,7 +77,10 @@ interface FailedJob {
   failure_reason: string;
   completed_at: string;
   retry_count: number;
+  max_retries: number;
   generation_data: any;
+  book_id: string | null;
+  book_status: string | null;
 }
 
 interface StaleJob {
@@ -136,19 +139,32 @@ export default function AdminMonitoring() {
     }
   }, [isAdmin, autoRefresh]);
 
-  const resetJob = async (jobId: string) => {
+  const resetJob = async (jobId: string, forceRestart: boolean = false) => {
     try {
-      toast.info('Resetting job...');
+      toast.info(forceRestart ? 'Force restarting job...' : 'Resetting job...');
       
       const { data: job, error: fetchError } = await supabase
         .from('book_generation_jobs')
-        .select('retry_count, error_message')
+        .select('retry_count, error_message, book_id, max_retries')
         .eq('id', jobId)
         .single();
 
       if (fetchError) {
         console.error('Failed to fetch job:', fetchError);
         throw new Error(`Could not fetch job: ${fetchError.message}`);
+      }
+
+      // For force restart, also reset the book status so it can be reprocessed
+      if (forceRestart && job?.book_id) {
+        const { error: bookError } = await supabase
+          .from('books')
+          .update({ status: 'processing' })
+          .eq('id', job.book_id);
+        
+        if (bookError) {
+          console.error('Failed to reset book status:', bookError);
+          // Continue anyway, job reset is more important
+        }
       }
 
       const { error } = await supabase
@@ -160,14 +176,16 @@ export default function AdminMonitoring() {
           worker_id: null,
           error_message: null,
           failure_reason: null,
-          retry_count: (job?.retry_count || 0) + 1,
+          completed_at: null,
+          // Force restart resets retry count to 0, normal reset increments
+          retry_count: forceRestart ? 0 : (job?.retry_count || 0) + 1,
           updated_at: new Date().toISOString(),
         })
         .eq('id', jobId);
 
       if (error) throw error;
 
-      toast.success('Job reset to pending - triggering worker...');
+      toast.success(forceRestart ? 'Job force restarted - triggering worker...' : 'Job reset to pending - triggering worker...');
       
       // Automatically trigger the queue worker after reset
       await triggerQueueWorker();
@@ -711,31 +729,67 @@ export default function AdminMonitoring() {
               <CardDescription>Jobs that failed in the last 24 hours</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              {stats.failed_jobs.slice(0, 10).map((job) => (
-                <div key={job.id} className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-red-200 dark:border-red-800">
-                  <div className="flex justify-between items-start">
-                    <div className="space-y-1">
-                      <p className="font-mono text-sm">{job.id}</p>
-                      <p className="text-xs text-red-600 dark:text-red-400">
-                        {job.error_message || 'Unknown error'}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        Failed: {formatDistanceToNow(new Date(job.completed_at), { addSuffix: true })}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={job.failure_reason === 'system_error' ? 'destructive' : 'secondary'}>
-                        {job.failure_reason || 'unknown'}
-                      </Badge>
-                      <Badge variant="outline">Retry: {job.retry_count || 0}</Badge>
-                      <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={() => resetJob(job.id)}>
-                        <RefreshCw className="w-4 h-4 mr-1" />
-                        Retry
-                      </Button>
+              {stats.failed_jobs.slice(0, 10).map((job) => {
+                const retriesExhausted = (job.retry_count || 0) >= (job.max_retries || 3);
+                const bookTerminal = job.book_status === 'completed' || job.book_status === 'failed';
+                
+                return (
+                  <div key={job.id} className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-red-200 dark:border-red-800">
+                    <div className="flex justify-between items-start">
+                      <div className="space-y-1">
+                        <p className="font-mono text-sm">{job.id}</p>
+                        <p className="text-xs text-red-600 dark:text-red-400">
+                          {job.error_message || 'Unknown error'}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Failed: {formatDistanceToNow(new Date(job.completed_at), { addSuffix: true })}
+                        </p>
+                        {job.book_id && (
+                          <p className="text-xs text-muted-foreground">
+                            Book: <span className="font-mono">{job.book_id.slice(0, 8)}...</span>
+                            {job.book_status && (
+                              <Badge variant={job.book_status === 'completed' ? 'default' : job.book_status === 'failed' ? 'destructive' : 'secondary'} className="ml-2 text-xs">
+                                {job.book_status}
+                              </Badge>
+                            )}
+                          </p>
+                        )}
+                        {retriesExhausted && (
+                          <p className="text-xs text-orange-600 dark:text-orange-400">
+                            ⚠️ Retries exhausted ({job.retry_count}/{job.max_retries || 3})
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        <div className="flex items-center gap-2">
+                          <Badge variant={job.failure_reason === 'system_error' ? 'destructive' : 'secondary'}>
+                            {job.failure_reason || 'unknown'}
+                          </Badge>
+                          <Badge variant="outline">Retry: {job.retry_count || 0}/{job.max_retries || 3}</Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {(retriesExhausted || bookTerminal) ? (
+                            <Button 
+                              size="sm" 
+                              className="bg-orange-600 hover:bg-orange-700 text-white" 
+                              onClick={() => resetJob(job.id, true)}
+                              title="Reset retry count to 0 and book status to processing"
+                            >
+                              <Zap className="w-4 h-4 mr-1" />
+                              Force Restart
+                            </Button>
+                          ) : (
+                            <Button size="sm" className="bg-red-600 hover:bg-red-700 text-white" onClick={() => resetJob(job.id)}>
+                              <RefreshCw className="w-4 h-4 mr-1" />
+                              Retry
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
         )}

@@ -120,14 +120,29 @@ Deno.serve(async (req) => {
       config[c.key] = c.value;
     });
 
-    // Get failed jobs for the table
-    const { data: failedJobs } = await supabase
+    // Get failed jobs for the table (include book_id and max_retries)
+    const { data: failedJobsRaw } = await supabase
       .from('book_generation_jobs')
-      .select('id, user_id, error_message, failure_reason, completed_at, retry_count, generation_data')
+      .select('id, user_id, error_message, failure_reason, completed_at, retry_count, max_retries, generation_data, book_id')
       .eq('status', 'failed')
       .gte('completed_at', oneDayAgo)
       .order('completed_at', { ascending: false })
       .limit(20);
+
+    // Enrich failed jobs with book status
+    const failedJobs = await Promise.all(
+      (failedJobsRaw || []).map(async (job) => {
+        if (job.book_id) {
+          const { data: book } = await supabase
+            .from('books')
+            .select('status')
+            .eq('id', job.book_id)
+            .single();
+          return { ...job, book_status: book?.status || 'unknown' };
+        }
+        return { ...job, book_status: null };
+      })
+    );
 
     // Get stale/processing jobs (processing with stale heartbeat)
     const { data: staleJobs } = await supabase
