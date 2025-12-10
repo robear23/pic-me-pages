@@ -259,6 +259,41 @@ export default function AdminMonitoring() {
     }
   };
 
+  const forceFail = async (jobId: string, bookId: string | null) => {
+    try {
+      toast.info('Force failing job...');
+      
+      // Mark job as failed
+      const { error: jobError } = await supabase
+        .from('book_generation_jobs')
+        .update({
+          status: 'failed',
+          error_message: 'Force failed by admin',
+          failure_reason: 'admin_force_fail',
+          completed_at: new Date().toISOString(),
+          worker_id: null,
+          last_heartbeat: null,
+        })
+        .eq('id', jobId);
+
+      if (jobError) throw jobError;
+
+      // If there's a book, mark it as failed too
+      if (bookId) {
+        await supabase
+          .from('books')
+          .update({ status: 'failed' })
+          .eq('id', bookId);
+      }
+
+      toast.success('Job force failed');
+      loadStats();
+    } catch (error) {
+      console.error('Failed to force fail job:', error);
+      toast.error('Failed to force fail job');
+    }
+  };
+
   const triggerQueueWorker = async () => {
     try {
       const response = await fetch(
@@ -494,6 +529,10 @@ export default function AdminMonitoring() {
                       </div>
                       
                       <div className="flex items-center gap-2">
+                        <Button size="sm" variant="destructive" onClick={() => forceFail(job.id, job.book_id)}>
+                          <XCircle className="w-4 h-4 mr-1" />
+                          Force Fail
+                        </Button>
                         <Button size="sm" variant="outline" onClick={() => resetJob(job.id)}>
                           <RefreshCw className="w-4 h-4 mr-1" />
                           Reset

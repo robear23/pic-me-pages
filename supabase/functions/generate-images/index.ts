@@ -555,7 +555,8 @@ async function generateRealisticImage(
 ): Promise<string> {
   const MAX_RETRIES = 3; // Increased from 1 for better MODEL_REFUSED handling
   const selectedModel = getModelForComplexity(complexity);
-  const MODELS = [selectedModel, ...['gemini-2.5-flash-image', 'gemini-2.0-flash-image-generation'].filter(m => m !== selectedModel)]; // Model fallback chain
+  // Only use valid models - gemini-2.0-flash-image-generation does NOT exist
+  const MODELS = [selectedModel];
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     for (const model of MODELS) {
@@ -782,7 +783,8 @@ async function convertToLineArt(
 ): Promise<string> {
   const MAX_RETRIES = 3; // Increased from 1 for better MODEL_REFUSED handling
   const selectedModel = getModelForComplexity(complexity);
-  const MODELS = [selectedModel, ...['gemini-2.5-flash-image', 'gemini-2.0-flash-image-generation'].filter(m => m !== selectedModel)]; // Model fallback chain
+  // Only use valid models - gemini-2.0-flash-image-generation does NOT exist
+  const MODELS = [selectedModel];
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     for (const model of MODELS) {
