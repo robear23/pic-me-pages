@@ -191,6 +191,7 @@ const CARTOON_TRIGGER_WORDS = [
 ];
 
 // SAFE PROMPT GUIDE: Risky activities that commonly trigger MODEL_REFUSED (Rule 7)
+// EXPANDED: Added cricket, jogging, star wars based on actual failure data
 const RISKY_ACTIVITY_WORDS = [
   'rock climbing', 'climbing', 'cliff', 'mountain climbing',
   'cycling', 'biking', 'bike', 'bicycle',
@@ -203,7 +204,12 @@ const RISKY_ACTIVITY_WORDS = [
   'horse riding', 'horseback', 'pony',
   'archery', 'bow', 'arrow',
   'surfing', 'wakeboarding', 'water skiing',
-  'trampoline', 'bungee', 'parkour'
+  'trampoline', 'bungee', 'parkour',
+  // Added from failure analysis
+  'cricket', 'playing cricket', 'batting', 'bowling',
+  'jogging', 'running', 'sprinting', 'marathon',
+  'star wars', 'lightsaber', 'jedi', 'sith', 'darth',
+  'water witness', 'international', 'charity', 'organization'
 ];
 
 // SAFE PROMPT GUIDE: 4-Level Safe replacement activities (Rule 7)
@@ -252,11 +258,30 @@ const SAFE_ACTIVITY_REPLACEMENTS: Record<string, string> = {
   'underwater': 'looking at fish in an aquarium',
   'trampoline': 'jumping happily in a garden',
   'bungee': 'playing on a swing',
-  'parkour': 'walking through the neighborhood'
+  'parkour': 'walking through the neighborhood',
+  // Added from failure analysis - cricket, jogging, star wars
+  'cricket': 'playing with a colorful ball in a sunny garden',
+  'playing cricket': 'playing catch with a ball in a park',
+  'batting': 'swinging gently at a playground',
+  'bowling': 'rolling a ball gently in a garden',
+  'jogging': 'walking happily through a park with flowers',
+  'running': 'walking along a scenic trail',
+  'sprinting': 'walking quickly through a meadow',
+  'marathon': 'walking through a beautiful park',
+  'star wars': 'reading an adventure book in a cozy library',
+  'lightsaber': 'playing with glowing toys',
+  'jedi': 'reading a space adventure book',
+  'sith': 'exploring a colorful garden',
+  'darth': 'playing dress-up with costumes',
+  'water witness': 'exploring nature near a stream',
+  'water witness international': 'helping with gardening in a community garden',
+  'international': 'exploring a colorful world map',
+  'charity': 'helping in a community garden',
+  'organization': 'participating in a fun group activity'
 };
 
-// Combined filter list
-const ALL_FILTER_WORDS = [...SAFETY_FILTER_WORDS, ...CARTOON_TRIGGER_WORDS];
+// Combined filter list - CRITICAL FIX: Include RISKY_ACTIVITY_WORDS
+const ALL_FILTER_WORDS = [...SAFETY_FILTER_WORDS, ...CARTOON_TRIGGER_WORDS, ...RISKY_ACTIVITY_WORDS];
 
 // PHASE 5: Pre-filter prompts to remove problematic words
 // PHASE 2: Enhanced to include cartoon trigger words
@@ -685,53 +710,94 @@ async function validateRealisticImage(base64Image: string): Promise<{
   }
 }
 
+// Gemini API Safety Settings - less restrictive for educational content (Rule 6)
+const GEMINI_SAFETY_SETTINGS = [
+  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_MEDIUM_AND_ABOVE' }
+];
+
 async function generateRealisticImage(
   prompt: any,
-  contentParts: any[],
+  originalContentParts: any[],
   GOOGLE_API_KEY: string,
   pageIndex: number,
   totalPages: number,
   complexity?: string,
   maxRetries?: number
 ): Promise<string> {
-  const MAX_RETRIES = 3; // Increased from 1 for better MODEL_REFUSED handling
+  const MAX_RETRIES = 4; // Increased for 4-level fallback system
   const selectedModel = getModelForComplexity(complexity);
-  // Only use valid models - gemini-2.0-flash-image-generation does NOT exist
   const MODELS = [selectedModel];
+  
+  // Extract original prompt text for simplification
+  const originalTextPart = originalContentParts.find((p: any) => p.type === 'text');
+  const originalPromptText = originalTextPart?.text || prompt.prompt || '';
+  
+  // Extract character photos (non-text parts)
+  const characterPhotos = originalContentParts.filter((p: any) => p.type === 'image_url');
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     for (const model of MODELS) {
       try {
         console.log(`Step 1/2 - Generating realistic image ${pageIndex + 1}/${totalPages} (attempt ${attempt}/${MAX_RETRIES}, model: ${model})`);
         
-        // Merge system message with first text content
-        const firstTextIndex = contentParts.findIndex((part: any) => part.type === 'text');
-        const mergedContent = [...contentParts];
+        // CRITICAL FIX: Determine prompt text BEFORE building parts
+        let currentPromptText: string;
+        let includePhotos: boolean;
         
-        if (firstTextIndex >= 0) {
-          const complexityNote = complexity ? `\n\nCOMPLEXITY LEVEL: ${complexity.toUpperCase()}` : '';
-          mergedContent[firstTextIndex] = {
-            type: 'text',
-            text: REALISTIC_SYSTEM_MESSAGE + complexityNote + '\n\n' + contentParts[firstTextIndex].text
-          };
+        if (attempt === 1) {
+          // Attempt 1: Use original prompt with photos
+          currentPromptText = originalPromptText;
+          includePhotos = true;
+          console.log(`📝 Attempt 1: Using original prompt with ${characterPhotos.length} photo(s)`);
+        } else if (attempt === 2) {
+          // Attempt 2: Simplified prompt WITH photos
+          currentPromptText = simplifyPromptForRetry(prompt.prompt, 1);
+          includePhotos = true;
+          console.log(`📝 Attempt 2: Simplified prompt (Level 1) with ${characterPhotos.length} photo(s)`);
+        } else if (attempt === 3) {
+          // Attempt 3: More simplified prompt WITHOUT photos
+          currentPromptText = simplifyPromptForRetry(prompt.prompt, 2);
+          includePhotos = false;
+          console.log(`📝 Attempt 3: Simplified prompt (Level 2) WITHOUT photos`);
         } else {
-          mergedContent.unshift({ type: 'text', text: REALISTIC_SYSTEM_MESSAGE });
+          // Attempt 4+: Ultimate fallback - generic safe prompt, no photos
+          currentPromptText = simplifyPromptForRetry(prompt.prompt, 3);
+          includePhotos = false;
+          console.log(`📝 Attempt 4: Ultimate fallback prompt, NO photos`);
         }
         
-        // Transform content parts to Google's native format (with proper async handling)
-        const parts = await Promise.all(mergedContent.map(async (part: any) => {
+        // Build content parts based on current attempt
+        const currentContentParts: any[] = [];
+        
+        // Add photos ONLY if includePhotos is true
+        if (includePhotos && characterPhotos.length > 0) {
+          currentContentParts.push(...characterPhotos);
+        }
+        
+        // Add the prompt text (with system message)
+        const complexityNote = complexity ? `\n\nCOMPLEXITY LEVEL: ${complexity.toUpperCase()}` : '';
+        const photoContext = includePhotos && characterPhotos.length > 0
+          ? '\n\nMatch the person in the reference photo exactly. '
+          : '\n\nGenerate a friendly, cheerful scene. ';
+        
+        currentContentParts.push({
+          type: 'text',
+          text: REALISTIC_SYSTEM_MESSAGE + complexityNote + photoContext + currentPromptText
+        });
+        
+        // Transform content parts to Google's native format
+        const parts = await Promise.all(currentContentParts.map(async (part: any) => {
           if (part.type === 'text') {
             return { text: part.text };
           } else if (part.type === 'image_url') {
             try {
-              // Properly extract base64 from various URL formats
               const { base64, mimeType } = await extractBase64FromUrl(part.image_url.url);
-              
-              // Validate base64 before sending to API
               if (!base64 || base64.length < 100) {
                 throw new Error('Base64 data too short or empty');
               }
-              
               return {
                 inlineData: {
                   mimeType: mimeType,
@@ -741,11 +807,18 @@ async function generateRealisticImage(
             } catch (error) {
               const errorMessage = error instanceof Error ? error.message : String(error);
               console.error('❌ Failed to process image URL:', error);
-              throw new Error(`Failed to process character photo: ${errorMessage}`);
+              // On photo processing failure, skip this photo rather than fail entirely
+              console.warn(`⚠️ Skipping problematic photo, continuing without it`);
+              return null;
             }
           }
           return part;
         }));
+        
+        // Filter out null parts (failed photo processing)
+        const validParts = parts.filter(p => p !== null);
+        
+        console.log(`📤 Sending request with ${validParts.length} parts (${validParts.filter((p: any) => p.inlineData).length} images, ${validParts.filter((p: any) => p.text).length} text)`);
 
         const imageResponse = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -757,11 +830,13 @@ async function generateRealisticImage(
             },
             body: JSON.stringify({
               contents: [{
-                parts: parts
+                parts: validParts
               }],
               generationConfig: {
                 responseModalities: ['IMAGE']
-              }
+              },
+              // Add safety settings to be less restrictive for educational content
+              safetySettings: GEMINI_SAFETY_SETTINGS
             }),
           }
         );
@@ -770,7 +845,7 @@ async function generateRealisticImage(
           const backoffDelay = Math.min(BASE_DELAY * Math.pow(2, attempt - 1), 30000);
           console.error(`Rate limit hit on attempt ${attempt} with model ${model}, backing off for ${backoffDelay}ms`);
           await new Promise(resolve => setTimeout(resolve, backoffDelay));
-          continue; // Retry with exponential backoff
+          continue;
         }
 
         if (imageResponse.status === 402) {
@@ -788,7 +863,7 @@ async function generateRealisticImage(
           const errorMessage = errorData.error?.message || 'Unknown error';
           console.error(`Step 1 API error (${imageResponse.status}): ${errorMessage}`);
           
-          // PHASE 5: Enhanced safety filter detection
+          // Check for safety filter errors
           if (errorMessage.toLowerCase().includes('safety') || 
               errorMessage.toLowerCase().includes('refused') || 
               errorMessage.toLowerCase().includes('policy') ||
@@ -796,36 +871,17 @@ async function generateRealisticImage(
               errorMessage.toLowerCase().includes('harmful') ||
               errorMessage.toLowerCase().includes('inappropriate')) {
             
-            // Try to identify trigger word
-            let triggerWord = 'unknown';
-            const promptText = contentParts.find((p: any) => p.type === 'text')?.text || '';
-            for (const word of ALL_FILTER_WORDS) {
-              if (promptText.toLowerCase().includes(word.toLowerCase())) {
-                triggerWord = word;
-                break;
-              }
-            }
+            console.warn(`⚠️ Safety filter triggered on attempt ${attempt}`);
+            console.log(`Prompt excerpt: ${currentPromptText.substring(0, 100)}...`);
             
-            console.warn(`⚠️ Safety filter triggered on attempt ${attempt} - possible trigger: "${triggerWord}"`);
-            console.log(`Original prompt contained: ${promptText.substring(0, 100)}...`);
-            
-            // Auto-simplify and retry
+            // Continue to next attempt (which will use simpler prompt)
             if (attempt < MAX_RETRIES) {
-              console.log(`Simplifying prompt (removing "${triggerWord}") and retrying...`);
-              const simplifiedPrompt = simplifyPromptForRetry(prompt.prompt, attempt);
-              
-              // Update content parts with simplified prompt
-              contentParts[0] = {
-                type: 'text',
-                text: `${simplifiedPrompt}\n\nMatch the person in the reference photo. Natural lighting, simple background, child-appropriate.`
-              };
-              
               const delay = BASE_DELAY * Math.pow(2, attempt - 1);
               await new Promise(resolve => setTimeout(resolve, delay));
               continue;
             }
             
-            throw new Error(`MODEL_REFUSED: Safety filter triggered (word: "${triggerWord}") - ${errorMessage}`);
+            throw new Error(`MODEL_REFUSED: Safety filter triggered after ${MAX_RETRIES} attempts`);
           }
           
           // Check for region restriction
@@ -836,8 +892,8 @@ async function generateRealisticImage(
             throw err;
           }
           
-          // Only retry on transient errors
-          if (attempt < MAX_RETRIES && (imageResponse.status === 429 || imageResponse.status === 402 || imageResponse.status === 504)) {
+          // Retry on transient errors
+          if (attempt < MAX_RETRIES) {
             const delay = BASE_DELAY * Math.pow(2, attempt - 1);
             console.log(`Waiting ${delay}ms before retry...`);
             await new Promise(resolve => setTimeout(resolve, delay));
@@ -854,51 +910,23 @@ async function generateRealisticImage(
         );
         
         if (!imagePart?.inlineData?.data) {
-          // PHASE 5: Enhanced logging for model refusals
-          const promptText = contentParts.find((p: any) => p.type === 'text')?.text || 'unknown prompt';
-          
-          // Try to identify trigger word
-          let triggerWord = 'unknown';
-          for (const word of ALL_FILTER_WORDS) {
-            if (promptText.toLowerCase().includes(word.toLowerCase())) {
-              triggerWord = word;
-              break;
-            }
-          }
-          
-          const errorMsg = `Model refused to generate image (attempt ${attempt}/${MAX_RETRIES}) - possible trigger: "${triggerWord}"`;
-          console.error(`❌ No image data in Step 1 response: ${errorMsg}`);
-          console.log(`Prompt excerpt: "${promptText.substring(0, 150)}..."`);
+          console.error(`❌ No image data in Step 1 response (attempt ${attempt}/${MAX_RETRIES})`);
+          console.log(`Prompt excerpt: "${currentPromptText.substring(0, 150)}..."`);
           
           if (attempt < MAX_RETRIES) {
-            console.log(`🔄 Retrying with simplified prompt (removing "${triggerWord}")...`);
-            
-            // PHASE 3: Aggressive prompt simplification
-            const simplifiedPrompt = simplifyPromptForRetry(prompt.prompt, attempt);
-            
-            // Retry with simplified prompt
-            const firstTextIndex = mergedContent.findIndex((part: any) => part.type === 'text');
-            if (firstTextIndex >= 0) {
-              mergedContent[firstTextIndex] = {
-                type: 'text',
-                text: REALISTIC_SYSTEM_MESSAGE + '\n\n' + simplifiedPrompt
-              };
-            }
+            console.log(`🔄 Retrying with simpler prompt and/or without photos...`);
             continue;
           }
           
-          throw new Error(`MODEL_REFUSED: No image generated after ${MAX_RETRIES} attempts (trigger: "${triggerWord}")`);
+          throw new Error(`MODEL_REFUSED: No image generated after ${MAX_RETRIES} attempts`);
         }
 
         // Convert to data URL
         const step1MimeType = imagePart.inlineData.mimeType || 'image/png';
         const imageData = `data:${step1MimeType};base64,${imagePart.inlineData.data}`;
 
-        console.log(`Successfully generated realistic image ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
+        console.log(`✅ Successfully generated realistic image ${pageIndex + 1}/${totalPages} on attempt ${attempt} (photos: ${includePhotos ? 'yes' : 'no'})`);
         
-        // PHASE 1: Skip validation to save memory - accept first successful generation
-        console.log(`✓ Skipping validation (memory optimization) - accepting image ${pageIndex + 1}/${totalPages}`);
-
         return imageData;
         
       } catch (error) {
