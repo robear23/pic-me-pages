@@ -727,7 +727,7 @@ async function generateRealisticImage(
   complexity?: string,
   maxRetries?: number
 ): Promise<string> {
-  const MAX_RETRIES = 4; // Increased for 4-level fallback system
+  const MAX_RETRIES = 5; // 5-level fallback: attempts 1-4 WITH photos, attempt 5 WITHOUT photos as last resort
   const selectedModel = getModelForComplexity(complexity);
   const MODELS = [selectedModel];
   
@@ -738,14 +738,25 @@ async function generateRealisticImage(
   // Extract character photos (non-text parts)
   const characterPhotos = originalContentParts.filter((p: any) => p.type === 'image_url');
   
+  // CRITICAL: Character match emphasis for simplified prompts
+  const CHARACTER_MATCH_EMPHASIS = `
+CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
+- You MUST match the person in the reference photo EXACTLY
+- Same face shape, eyes, nose, mouth, hair color and style
+- This person is the MAIN subject - they must be clearly recognizable
+- Think: same person photographed doing a different activity
+- The character's identity is MORE important than the activity
+`;
+  
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     for (const model of MODELS) {
       try {
         console.log(`Step 1/2 - Generating realistic image ${pageIndex + 1}/${totalPages} (attempt ${attempt}/${MAX_RETRIES}, model: ${model})`);
         
-        // CRITICAL FIX: Determine prompt text BEFORE building parts
+        // CRITICAL FIX: Keep photos in ALL attempts except last resort (attempt 5)
         let currentPromptText: string;
         let includePhotos: boolean;
+        let photoMatchEmphasis = '';
         
         if (attempt === 1) {
           // Attempt 1: Use original prompt with photos
@@ -753,20 +764,28 @@ async function generateRealisticImage(
           includePhotos = true;
           console.log(`📝 Attempt 1: Using original prompt with ${characterPhotos.length} photo(s)`);
         } else if (attempt === 2) {
-          // Attempt 2: Simplified prompt WITH photos
+          // Attempt 2: Simplified prompt WITH photos + character emphasis
           currentPromptText = simplifyPromptForRetry(prompt.prompt, 1);
           includePhotos = true;
-          console.log(`📝 Attempt 2: Simplified prompt (Level 1) with ${characterPhotos.length} photo(s)`);
+          photoMatchEmphasis = CHARACTER_MATCH_EMPHASIS;
+          console.log(`📝 Attempt 2: Simplified prompt (Level 1) WITH ${characterPhotos.length} photo(s) + character emphasis`);
         } else if (attempt === 3) {
-          // Attempt 3: More simplified prompt WITHOUT photos
+          // Attempt 3: More simplified prompt WITH photos + character emphasis
           currentPromptText = simplifyPromptForRetry(prompt.prompt, 2);
-          includePhotos = false;
-          console.log(`📝 Attempt 3: Simplified prompt (Level 2) WITHOUT photos`);
-        } else {
-          // Attempt 4+: Ultimate fallback - generic safe prompt, no photos
+          includePhotos = true;
+          photoMatchEmphasis = CHARACTER_MATCH_EMPHASIS;
+          console.log(`📝 Attempt 3: Simplified prompt (Level 2) WITH ${characterPhotos.length} photo(s) + character emphasis`);
+        } else if (attempt === 4) {
+          // Attempt 4: Safe fallback WITH photos + character emphasis
           currentPromptText = simplifyPromptForRetry(prompt.prompt, 3);
+          includePhotos = true;
+          photoMatchEmphasis = CHARACTER_MATCH_EMPHASIS;
+          console.log(`📝 Attempt 4: Safe fallback prompt WITH ${characterPhotos.length} photo(s) + character emphasis`);
+        } else {
+          // Attempt 5: LAST RESORT - generic safe prompt WITHOUT photos
+          currentPromptText = 'Smiling happily in a bright, cheerful garden with colorful flowers and butterflies. Sunny day with blue sky.';
           includePhotos = false;
-          console.log(`📝 Attempt 4: Ultimate fallback prompt, NO photos`);
+          console.log(`⚠️ Attempt 5: LAST RESORT - generating WITHOUT photos (generic scene)`);
         }
         
         // Build content parts based on current attempt
@@ -781,11 +800,11 @@ async function generateRealisticImage(
         const complexityNote = complexity ? `\n\nCOMPLEXITY LEVEL: ${complexity.toUpperCase()}` : '';
         const photoContext = includePhotos && characterPhotos.length > 0
           ? '\n\nMatch the person in the reference photo exactly. '
-          : '\n\nGenerate a friendly, cheerful scene. ';
+          : '\n\nGenerate a friendly, cheerful scene with a generic happy person. ';
         
         currentContentParts.push({
           type: 'text',
-          text: REALISTIC_SYSTEM_MESSAGE + complexityNote + photoContext + currentPromptText
+          text: REALISTIC_SYSTEM_MESSAGE + photoMatchEmphasis + complexityNote + photoContext + currentPromptText
         });
         
         // Transform content parts to Google's native format
