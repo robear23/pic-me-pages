@@ -1,10 +1,13 @@
+import { useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { formatDistanceToNow, format } from 'date-fns';
-import { Download, RefreshCw, Zap, AlertTriangle, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Download, RefreshCw, Zap, AlertTriangle, Clock, CheckCircle, XCircle, Shield, Gift, Mail } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 
 interface ErrorLogEntry {
   timestamp: string;
@@ -54,12 +57,33 @@ interface FailedBookDetailModalProps {
   onRetry: (bookId: string, fromBeginning: boolean) => void;
 }
 
+// Risky activities that commonly trigger MODEL_REFUSED
+const RISKY_ACTIVITIES = [
+  'rock climbing', 'climbing', 'cliff', 
+  'cycling', 'biking', 'football', 'soccer', 
+  'swimming', 'diving', 'skiing', 'snowboarding',
+  'skateboarding', 'martial arts', 'gymnastics'
+];
+
 export function FailedBookDetailModal({ book, open, onOpenChange, onRetry }: FailedBookDetailModalProps) {
+  const [isRetrying, setIsRetrying] = useState(false);
+  const [isGrantingCredit, setIsGrantingCredit] = useState(false);
+
   if (!book) return null;
 
   const completedPages = book.pages?.filter((p: any) => p?.imageUrl)?.length || 0;
   const errorLog = book.error_log || [];
   const hasPartialProgress = completedPages > 0;
+  
+  // Check if failure was MODEL_REFUSED
+  const isModelRefused = book.last_error_message?.includes('MODEL_REFUSED') || 
+    book.job?.failure_reason === 'model_refused' ||
+    errorLog.some(e => e.error_type === 'MODEL_REFUSED');
+  
+  // Check if any interests are risky
+  const riskyInterests = book.interests?.filter(interest => 
+    RISKY_ACTIVITIES.some(risky => interest.toLowerCase().includes(risky.toLowerCase()))
+  ) || [];
 
   const getStepIcon = (step: string) => {
     if (step.includes('completed') || step.includes('success')) {
@@ -118,6 +142,78 @@ export function FailedBookDetailModal({ book, open, onOpenChange, onRetry }: Fai
     URL.revokeObjectURL(url);
   };
 
+  const handleRetryWithSafePrompts = async () => {
+    setIsRetrying(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retry-failed-book', {
+        body: {
+          bookId: book.id,
+          fromBeginning: true,
+          useSafePrompts: true,
+          grantRetryCredit: false,
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Retry Started",
+        description: "Book is being regenerated with safe prompts that avoid risky activities.",
+      });
+      onOpenChange(false);
+    } catch (error) {
+      console.error('Failed to retry with safe prompts:', error);
+      toast({
+        title: "Retry Failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsRetrying(false);
+    }
+  };
+
+  const handleGrantRetryCredit = async () => {
+    setIsGrantingCredit(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('retry-failed-book', {
+        body: {
+          bookId: book.id,
+          fromBeginning: false,
+          useSafePrompts: false,
+          grantRetryCredit: true,
+        }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Credit Granted",
+        description: "User has been granted a retry credit for this book.",
+      });
+    } catch (error) {
+      console.error('Failed to grant retry credit:', error);
+      toast({
+        title: "Failed to Grant Credit",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+      });
+    } finally {
+      setIsGrantingCredit(false);
+    }
+  };
+
+  const handleContactCustomer = () => {
+    // Open email client with pre-filled template
+    const subject = encodeURIComponent(`About Your ${book.character_name}'s Book`);
+    const body = encodeURIComponent(
+      `Hi,\n\nWe noticed that your personalized book for ${book.character_name} encountered an issue during generation.\n\n` +
+      `We've identified the problem and are happy to offer you a free retry or discuss alternative options.\n\n` +
+      `Please let us know how you'd like to proceed.\n\nBest regards,\nSupport Team`
+    );
+    window.open(`mailto:?subject=${subject}&body=${body}`);
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[90vh]">
@@ -133,6 +229,32 @@ export function FailedBookDetailModal({ book, open, onOpenChange, onRetry }: Fai
 
         <ScrollArea className="h-[60vh] pr-4">
           <div className="space-y-6">
+            {/* Model Refused Warning */}
+            {isModelRefused && (
+              <div className="p-4 bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 rounded-lg">
+                <div className="flex items-center gap-2 mb-2">
+                  <Shield className="w-5 h-5 text-purple-600" />
+                  <p className="font-medium text-purple-800 dark:text-purple-200">Safety Filter Triggered</p>
+                </div>
+                <p className="text-sm text-purple-600 dark:text-purple-400 mb-2">
+                  The AI model refused to generate some images due to safety concerns with the prompts.
+                </p>
+                {riskyInterests.length > 0 && (
+                  <p className="text-sm text-purple-600 dark:text-purple-400">
+                    <strong>Potentially risky interests:</strong> {riskyInterests.join(', ')}
+                  </p>
+                )}
+                <Button 
+                  className="mt-3 bg-purple-600 hover:bg-purple-700"
+                  onClick={handleRetryWithSafePrompts}
+                  disabled={isRetrying}
+                >
+                  <Shield className="w-4 h-4 mr-2" />
+                  {isRetrying ? 'Starting Retry...' : 'Retry with Safe Prompts'}
+                </Button>
+              </div>
+            )}
+
             {/* Summary */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="p-3 bg-muted rounded-lg">
@@ -175,7 +297,18 @@ export function FailedBookDetailModal({ book, open, onOpenChange, onRetry }: Fai
               <h3 className="font-medium">Customer Input</h3>
               <div className="p-3 bg-muted rounded-lg space-y-2">
                 <p className="text-sm"><strong>Character:</strong> {book.character_name}</p>
-                <p className="text-sm"><strong>Interests:</strong> {book.interests?.join(', ') || 'None'}</p>
+                <p className="text-sm">
+                  <strong>Interests:</strong>{' '}
+                  {book.interests?.map((interest, i) => (
+                    <span key={i}>
+                      {riskyInterests.includes(interest) ? (
+                        <Badge variant="destructive" className="mr-1">{interest}</Badge>
+                      ) : (
+                        <span className="mr-2">{interest}{i < book.interests.length - 1 ? ',' : ''}</span>
+                      )}
+                    </span>
+                  )) || 'None'}
+                </p>
                 <p className="text-sm"><strong>Complexity:</strong> {book.complexity || 'Standard'}</p>
                 <p className="text-sm"><strong>Page Count:</strong> {book.selected_page_count}</p>
                 {book.job?.generation_data?.customPrompt && (
@@ -275,12 +408,25 @@ export function FailedBookDetailModal({ book, open, onOpenChange, onRetry }: Fai
         </ScrollArea>
 
         {/* Actions */}
-        <div className="flex justify-between items-center pt-4 border-t">
-          <Button variant="outline" onClick={downloadDebugPackage}>
-            <Download className="w-4 h-4 mr-2" />
-            Download Debug Package
-          </Button>
-          <div className="flex gap-2">
+        <div className="flex flex-col gap-3 pt-4 border-t">
+          {/* Primary Actions */}
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" onClick={downloadDebugPackage}>
+              <Download className="w-4 h-4 mr-2" />
+              Debug Package
+            </Button>
+            <Button variant="outline" onClick={handleGrantRetryCredit} disabled={isGrantingCredit}>
+              <Gift className="w-4 h-4 mr-2" />
+              {isGrantingCredit ? 'Granting...' : 'Grant Retry Credit'}
+            </Button>
+            <Button variant="outline" onClick={handleContactCustomer}>
+              <Mail className="w-4 h-4 mr-2" />
+              Contact Customer
+            </Button>
+          </div>
+          
+          {/* Retry Actions */}
+          <div className="flex justify-end gap-2">
             {hasPartialProgress && (
               <Button 
                 variant="secondary"
@@ -293,6 +439,16 @@ export function FailedBookDetailModal({ book, open, onOpenChange, onRetry }: Fai
                 Resume from Page {completedPages + 1}
               </Button>
             )}
+            {isModelRefused && (
+              <Button 
+                className="bg-purple-600 hover:bg-purple-700"
+                onClick={handleRetryWithSafePrompts}
+                disabled={isRetrying}
+              >
+                <Shield className="w-4 h-4 mr-2" />
+                {isRetrying ? 'Starting...' : 'Safe Retry'}
+              </Button>
+            )}
             <Button 
               className="bg-orange-600 hover:bg-orange-700"
               onClick={() => {
@@ -301,7 +457,7 @@ export function FailedBookDetailModal({ book, open, onOpenChange, onRetry }: Fai
               }}
             >
               <Zap className="w-4 h-4 mr-2" />
-              Retry from Beginning
+              Full Retry
             </Button>
           </div>
         </div>

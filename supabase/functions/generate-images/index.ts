@@ -187,6 +187,44 @@ const CARTOON_TRIGGER_WORDS = [
   'artistic', 'fantasy', 'imaginary', 'storybook', 'fairytale'
 ];
 
+// PHASE 7: Risky activities that commonly trigger MODEL_REFUSED
+const RISKY_ACTIVITY_WORDS = [
+  'rock climbing', 'climbing', 'cliff', 'mountain climbing',
+  'cycling', 'biking', 'bike', 'bicycle',
+  'swimming', 'diving', 'underwater', 'pool',
+  'skiing', 'snowboarding', 'sledding',
+  'skateboarding', 'skating', 'rollerblading',
+  'football', 'soccer', 'rugby', 'tackling',
+  'martial arts', 'karate', 'boxing', 'fighting',
+  'gymnastics', 'acrobatics', 'tumbling',
+  'horse riding', 'horseback', 'pony',
+  'archery', 'bow', 'arrow',
+  'surfing', 'wakeboarding', 'water skiing'
+];
+
+// PHASE 7: Safe replacement activities for risky ones
+const SAFE_ACTIVITY_REPLACEMENTS: Record<string, string> = {
+  'rock climbing': 'exploring a beautiful garden',
+  'climbing': 'walking through a meadow',
+  'cliff': 'hilltop with flowers',
+  'cycling': 'walking in the park',
+  'biking': 'strolling through nature',
+  'bike': 'playing outdoors',
+  'swimming': 'playing near a fountain',
+  'diving': 'looking at fish in an aquarium',
+  'football': 'playing with a colorful ball',
+  'soccer': 'kicking a ball in the garden',
+  'martial arts': 'doing fun stretches',
+  'karate': 'doing exercises in the park',
+  'gymnastics': 'dancing happily',
+  'skiing': 'playing in the snow',
+  'snowboarding': 'building a snowman',
+  'skateboarding': 'walking through the neighborhood',
+  'horse riding': 'visiting friendly animals',
+  'archery': 'playing with toys',
+  'surfing': 'playing at the beach'
+};
+
 // Combined filter list
 const ALL_FILTER_WORDS = [...SAFETY_FILTER_WORDS, ...CARTOON_TRIGGER_WORDS];
 
@@ -202,35 +240,59 @@ function preFilterPrompt(prompt: string): string {
   return filtered.replace(/\s+/g, ' ').trim();
 }
 
+// PHASE 7: Replace risky activities with safe alternatives
+function sanitizePromptForSafety(prompt: string): string {
+  let safePrompt = prompt;
+  
+  // Replace specific risky activities with safe alternatives
+  for (const [risky, safe] of Object.entries(SAFE_ACTIVITY_REPLACEMENTS)) {
+    const regex = new RegExp(`\\b${risky}\\b`, 'gi');
+    if (regex.test(safePrompt)) {
+      safePrompt = safePrompt.replace(regex, safe);
+      console.log(`🔄 Safety: Replaced "${risky}" with "${safe}"`);
+    }
+  }
+  
+  // Remove remaining risky words that don't have specific replacements
+  for (const word of RISKY_ACTIVITY_WORDS) {
+    if (!SAFE_ACTIVITY_REPLACEMENTS[word]) {
+      const regex = new RegExp(`\\b${word}\\b`, 'gi');
+      safePrompt = safePrompt.replace(regex, '');
+    }
+  }
+  
+  return safePrompt.replace(/\s+/g, ' ').trim();
+}
+
 // PHASE 3: Enhanced prompt simplification with aggressive fallbacks
+// PHASE 7: Now includes safe activity replacements on retry
 function simplifyPromptForRetry(originalPrompt: string, attemptNumber: number): string {
   const nameMatch = originalPrompt.match(/^([A-Z][a-z]+)/);
   const characterName = nameMatch ? nameMatch[1] : 'the character';
   
   if (attemptNumber === 1) {
-    // First retry: Extract main activity, remove adjectives and problematic words
-    const activityMatch = originalPrompt.match(/(playing|sitting|holding|standing|walking|running|reading|drawing|building|eating|smiling)/i);
-    if (activityMatch) {
-      const activity = activityMatch[1].toLowerCase();
-      return `${characterName} ${activity} in a detailed scene. Bright, even lighting. Rich environment.`;
-    }
-    // Fallback: aggressively remove problematic words
-    let simplified = originalPrompt;
+    // First retry: Replace risky activities with safe ones, remove problematic words
+    console.log(`🔒 Attempt ${attemptNumber}: Sanitizing prompt for safety...`);
+    let sanitized = sanitizePromptForSafety(originalPrompt);
+    
+    // Also remove safety filter words
     for (const word of SAFETY_FILTER_WORDS) {
       const regex = new RegExp(`\\b${word}\\b`, 'gi');
-      simplified = simplified.replace(regex, '');
+      sanitized = sanitized.replace(regex, '');
     }
-    return simplified.replace(/\s+/g, ' ').trim().substring(0, 120) + '. Bright lighting, detailed environment.';
+    
+    return sanitized.replace(/\s+/g, ' ').trim() + ' Safe, wholesome scene. Bright lighting.';
   }
   
   if (attemptNumber === 2) {
-    // Second retry: Still keep environmental richness
-    return `${characterName} in a well-lit room with visible details. High-key lighting. Colorable background.`;
+    // Second retry: Extract just the character and use completely safe activity
+    console.log(`🔒 Attempt ${attemptNumber}: Using generic safe prompt...`);
+    return `${characterName} having a wonderful time in a colorful garden. Bright sunlight, flowers, butterflies. Safe, happy, child-friendly scene.`;
   }
   
-  // Final fallback: minimal but not blank
-  console.log(`⚠️ Using minimal fallback prompt for attempt ${attemptNumber}`);
-  return `${characterName} in a bright scene. Studio lighting. Detailed background.`;
+  // Final fallback: absolute minimal safe prompt
+  console.log(`⚠️ Attempt ${attemptNumber}: Using minimal fallback prompt`);
+  return `${characterName} smiling happily in a bright, cheerful room. Studio lighting. Safe, wholesome.`;
 }
 
 // Use Google's Gemini API directly - cheapest model with image generation
