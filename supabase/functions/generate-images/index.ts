@@ -59,7 +59,7 @@ async function extractBase64FromUrl(photoUrl: string): Promise<{ base64: string;
   throw new Error('Unrecognized photo URL format');
 }
 
-// Enhanced system message for Step 1 - Photorealistic with high-key lighting for line art conversion
+// SAFE PROMPT GUIDE: Enhanced system message without age references (Rule 1)
 const REALISTIC_SYSTEM_MESSAGE = `ABSOLUTE REQUIREMENT: Generate a REAL CAMERA PHOTOGRAPH optimized for line art conversion.
 
 CRITICAL FORBIDDEN STYLES:
@@ -72,32 +72,30 @@ REQUIRED PHOTOGRAPHIC ELEMENTS (OPTIMIZED FOR LINE ART):
 ✓ OVEREXPOSED style: Reduce dramatic shadows and dark areas
 ✓ Simple, solid-color background (white, light gray, or single pastel color)
 ✓ Clear subject separation: High contrast between subject and background
-✓ Minimal texture detail: Smooth rendering without excessive pores/wrinkles
+✓ Minimal texture detail: Smooth rendering without excessive detail
 ✓ Frontal or side lighting (NOT dramatic side lighting with deep shadows)
 ✓ Environmental context: Simple real setting with minimal clutter
 
-CHARACTER MATCHING (CRITICAL - AGE CONSISTENCY):
-- Match reference photo EXACTLY: face structure, AGE, hair color/style, skin tone, eye color, facial features
-- MAINTAIN THE EXACT AGE shown in reference photo - do NOT age up or down even slightly
-- Same person's face with IDENTICAL age and features in a different scenario
-- Think: same child in different yearbook photos from the SAME YEAR, NOT different years
-- Face shape, eye size/shape, nose, mouth, and most importantly AGE must be IDENTICAL to reference
-- If reference shows a 5-year-old, generate a 5-year-old (not 4, not 6, EXACTLY 5)
-- Age consistency is MORE IMPORTANT than pose variety
+CHARACTER MATCHING (CRITICAL - FEATURE CONSISTENCY):
+- Match reference photo EXACTLY: face structure, hair color/style, skin tone, eye color, facial features
+- Same person's face with IDENTICAL features in a different scenario
+- Face shape, eye size/shape, nose, mouth must be IDENTICAL to reference
+- Maintain all distinctive features shown in reference photo
+- Think: same person photographed in different settings on the same day
 
 SCENE COMPOSITION (ADAPT TO PROMPT):
-- WIDE SHOTS: Rich, detailed environment with character as part of scene
+- WIDE SHOTS: Rich, detailed environment with subject as part of scene
   * Include multiple colorable elements (trees, flowers, objects, patterns)
-  * Character is ONE element in a larger context
+  * Subject is ONE element in a larger context
   * Detailed background that tells a story
   
-- MEDIUM SHOTS: Balance character and environment equally
+- MEDIUM SHOTS: Balance subject and environment equally
   * Show immediate surroundings with detail
-  * Character interacts with visible environmental elements
+  * Subject interacts with visible environmental elements
   * Clear foreground and background
   
-- CLOSE-UP SHOTS: Character prominent but with contextual background
-  * Character is main focus but environment visible
+- CLOSE-UP SHOTS: Subject prominent but with contextual background
+  * Subject is main focus but environment visible
   * Background provides context (room, outdoor setting, etc.)
   * Include nearby objects or elements
   
@@ -105,7 +103,7 @@ ENVIRONMENT REQUIREMENTS:
 - Rich, colorable details appropriate to scene type
 - Multiple distinct elements for variety
 - Natural depth with foreground/background
-- Child-friendly and wholesome
+- Wholesome and positive atmosphere
 - MINIMAL shadows cast by subject
 - Bright, cheerful lighting
 
@@ -117,7 +115,12 @@ LIGHTING STYLE (CRITICAL FOR SUCCESS):
 
 VALIDATION: Your output will be analyzed for color variance. Photorealistic images have 25-50% variance. Cartoons have <15% variance. IF YOUR IMAGE TESTS BELOW 18% VARIANCE, IT WILL BE REJECTED.
 
-OUTPUT: A bright, evenly-lit photograph that maintains realism but minimizes complex shading and shadows. Think: bright studio photo, high-key portrait, passport photo style - NOT dramatic moody photography.`;
+OUTPUT: A bright, evenly-lit photograph that maintains realism but minimizes complex shading and shadows. Think: bright studio photo, high-key portrait - NOT dramatic moody photography.`;
+
+// Educational context for safer image generation (Rule 6)
+const EDUCATIONAL_CONTEXT = `This is for a safe, educational coloring book illustration. 
+All activities should be depicted in an encouraging, positive way that promotes healthy engagement with hobbies and interests.
+The scene is wholesome, family-friendly, and appropriate for all ages.`;
 
 // Enhanced system message for Step 2 - Line art conversion with shadow handling
 // This will be customized based on complexity level
@@ -187,7 +190,7 @@ const CARTOON_TRIGGER_WORDS = [
   'artistic', 'fantasy', 'imaginary', 'storybook', 'fairytale'
 ];
 
-// PHASE 7: Risky activities that commonly trigger MODEL_REFUSED
+// SAFE PROMPT GUIDE: Risky activities that commonly trigger MODEL_REFUSED (Rule 7)
 const RISKY_ACTIVITY_WORDS = [
   'rock climbing', 'climbing', 'cliff', 'mountain climbing',
   'cycling', 'biking', 'bike', 'bicycle',
@@ -199,30 +202,57 @@ const RISKY_ACTIVITY_WORDS = [
   'gymnastics', 'acrobatics', 'tumbling',
   'horse riding', 'horseback', 'pony',
   'archery', 'bow', 'arrow',
-  'surfing', 'wakeboarding', 'water skiing'
+  'surfing', 'wakeboarding', 'water skiing',
+  'trampoline', 'bungee', 'parkour'
 ];
 
-// PHASE 7: Safe replacement activities for risky ones
+// SAFE PROMPT GUIDE: 4-Level Safe replacement activities (Rule 7)
+// Level 1: Same activity with safety context
+// Level 2: Reframed activity
+// Level 3: Alternative safer activity  
+// Level 4: Generic safe fallback
 const SAFE_ACTIVITY_REPLACEMENTS: Record<string, string> = {
-  'rock climbing': 'exploring a beautiful garden',
-  'climbing': 'walking through a meadow',
-  'cliff': 'hilltop with flowers',
-  'cycling': 'walking in the park',
-  'biking': 'strolling through nature',
-  'bike': 'playing outdoors',
-  'swimming': 'playing near a fountain',
-  'diving': 'looking at fish in an aquarium',
-  'football': 'playing with a colorful ball',
-  'soccer': 'kicking a ball in the garden',
-  'martial arts': 'doing fun stretches',
-  'karate': 'doing exercises in the park',
-  'gymnastics': 'dancing happily',
-  'skiing': 'playing in the snow',
-  'snowboarding': 'building a snowman',
-  'skateboarding': 'walking through the neighborhood',
-  'horse riding': 'visiting friendly animals',
-  'archery': 'playing with toys',
-  'surfing': 'playing at the beach'
+  // Level 1 replacements - add safety context
+  'rock climbing': 'climbing on an indoor climbing wall with safety equipment and colorful holds',
+  'climbing': 'climbing on an indoor wall with a harness',
+  'cliff': 'standing on a hilltop with flowers',
+  'cycling': 'riding a bicycle with a helmet along a scenic path',
+  'biking': 'riding a bicycle with a helmet through a park',
+  'bike': 'riding a bicycle with a helmet',
+  'bicycle': 'riding a bicycle with a helmet along a path',
+  'swimming': 'splashing in a wading pool with floaties',
+  'diving': 'looking at colorful fish in an aquarium',
+  'pool': 'playing near a fountain in a park',
+  'football': 'playing with a colorful ball in a sunny garden',
+  'soccer': 'kicking a ball gently in a garden with flowers',
+  'rugby': 'playing catch in a park',
+  'tackling': 'playing tag in a meadow',
+  'martial arts': 'doing fun stretches and poses',
+  'karate': 'doing stretching exercises in a park',
+  'boxing': 'practicing exercise moves',
+  'fighting': 'practicing dance moves',
+  'gymnastics': 'dancing gracefully',
+  'acrobatics': 'doing a ballet pose',
+  'tumbling': 'rolling on soft grass',
+  'skiing': 'playing in soft fluffy snow',
+  'snowboarding': 'building a cheerful snowman',
+  'sledding': 'making snow angels',
+  'skateboarding': 'riding a skateboard with a helmet at a beginner-friendly skate park',
+  'skating': 'skating with protective gear',
+  'rollerblading': 'rollerblading with knee pads on a smooth pathway',
+  'horse riding': 'gently petting a friendly pony',
+  'horseback': 'standing next to a gentle horse',
+  'pony': 'feeding a friendly pony',
+  'archery': 'playing with toys outdoors',
+  'bow': 'playing in a field',
+  'arrow': 'pointing at butterflies',
+  'surfing': 'building sandcastles at the beach',
+  'wakeboarding': 'splashing in shallow water',
+  'water skiing': 'playing at the beach',
+  'underwater': 'looking at fish in an aquarium',
+  'trampoline': 'jumping happily in a garden',
+  'bungee': 'playing on a swing',
+  'parkour': 'walking through the neighborhood'
 };
 
 // Combined filter list
@@ -264,35 +294,84 @@ function sanitizePromptForSafety(prompt: string): string {
   return safePrompt.replace(/\s+/g, ' ').trim();
 }
 
-// PHASE 3: Enhanced prompt simplification with aggressive fallbacks
-// PHASE 7: Now includes safe activity replacements on retry
+// SAFE PROMPT GUIDE: Enhanced 4-level fallback system (Rule 7)
+// Attempt 1: Add safety context ("with helmet", "with equipment")
+// Attempt 2: Reframe activity ("learning X", "practicing X")
+// Attempt 3: Replace with safer activity
+// Attempt 4: Generic safe fallback
 function simplifyPromptForRetry(originalPrompt: string, attemptNumber: number): string {
   const nameMatch = originalPrompt.match(/^([A-Z][a-z]+)/);
-  const characterName = nameMatch ? nameMatch[1] : 'the character';
+  const characterName = nameMatch ? nameMatch[1] : '';
+  
+  // Remove any age/identity words first
+  const AGE_WORDS = ['child', 'children', 'kid', 'kids', 'young', 'little', 'small', 
+                     'boy', 'girl', 'toddler', 'teenager', 'baby', 'year-old', 'years old'];
+  let cleanedPrompt = originalPrompt;
+  for (const word of AGE_WORDS) {
+    const regex = new RegExp(`\\b${word}\\b`, 'gi');
+    cleanedPrompt = cleanedPrompt.replace(regex, '');
+  }
+  cleanedPrompt = cleanedPrompt.replace(/\s+/g, ' ').trim();
   
   if (attemptNumber === 1) {
-    // First retry: Replace risky activities with safe ones, remove problematic words
-    console.log(`🔒 Attempt ${attemptNumber}: Sanitizing prompt for safety...`);
-    let sanitized = sanitizePromptForSafety(originalPrompt);
+    // Level 1: Add safety context to the prompt
+    console.log(`🔒 Attempt ${attemptNumber}: Adding safety context...`);
+    let safePrompt = cleanedPrompt;
+    
+    // Add safety context for physical activities
+    for (const [risky, safe] of Object.entries(SAFE_ACTIVITY_REPLACEMENTS)) {
+      const regex = new RegExp(`\\b${risky}\\b`, 'gi');
+      if (regex.test(safePrompt)) {
+        safePrompt = safePrompt.replace(regex, safe);
+        console.log(`✓ Replaced "${risky}" with "${safe}"`);
+      }
+    }
     
     // Also remove safety filter words
     for (const word of SAFETY_FILTER_WORDS) {
       const regex = new RegExp(`\\b${word}\\b`, 'gi');
-      sanitized = sanitized.replace(regex, '');
+      safePrompt = safePrompt.replace(regex, '');
     }
     
-    return sanitized.replace(/\s+/g, ' ').trim() + ' Safe, wholesome scene. Bright lighting.';
+    return safePrompt.replace(/\s+/g, ' ').trim() + ` ${EDUCATIONAL_CONTEXT}`;
   }
   
   if (attemptNumber === 2) {
-    // Second retry: Extract just the character and use completely safe activity
-    console.log(`🔒 Attempt ${attemptNumber}: Using generic safe prompt...`);
-    return `${characterName} having a wonderful time in a colorful garden. Bright sunlight, flowers, butterflies. Safe, happy, child-friendly scene.`;
+    // Level 2: Reframe with educational/learning context
+    console.log(`🔒 Attempt ${attemptNumber}: Reframing with learning context...`);
+    
+    // Find any activity mentioned and reframe it
+    let activity = 'having fun';
+    for (const risky of RISKY_ACTIVITY_WORDS) {
+      if (cleanedPrompt.toLowerCase().includes(risky)) {
+        const safeVersion = SAFE_ACTIVITY_REPLACEMENTS[risky];
+        if (safeVersion) {
+          activity = safeVersion;
+          break;
+        }
+      }
+    }
+    
+    return `Learning and practicing ${activity} in a safe, supervised environment. Bright, cheerful setting with colorful surroundings. ${EDUCATIONAL_CONTEXT}`;
   }
   
-  // Final fallback: absolute minimal safe prompt
-  console.log(`⚠️ Attempt ${attemptNumber}: Using minimal fallback prompt`);
-  return `${characterName} smiling happily in a bright, cheerful room. Studio lighting. Safe, wholesome.`;
+  if (attemptNumber === 3) {
+    // Level 3: Use completely safe alternative activity
+    console.log(`🔒 Attempt ${attemptNumber}: Using safe alternative activity...`);
+    const safeActivities = [
+      'having a wonderful time in a colorful flower garden',
+      'reading a book in a cozy library',
+      'painting a beautiful picture at an easel',
+      'playing with building blocks in a sunny playroom',
+      'exploring a magical butterfly garden'
+    ];
+    const randomSafe = safeActivities[Math.floor(Math.random() * safeActivities.length)];
+    return `${randomSafe}. Bright sunlight, cheerful atmosphere. ${EDUCATIONAL_CONTEXT}`;
+  }
+  
+  // Level 4: Ultimate fallback - absolute minimal safe prompt
+  console.log(`⚠️ Attempt ${attemptNumber}: Using ultimate fallback prompt`);
+  return `Smiling happily in a bright, cheerful garden with colorful flowers and butterflies. Studio lighting. Safe, wholesome, educational scene.`;
 }
 
 // Use Google's Gemini API directly - cheapest model with image generation

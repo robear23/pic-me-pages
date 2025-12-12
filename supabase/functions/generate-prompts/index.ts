@@ -50,17 +50,60 @@ serve(async (req) => {
     const characterNames = characters.map((c: any) => c.name).join(' and ');
     const hasCharacterPhotos = consistentCharacters && characters.some((c: any) => c.photos && c.photos.length > 0);
 
+    // SAFE PROMPT GUIDE RULE 1: Never mention age or identity - let reference images define WHO
     const characterGuidance = hasCharacterPhotos
       ? `\nCRITICAL - CHARACTER CONSISTENCY REQUIREMENTS:
-- The character's AGE, facial features, and appearance MUST remain EXACTLY the same across ALL pages
-- Reference the provided photo(s) for accurate AGE, facial structure, hair style, and physical features
-- DO NOT age up or age down the character - maintain the EXACT age shown in reference photo
+- The character's facial features and appearance MUST remain EXACTLY the same across ALL pages
+- Reference the provided photo(s) for accurate facial structure, hair style, and physical features
 - Keep facial proportions, eye shape, nose, and mouth IDENTICAL to the reference
-- Vary ONLY the pose, expression, clothing, and environment - NOT the character's core appearance or age
-- If the reference shows a 5-year-old, ALL 12 pages must show that SAME 5-year-old
-- Think: same child in different yearbook photos from the SAME year, not different years
-- Dynamic scenes with varied poses and expressions, but IDENTICAL character age and features`
+- Vary ONLY the pose, expression, clothing, and environment - NOT the character's core appearance
+- Think: same person in different photos from the same time period
+- Dynamic scenes with varied poses and expressions, but IDENTICAL character features`
       : '';
+    
+    // SAFE PROMPT GUIDE: Words to remove from prompts (Rule 1 - Never mention age/identity)
+    const AGE_WORDS = ['child', 'children', 'kid', 'kids', 'young', 'little', 'small', 
+                       'boy', 'girl', 'toddler', 'preschooler', 'teenager', 'baby', 'infant',
+                       'year-old', 'years old', 'age', 'aged'];
+    
+    // SAFE PROMPT GUIDE: Words to avoid in prompts (Rule 3 - Use neutral, positive language)
+    const RISKY_LANGUAGE = ['dangerous', 'risky', 'extreme', 'intense', 'high', 'steep', 
+                            'fast', 'difficult', 'alone', 'unsupervised', 'scary', 'frightening',
+                            'challenging', 'unprotected'];
+    
+    // SAFE PROMPT GUIDE: Positive replacement words
+    const POSITIVE_REPLACEMENTS: Record<string, string> = {
+      'extreme': 'exciting',
+      'dangerous': 'active',
+      'difficult': 'fun',
+      'scary': 'adventurous',
+      'intense': 'active',
+      'risky': 'playful',
+      'frightening': 'surprising'
+    };
+    
+    // Helper function to sanitize prompts
+    const sanitizePromptText = (text: string): string => {
+      let result = text;
+      // Remove age words
+      for (const word of AGE_WORDS) {
+        const regex = new RegExp(`\\b${word}\\b`, 'gi');
+        result = result.replace(regex, '');
+      }
+      // Replace risky language with positive alternatives
+      for (const [risky, positive] of Object.entries(POSITIVE_REPLACEMENTS)) {
+        const regex = new RegExp(`\\b${risky}\\b`, 'gi');
+        result = result.replace(regex, positive);
+      }
+      // Remove remaining risky words
+      for (const word of RISKY_LANGUAGE) {
+        if (!POSITIVE_REPLACEMENTS[word]) {
+          const regex = new RegExp(`\\b${word}\\b`, 'gi');
+          result = result.replace(regex, '');
+        }
+      }
+      return result.replace(/\s+/g, ' ').trim();
+    };
 
     // CRITICAL: Complexity level guidance - this MUST be followed
     const complexityLevelMap: Record<string, string> = {
@@ -91,30 +134,61 @@ serve(async (req) => {
     console.log(`[COMPLEXITY] Using complexity level: ${complexityLevel}`);
     console.log(`[COMPLEXITY] Guidance: ${complexityGuidance}`);
 
+    // SAFE PROMPT GUIDE: Sanitize custom prompt if provided
+    const sanitizedCustomPrompt = hasCustomPrompt ? sanitizePromptText(customPrompt) : '';
+    
     // Use custom prompt if provided, otherwise use interests
     const contentGuidance = hasCustomPrompt
-      ? `Create scenes based on this custom theme/story: ${customPrompt}`
+      ? `Create scenes based on this custom theme/story: ${sanitizedCustomPrompt}`
       : `Generate scenes related to these interests: ${effectiveInterests.join(', ')}. ${effectiveInterests.length === 1 ? 'Create diverse scenarios all related to this interest.' : 'Distribute scenes evenly across the interests.'}`;
 
-    const systemPrompt = `Generate ${targetPageCount} diverse scene descriptions for ${characterNames}.
+    // SAFE PROMPT GUIDE: Activity-first prompt structure (Rule 2)
+    // Structure: [Activity] [in Location] [Style] - NOT [Character doing Activity]
+    const systemPrompt = `You are creating safe, educational coloring book illustrations. Generate ${targetPageCount} diverse scene descriptions.
+
+CRITICAL PROMPT WRITING RULES (FOLLOW EXACTLY):
+
+1. ACTIVITY-FIRST FORMAT: Describe the activity and environment, NOT the person
+   ✅ CORRECT: "Playing soccer in a sunny park with a soccer ball and goal posts"
+   ✅ CORRECT: "Riding a bicycle along a tree-lined path with flowers"
+   ❌ WRONG: "A young child playing soccer in the park"
+   ❌ WRONG: "The 5-year-old riding their bicycle"
+
+2. NEVER USE AGE/IDENTITY WORDS: The reference photo shows who the subject is
+   FORBIDDEN WORDS: child, children, kid, kids, young, little, small, boy, girl, 
+   toddler, preschooler, teenager, baby, year-old, years old
+
+3. USE POSITIVE LANGUAGE: Replace risky words with encouraging alternatives
+   ❌ AVOID: dangerous, risky, extreme, scary, difficult, alone, unsupervised
+   ✅ USE: fun, exciting, active, playful, adventurous, learning, practicing
+
+4. ADD SAFETY CONTEXT FOR PHYSICAL ACTIVITIES (naturally, not as focus):
+   - "Skateboarding at a skate park with a helmet and knee pads"
+   - "Rock climbing with safety equipment on an indoor wall"
+   - "Cycling with a helmet along a dedicated path"
+
+5. CREATE AGE-NEUTRAL PROMPTS that work for any reference photo:
+   ✅ "Playing guitar in a music room with musical notes floating around"
+   ✅ "Gardening in a vegetable garden with tomato plants and flowers"
+   ✅ "Painting at an easel with brushes and colorful paint supplies"
 
 ${complexityGuidance}
 
 COMPOSITION VARIETY (CRITICAL - Mix these shot types):
-1. WIDE SHOTS (30% of pages): Character is part of a larger scene
-   - Show full environment with character as one element
-   - Example: "Sarah exploring a colorful garden full of flowers and butterflies"
-   - Character occupies 20-40% of frame
+1. WIDE SHOTS (30% of pages): Subject is part of a larger scene
+   - Show full environment with subject as one element
+   - Example: "Exploring a colorful garden full of flowers and butterflies"
+   - Subject occupies 20-40% of frame
    
-2. MEDIUM SHOTS (40% of pages): Character and immediate surroundings
-   - Balance between character and environment
-   - Example: "Alex building a sandcastle on the beach with seagulls nearby"
-   - Character occupies 40-60% of frame
+2. MEDIUM SHOTS (40% of pages): Subject and immediate surroundings
+   - Balance between subject and environment
+   - Example: "Building a sandcastle on the beach with seagulls nearby"
+   - Subject occupies 40-60% of frame
    
-3. CLOSE-UP SHOTS (30% of pages): Character-focused with context
-   - Character is prominent but environment still visible
-   - Example: "Emma reading a book under a big tree"
-   - Character occupies 60-80% of frame
+3. CLOSE-UP SHOTS (30% of pages): Subject-focused with context
+   - Subject is prominent but environment still visible
+   - Example: "Reading a book under a big tree"
+   - Subject occupies 60-80% of frame
 
 ENVIRONMENT EMPHASIS:
 - Make backgrounds rich and detailed (trees, buildings, furniture, toys, animals, weather)
@@ -129,12 +203,13 @@ VARIETY REQUIREMENTS:
 - Different contexts: indoors, outdoors, nature, urban, imaginative spaces
 
 REQUIREMENTS:
-- Natural, child-appropriate scenes
-- ${characterNames} doing varied activities
+- Safe, wholesome, child-appropriate scenes
+- Activities related to: ${characterNames}
 - Clear, straightforward descriptions (2-3 sentences maximum)
 - MUST specify shot type and environment detail level
-${hasCharacterPhotos ? '- Character appears in different poses, angles, and scene types' : ''}
+${hasCharacterPhotos ? '- Subject appears in different poses, angles, and scene types' : ''}
 - CRITICAL: Follow the complexity guidance above EXACTLY
+- CRITICAL: NO age words, NO identity descriptors - activity and environment ONLY
 
 ${contentGuidance}
 
@@ -143,7 +218,7 @@ Return JSON array with:
   "pageNumber": 1-${targetPageCount},
   "interest": "the interest category",
   "shotType": "wide|medium|close",
-  "prompt": "Detailed 2-3 sentence scene description with environment details"
+  "prompt": "Activity-first scene description with environment details (NO age words)"
 }`;
 
     console.log('Calling Google Gemini API for prompt generation...');
