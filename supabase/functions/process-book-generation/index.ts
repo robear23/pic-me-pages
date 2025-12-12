@@ -887,7 +887,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
               }
             }),
             new Promise((_, reject) => 
-              setTimeout(() => reject(new Error(`Image generation timeout for page ${pageIndex + 1}`)), 60000)
+              setTimeout(() => reject(new Error(`Image generation timeout for page ${pageIndex + 1}`)), 180000) // 3 minutes to accommodate 5 retry attempts
             )
           ]) as any;
 
