@@ -59,6 +59,80 @@ async function extractBase64FromUrl(photoUrl: string): Promise<{ base64: string;
   throw new Error('Unrecognized photo URL format');
 }
 
+// TWO-STAGE APPROACH: Extract character description from photo using text model
+// This avoids sending photos directly to the image generation model which often fails
+async function extractCharacterDescription(photoBase64: string, mimeType: string, GOOGLE_API_KEY: string): Promise<string> {
+  try {
+    console.log(`🔍 Extracting character description from photo...`);
+    
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent`,
+      {
+        method: 'POST',
+        headers: {
+          'x-goog-api-key': GOOGLE_API_KEY,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: photoBase64
+                }
+              },
+              {
+                text: `Describe this person's physical appearance in EXACT detail for an artist to recreate them:
+                
+REQUIRED DETAILS (be very specific):
+- Hair: color (exact shade), style (length, texture, parting)
+- Face shape: (oval, round, square, heart-shaped, etc.)
+- Eyes: color, shape, size, eyebrow style
+- Nose: shape and size
+- Mouth: lip shape and size
+- Skin tone: (specific shade like fair, olive, tan, brown, etc.)
+- Any distinctive features: freckles, dimples, glasses, etc.
+- General build: slim, average, athletic, etc.
+
+OUTPUT FORMAT: Write a single paragraph describing this person as if for a portrait artist. Be specific but neutral. Do NOT include any age references.
+
+Example: "A person with wavy auburn shoulder-length hair parted in the middle, oval face shape, large hazel eyes with arched eyebrows, small upturned nose, full lips, fair skin with light freckles across the cheeks, slim build."
+
+Write ONLY the description, nothing else.`
+              }
+            ]
+          }],
+          generationConfig: {
+            temperature: 0.3,
+            maxOutputTokens: 300
+          }
+        })
+      }
+    );
+    
+    if (!response.ok) {
+      console.warn(`⚠️ Character description extraction failed: ${response.status}`);
+      return 'a friendly person with pleasant features';
+    }
+    
+    const data = await response.json();
+    const description = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    
+    if (!description) {
+      console.warn(`⚠️ No description text in response`);
+      return 'a friendly person with pleasant features';
+    }
+    
+    console.log(`✅ Extracted character description: "${description.substring(0, 100)}..."`);
+    return description;
+    
+  } catch (error) {
+    console.error(`❌ Character description extraction error:`, error);
+    return 'a friendly person with pleasant features';
+  }
+}
+
 // SAFE PROMPT GUIDE: Enhanced system message without age references (Rule 1)
 const REALISTIC_SYSTEM_MESSAGE = `ABSOLUTE REQUIREMENT: Generate a REAL CAMERA PHOTOGRAPH optimized for line art conversion.
 
@@ -753,10 +827,27 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
       try {
         console.log(`Step 1/2 - Generating realistic image ${pageIndex + 1}/${totalPages} (attempt ${attempt}/${MAX_RETRIES}, model: ${model})`);
         
+// VARIETY_SAFE_PROMPTS for last resort fallback (attempt 5) - each page gets different scene
+        const VARIETY_SAFE_PROMPTS = [
+          'Smiling happily in a bright garden with colorful flowers and butterflies',
+          'Reading an exciting adventure book in a cozy library with bookshelves',
+          'Painting a beautiful picture at an art easel with colorful paints',
+          'Playing with building blocks in a sunny playroom with toys',
+          'Exploring a butterfly garden with beautiful insects and flowers',
+          'Baking delicious cookies in a cheerful kitchen with utensils',
+          'Playing with a friendly puppy in a sunny park with trees',
+          'Building a sandcastle at a sunny beach with seashells',
+          'Having a picnic in a meadow with flowers and baskets',
+          'Flying a colorful kite in a park with clouds',
+          'Playing with bubbles in a garden with rainbow colors',
+          'Looking at colorful fish in a beautiful aquarium'
+        ];
+        
         // CRITICAL FIX: Keep photos in ALL attempts except last resort (attempt 5)
         let currentPromptText: string;
         let includePhotos: boolean;
         let photoMatchEmphasis = '';
+        let useCharacterDescription = false; // NEW: Flag for two-stage approach
         
         if (attempt === 1) {
           // Attempt 1: Use original prompt with photos
@@ -764,28 +855,30 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
           includePhotos = true;
           console.log(`📝 Attempt 1: Using original prompt with ${characterPhotos.length} photo(s)`);
         } else if (attempt === 2) {
-          // Attempt 2: Simplified prompt WITH photos + character emphasis
+          // Attempt 2: Try TWO-STAGE APPROACH - extract character description, use text-only
           currentPromptText = simplifyPromptForRetry(prompt.prompt, 1);
-          includePhotos = true;
+          includePhotos = true; // Still try with photos first
+          useCharacterDescription = true; // But flag for text description extraction
           photoMatchEmphasis = CHARACTER_MATCH_EMPHASIS;
-          console.log(`📝 Attempt 2: Simplified prompt (Level 1) WITH ${characterPhotos.length} photo(s) + character emphasis`);
+          console.log(`📝 Attempt 2: Simplified prompt (Level 1) WITH photos + character emphasis`);
         } else if (attempt === 3) {
           // Attempt 3: More simplified prompt WITH photos + character emphasis
           currentPromptText = simplifyPromptForRetry(prompt.prompt, 2);
           includePhotos = true;
           photoMatchEmphasis = CHARACTER_MATCH_EMPHASIS;
-          console.log(`📝 Attempt 3: Simplified prompt (Level 2) WITH ${characterPhotos.length} photo(s) + character emphasis`);
+          console.log(`📝 Attempt 3: Simplified prompt (Level 2) WITH photos + character emphasis`);
         } else if (attempt === 4) {
           // Attempt 4: Safe fallback WITH photos + character emphasis
           currentPromptText = simplifyPromptForRetry(prompt.prompt, 3);
           includePhotos = true;
           photoMatchEmphasis = CHARACTER_MATCH_EMPHASIS;
-          console.log(`📝 Attempt 4: Safe fallback prompt WITH ${characterPhotos.length} photo(s) + character emphasis`);
+          console.log(`📝 Attempt 4: Safe fallback prompt WITH photos + character emphasis`);
         } else {
-          // Attempt 5: LAST RESORT - generic safe prompt WITHOUT photos
-          currentPromptText = 'Smiling happily in a bright, cheerful garden with colorful flowers and butterflies. Sunny day with blue sky.';
+          // Attempt 5: LAST RESORT - different safe prompt for each page WITHOUT photos
+          const safePromptIndex = pageIndex % VARIETY_SAFE_PROMPTS.length;
+          currentPromptText = VARIETY_SAFE_PROMPTS[safePromptIndex] + '. Sunny day with cheerful atmosphere.';
           includePhotos = false;
-          console.log(`⚠️ Attempt 5: LAST RESORT - generating WITHOUT photos (generic scene)`);
+          console.log(`⚠️ Attempt 5: LAST RESORT - generating WITHOUT photos (safe scene #${safePromptIndex + 1})`);
         }
         
         // Build content parts based on current attempt
@@ -923,6 +1016,18 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
 
         const data = await imageResponse.json();
         
+        // DEBUG LOGGING: Log full API response structure to understand failures
+        console.log(`🔍 API Response structure (page ${pageIndex + 1}, attempt ${attempt}):`, JSON.stringify({
+          hasCandidate: !!data.candidates?.[0],
+          hasParts: !!data.candidates?.[0]?.content?.parts,
+          partsLength: data.candidates?.[0]?.content?.parts?.length || 0,
+          finishReason: data.candidates?.[0]?.finishReason,
+          safetyRatings: data.candidates?.[0]?.safetyRatings?.map((r: any) => ({ category: r.category, probability: r.probability })),
+          promptFeedback: data.promptFeedback,
+          hasImagePart: !!data.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData),
+          partTypes: data.candidates?.[0]?.content?.parts?.map((p: any) => Object.keys(p).join(','))
+        }));
+        
         // Extract base64 image from Google's response format
         const imagePart = data.candidates?.[0]?.content?.parts?.find(
           (p: any) => p.inlineData
@@ -931,6 +1036,13 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
         if (!imagePart?.inlineData?.data) {
           console.error(`❌ No image data in Step 1 response (attempt ${attempt}/${MAX_RETRIES})`);
           console.log(`Prompt excerpt: "${currentPromptText.substring(0, 150)}..."`);
+          console.log(`📊 Full response for debugging:`, JSON.stringify(data).substring(0, 500));
+          
+          // Check if this is a safety/content block
+          if (data.candidates?.[0]?.finishReason === 'SAFETY' || 
+              data.promptFeedback?.blockReason) {
+            console.warn(`⚠️ Safety block detected: finishReason=${data.candidates?.[0]?.finishReason}, blockReason=${data.promptFeedback?.blockReason}`);
+          }
           
           if (attempt < MAX_RETRIES) {
             console.log(`🔄 Retrying with simpler prompt and/or without photos...`);

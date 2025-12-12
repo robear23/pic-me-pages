@@ -35,59 +35,59 @@ serve(async (req) => {
       );
     }
     
-    // INTEREST SANITIZATION: Replace risky interests with safer alternatives BEFORE prompt generation
-    // This prevents problematic prompts from being generated in the first place
+    // INTEREST SANITIZATION: Replace risky interests with safer but VARIED alternatives
+    // This prevents problematic prompts while preserving page variety
     const INTEREST_SANITIZATION: Record<string, string> = {
-      // Physical activities that can trigger safety filters
-      'rock climbing': 'exploring nature trails',
-      'climbing': 'exploring nature',
-      'cycling': 'riding a bicycle in a park',
-      'jogging': 'walking through a beautiful park',
-      'running': 'taking a walk outdoors',
-      'sprinting': 'walking quickly',
-      'marathon': 'walking in a park',
-      'skateboarding': 'playing at a playground',
-      'skiing': 'playing in the snow',
-      'snowboarding': 'building a snowman',
-      'surfing': 'playing at the beach',
-      'diving': 'swimming in a pool',
-      'bungee': 'playing on swings',
-      'parkour': 'playing at a playground',
-      // Sports that can trigger filters
-      'cricket': 'playing with a ball in the garden',
-      'playing cricket': 'playing catch in a sunny park',
-      'football': 'playing with a ball',
-      'soccer': 'kicking a ball in the park',
-      'rugby': 'playing with friends',
-      'boxing': 'exercising at a gym',
-      'wrestling': 'playing with friends',
-      'martial arts': 'practicing yoga',
-      'karate': 'practicing gentle exercises',
-      'judo': 'practicing balance exercises',
-      // Fictional/IP that can trigger filters
-      'star wars': 'reading adventure books',
-      'starwars': 'reading space books',
-      'lightsaber': 'playing with glowing toys',
-      'jedi': 'reading a book about heroes',
-      'sith': 'exploring a garden',
-      'darth vader': 'playing dress-up',
-      'marvel': 'reading comic books',
-      'superhero': 'playing pretend',
-      'avengers': 'reading adventure stories',
-      // Organizations/charities
-      'water witness international': 'helping in a community garden',
-      'water witness': 'exploring nature near a stream',
-      'charity': 'helping in a garden',
-      'organization': 'participating in group activities',
-      // Other potentially problematic terms
-      'hunting': 'exploring nature',
-      'fishing': 'sitting by a pond',
-      'archery': 'playing target games',
-      'shooting': 'playing games',
-      'gun': 'playing with toys',
-      'sword': 'playing knights',
-      'fight': 'playing with friends',
-      'battle': 'playing adventure games'
+      // Physical activities - use VARIED safe alternatives for each
+      'rock climbing': 'exploring a colorful cave with glowing crystals and friendly bats',
+      'climbing': 'climbing a magical treehouse with fairy lights',
+      'cycling': 'riding a bicycle through autumn leaves on a forest trail',
+      'jogging': 'walking through a magical enchanted forest path',
+      'running': 'chasing butterflies through a wildflower meadow',
+      'sprinting': 'racing toy cars in a backyard track',
+      'marathon': 'walking with friends along a scenic lake path',
+      'skateboarding': 'riding a scooter through a colorful skate park',
+      'skiing': 'making snow angels in fresh powder',
+      'snowboarding': 'building an elaborate igloo in the snow',
+      'surfing': 'collecting seashells on a tropical beach',
+      'diving': 'snorkeling to see colorful coral and fish',
+      'bungee': 'swinging on a tire swing under a big tree',
+      'parkour': 'playing on a colorful obstacle course playground',
+      // Sports - use VARIED safe alternatives
+      'cricket': 'playing with a frisbee in a sunny meadow',
+      'playing cricket': 'playing croquet in a beautiful garden',
+      'football': 'playing catch with a colorful beach ball',
+      'soccer': 'dribbling a ball through cones in a park',
+      'rugby': 'playing tag in a field of sunflowers',
+      'boxing': 'practicing kung fu panda poses',
+      'wrestling': 'playing leapfrog with friends',
+      'martial arts': 'doing tai chi in a zen garden',
+      'karate': 'practicing ballet in a dance studio',
+      'judo': 'doing gymnastics on soft mats',
+      // Fictional/IP - redirect to creative activities
+      'star wars': 'building a rocket ship from cardboard boxes',
+      'starwars': 'stargazing through a telescope at night',
+      'lightsaber': 'playing with glow sticks at a party',
+      'jedi': 'meditating in a peaceful zen garden',
+      'sith': 'exploring a mysterious forest with mushrooms',
+      'darth vader': 'dressing up as a friendly robot',
+      'marvel': 'creating comic strips with colored pencils',
+      'superhero': 'wearing a cape and pretending to fly',
+      'avengers': 'assembling a giant puzzle together',
+      // Organizations/charities - redirect to helpful activities
+      'water witness international': 'planting trees in a community orchard',
+      'water witness': 'feeding ducks at a peaceful pond',
+      'charity': 'donating toys at a donation center',
+      'organization': 'helping at a bake sale with cupcakes',
+      // Other - varied safe activities
+      'hunting': 'going on a treasure hunt with a map',
+      'fishing': 'feeding koi fish in a Japanese garden',
+      'archery': 'throwing bean bags at carnival targets',
+      'shooting': 'playing carnival ring toss games',
+      'gun': 'playing with water balloons',
+      'sword': 'having a pretend sword fight with pool noodles',
+      'fight': 'having a pillow fight at a sleepover',
+      'battle': 'playing an epic board game adventure'
     };
     
     // Sanitize interests before using them
