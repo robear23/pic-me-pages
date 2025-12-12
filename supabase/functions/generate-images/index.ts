@@ -822,6 +822,10 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
 - The character's identity is MORE important than the activity
 `;
   
+  // Track consecutive IMAGE_OTHER failures for smart early-skip
+  let consecutiveImageOtherFailures = 0;
+  let cachedCharacterDescription: string | null = null;
+  
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     for (const model of MODELS) {
       try {
@@ -855,26 +859,59 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
           includePhotos = true;
           console.log(`📝 Attempt 1: Using original prompt with ${characterPhotos.length} photo(s)`);
         } else if (attempt === 2) {
-          // Attempt 2: Try TWO-STAGE APPROACH - extract character description, use text-only
-          currentPromptText = simplifyPromptForRetry(prompt.prompt, 1);
-          includePhotos = true; // Still try with photos first
-          useCharacterDescription = true; // But flag for text description extraction
-          photoMatchEmphasis = CHARACTER_MATCH_EMPHASIS;
-          console.log(`📝 Attempt 2: Simplified prompt (Level 1) WITH photos + character emphasis`);
+          // Attempt 2: TWO-STAGE APPROACH - use text description of character instead of photo
+          if (characterPhotos.length > 0 && !cachedCharacterDescription) {
+            try {
+              console.log(`📸 Extracting character description from photo for two-stage approach...`);
+              const photoUrl = characterPhotos[0].image_url?.url;
+              if (photoUrl) {
+                const { base64, mimeType } = await extractBase64FromUrl(photoUrl);
+                cachedCharacterDescription = await extractCharacterDescription(base64, mimeType, GOOGLE_API_KEY);
+                console.log(`✅ Character description extracted: "${cachedCharacterDescription.substring(0, 100)}..."`);
+              }
+            } catch (descError) {
+              console.warn(`⚠️ Failed to extract character description:`, descError);
+              cachedCharacterDescription = 'a friendly person with pleasant features';
+            }
+          }
+          
+          // Use text description instead of photos
+          if (cachedCharacterDescription) {
+            currentPromptText = `A person with these physical features: ${cachedCharacterDescription}\n\nScene: ${simplifyPromptForRetry(prompt.prompt, 1)}`;
+            includePhotos = false; // Don't send photos - use text description only
+            console.log(`📝 Attempt 2: TWO-STAGE - Using text character description (no photos)`);
+          } else {
+            currentPromptText = simplifyPromptForRetry(prompt.prompt, 1);
+            includePhotos = true;
+            photoMatchEmphasis = CHARACTER_MATCH_EMPHASIS;
+            console.log(`📝 Attempt 2: Simplified prompt (Level 1) WITH photos (no description available)`);
+          }
         } else if (attempt === 3) {
-          // Attempt 3: More simplified prompt WITH photos + character emphasis
-          currentPromptText = simplifyPromptForRetry(prompt.prompt, 2);
-          includePhotos = true;
-          photoMatchEmphasis = CHARACTER_MATCH_EMPHASIS;
-          console.log(`📝 Attempt 3: Simplified prompt (Level 2) WITH photos + character emphasis`);
+          // Attempt 3: Try text description again with more simplified prompt
+          if (cachedCharacterDescription) {
+            currentPromptText = `A person with these features: ${cachedCharacterDescription}\n\nScene: ${simplifyPromptForRetry(prompt.prompt, 2)}`;
+            includePhotos = false;
+            console.log(`📝 Attempt 3: TWO-STAGE - Simplified scene with text character description`);
+          } else {
+            currentPromptText = simplifyPromptForRetry(prompt.prompt, 2);
+            includePhotos = true;
+            photoMatchEmphasis = CHARACTER_MATCH_EMPHASIS;
+            console.log(`📝 Attempt 3: Simplified prompt (Level 2) WITH photos`);
+          }
         } else if (attempt === 4) {
-          // Attempt 4: Safe fallback WITH photos + character emphasis
-          currentPromptText = simplifyPromptForRetry(prompt.prompt, 3);
-          includePhotos = true;
-          photoMatchEmphasis = CHARACTER_MATCH_EMPHASIS;
-          console.log(`📝 Attempt 4: Safe fallback prompt WITH photos + character emphasis`);
+          // Attempt 4: Safe fallback with character description
+          if (cachedCharacterDescription) {
+            currentPromptText = `A person with these features: ${cachedCharacterDescription}\n\nScene: ${simplifyPromptForRetry(prompt.prompt, 3)}`;
+            includePhotos = false;
+            console.log(`📝 Attempt 4: TWO-STAGE - Safe fallback with text character description`);
+          } else {
+            currentPromptText = simplifyPromptForRetry(prompt.prompt, 3);
+            includePhotos = true;
+            photoMatchEmphasis = CHARACTER_MATCH_EMPHASIS;
+            console.log(`📝 Attempt 4: Safe fallback prompt WITH photos`);
+          }
         } else {
-          // Attempt 5: LAST RESORT - different safe prompt for each page WITHOUT photos
+          // Attempt 5: LAST RESORT - different safe prompt for each page WITHOUT photos or character
           const safePromptIndex = pageIndex % VARIETY_SAFE_PROMPTS.length;
           currentPromptText = VARIETY_SAFE_PROMPTS[safePromptIndex] + '. Sunny day with cheerful atmosphere.';
           includePhotos = false;
@@ -1038,10 +1075,26 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
           console.log(`Prompt excerpt: "${currentPromptText.substring(0, 150)}..."`);
           console.log(`📊 Full response for debugging:`, JSON.stringify(data).substring(0, 500));
           
+          const finishReason = data.candidates?.[0]?.finishReason;
+          
           // Check if this is a safety/content block
-          if (data.candidates?.[0]?.finishReason === 'SAFETY' || 
-              data.promptFeedback?.blockReason) {
-            console.warn(`⚠️ Safety block detected: finishReason=${data.candidates?.[0]?.finishReason}, blockReason=${data.promptFeedback?.blockReason}`);
+          if (finishReason === 'SAFETY' || data.promptFeedback?.blockReason) {
+            console.warn(`⚠️ Safety block detected: finishReason=${finishReason}, blockReason=${data.promptFeedback?.blockReason}`);
+          }
+          
+          // SMART EARLY-SKIP: Track IMAGE_OTHER failures (photo rejection)
+          if (finishReason === 'IMAGE_OTHER') {
+            consecutiveImageOtherFailures++;
+            console.warn(`⚠️ IMAGE_OTHER failure detected (count: ${consecutiveImageOtherFailures})`);
+            
+            // If photos are being consistently rejected, skip directly to last resort
+            if (consecutiveImageOtherFailures >= 2 && attempt < MAX_RETRIES - 1) {
+              console.log(`⚡ Detected ${consecutiveImageOtherFailures} consecutive IMAGE_OTHER failures - skipping to last resort (attempt 5)`);
+              // Jump to attempt 5 (last resort without photos)
+              // We break from model loop and set attempt to 4 so next iteration is attempt 5
+              attempt = MAX_RETRIES - 1;
+              break; // Break from model loop to trigger next attempt
+            }
           }
           
           if (attempt < MAX_RETRIES) {
