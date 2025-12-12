@@ -35,8 +35,88 @@ serve(async (req) => {
       );
     }
     
+    // INTEREST SANITIZATION: Replace risky interests with safer alternatives BEFORE prompt generation
+    // This prevents problematic prompts from being generated in the first place
+    const INTEREST_SANITIZATION: Record<string, string> = {
+      // Physical activities that can trigger safety filters
+      'rock climbing': 'exploring nature trails',
+      'climbing': 'exploring nature',
+      'cycling': 'riding a bicycle in a park',
+      'jogging': 'walking through a beautiful park',
+      'running': 'taking a walk outdoors',
+      'sprinting': 'walking quickly',
+      'marathon': 'walking in a park',
+      'skateboarding': 'playing at a playground',
+      'skiing': 'playing in the snow',
+      'snowboarding': 'building a snowman',
+      'surfing': 'playing at the beach',
+      'diving': 'swimming in a pool',
+      'bungee': 'playing on swings',
+      'parkour': 'playing at a playground',
+      // Sports that can trigger filters
+      'cricket': 'playing with a ball in the garden',
+      'playing cricket': 'playing catch in a sunny park',
+      'football': 'playing with a ball',
+      'soccer': 'kicking a ball in the park',
+      'rugby': 'playing with friends',
+      'boxing': 'exercising at a gym',
+      'wrestling': 'playing with friends',
+      'martial arts': 'practicing yoga',
+      'karate': 'practicing gentle exercises',
+      'judo': 'practicing balance exercises',
+      // Fictional/IP that can trigger filters
+      'star wars': 'reading adventure books',
+      'starwars': 'reading space books',
+      'lightsaber': 'playing with glowing toys',
+      'jedi': 'reading a book about heroes',
+      'sith': 'exploring a garden',
+      'darth vader': 'playing dress-up',
+      'marvel': 'reading comic books',
+      'superhero': 'playing pretend',
+      'avengers': 'reading adventure stories',
+      // Organizations/charities
+      'water witness international': 'helping in a community garden',
+      'water witness': 'exploring nature near a stream',
+      'charity': 'helping in a garden',
+      'organization': 'participating in group activities',
+      // Other potentially problematic terms
+      'hunting': 'exploring nature',
+      'fishing': 'sitting by a pond',
+      'archery': 'playing target games',
+      'shooting': 'playing games',
+      'gun': 'playing with toys',
+      'sword': 'playing knights',
+      'fight': 'playing with friends',
+      'battle': 'playing adventure games'
+    };
+    
+    // Sanitize interests before using them
+    const sanitizeInterest = (interest: string): string => {
+      const lowerInterest = interest.toLowerCase().trim();
+      
+      // Check for exact matches first
+      if (INTEREST_SANITIZATION[lowerInterest]) {
+        console.log(`🔄 Sanitized interest: "${interest}" → "${INTEREST_SANITIZATION[lowerInterest]}"`);
+        return INTEREST_SANITIZATION[lowerInterest];
+      }
+      
+      // Check for partial matches (if the interest contains a risky term)
+      for (const [risky, safe] of Object.entries(INTEREST_SANITIZATION)) {
+        if (lowerInterest.includes(risky)) {
+          console.log(`🔄 Sanitized interest (partial match): "${interest}" → "${safe}"`);
+          return safe;
+        }
+      }
+      
+      return interest;
+    };
+    
     // Provide default empty array for interests if only customPrompt is used
-    const effectiveInterests = hasInterests ? interests : [];
+    const rawInterests = hasInterests ? interests : [];
+    const effectiveInterests = rawInterests.map(sanitizeInterest);
+    
+    console.log(`📋 Original interests: ${rawInterests.join(', ')}`);
+    console.log(`📋 Sanitized interests: ${effectiveInterests.join(', ')}`);
 
     const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     if (!GOOGLE_API_KEY) {
