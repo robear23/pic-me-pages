@@ -1086,6 +1086,15 @@ export default function AdminMonitoring() {
             <p><strong>Sync Status:</strong> Updates job status to match book status when they're out of sync.</p>
           </CardContent>
         </Card>
+          </TabsContent>
+        </Tabs>
+
+        <FailedBookDetailModal
+          book={selectedBook}
+          open={showBookDetail}
+          onOpenChange={setShowBookDetail}
+          onRetry={retryFailedBook}
+        />
       </div>
     </div>
   );
