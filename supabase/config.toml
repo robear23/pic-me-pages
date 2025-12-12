@@ -51,3 +51,9 @@ verify_jwt = false
 
 [functions.get-queue-stats]
 verify_jwt = true
+
+[functions.get-failed-books]
+verify_jwt = true
+
+[functions.retry-failed-book]
+verify_jwt = true
