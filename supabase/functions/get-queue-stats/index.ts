@@ -53,9 +53,28 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get queue statistics
+    // Parse request body for time range
+    const body = await req.json().catch(() => ({}));
+    const timeRange = body.timeRange || '24h';
+    
+    // Calculate date filter based on timeRange
     const now = new Date();
-    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    let dateFilter: string;
+    
+    if (timeRange === '24h') {
+      dateFilter = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    } else if (timeRange === '7d') {
+      dateFilter = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    } else if (timeRange === '30d') {
+      dateFilter = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    } else if (timeRange === 'all') {
+      dateFilter = new Date(0).toISOString(); // Beginning of time
+    } else {
+      dateFilter = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+    }
+    
+    console.log('Time range:', timeRange, 'Date filter:', dateFilter);
+    
     const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
 
     // Job counts
@@ -69,38 +88,39 @@ Deno.serve(async (req) => {
       .select('id', { count: 'exact', head: true })
       .eq('status', 'processing');
 
-    const { count: completedToday } = await supabase
+    const { count: completedInRange } = await supabase
       .from('book_generation_jobs')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'completed')
-      .gte('completed_at', oneDayAgo);
+      .gte('completed_at', dateFilter);
 
-    const { count: failedToday } = await supabase
+    const { count: failedInRange } = await supabase
       .from('book_generation_jobs')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'failed')
-      .gte('completed_at', oneDayAgo);
+      .gte('completed_at', dateFilter);
 
     // Count partial jobs (books that completed with issues)
-    const { count: partialToday } = await supabase
+    const { count: partialInRange } = await supabase
       .from('book_generation_jobs')
       .select('id', { count: 'exact', head: true })
       .eq('status', 'partial')
-      .gte('completed_at', oneDayAgo);
+      .gte('completed_at', dateFilter);
 
     // Average duration
     const { data: durationData } = await supabase
       .from('book_generation_jobs')
       .select('processing_duration_ms')
       .eq('status', 'completed')
-      .gte('completed_at', oneDayAgo)
+      .gte('completed_at', dateFilter)
       .not('processing_duration_ms', 'is', null);
 
     const avgDurationMs = durationData && durationData.length > 0
       ? durationData.reduce((sum, j) => sum + (j.processing_duration_ms || 0), 0) / durationData.length
       : 0;
 
-    // Daily spend
+    // Daily spend (always last 24h for budget tracking)
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
     const { data: spendData } = await supabase
       .from('api_usage_logs')
       .select('estimated_cost_usd')
@@ -123,11 +143,11 @@ Deno.serve(async (req) => {
     // Get failed jobs for the table (include book_id and max_retries)
     const { data: failedJobsRaw } = await supabase
       .from('book_generation_jobs')
-      .select('id, user_id, error_message, failure_reason, completed_at, retry_count, max_retries, generation_data, book_id')
+      .select('id, user_id, error_message, failure_reason, completed_at, retry_count, max_retries, generation_data, book_id, attempts')
       .eq('status', 'failed')
-      .gte('completed_at', oneDayAgo)
+      .gte('completed_at', dateFilter)
       .order('completed_at', { ascending: false })
-      .limit(20);
+      .limit(50);
 
     // Enrich failed jobs with book status
     const failedJobs = await Promise.all(
@@ -175,9 +195,9 @@ Deno.serve(async (req) => {
       .from('book_generation_jobs')
       .select('id, user_id, error_message, completed_at, retry_count, generation_data, book_id')
       .eq('status', 'partial')
-      .gte('completed_at', oneDayAgo)
+      .gte('completed_at', dateFilter)
       .order('completed_at', { ascending: false })
-      .limit(20);
+      .limit(50);
 
     // Enrich partial jobs with book status to identify mismatches
     const enrichedPartialJobs = await Promise.all(
@@ -194,19 +214,33 @@ Deno.serve(async (req) => {
       })
     );
 
+    // Count failed books (not just jobs) in range
+    let failedBooksQuery = supabase
+      .from('books')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'failed');
+    
+    if (timeRange !== 'all') {
+      failedBooksQuery = failedBooksQuery.gte('updated_at', dateFilter);
+    }
+    
+    const { count: failedBooksCount } = await failedBooksQuery;
+
     const stats = {
       pending_jobs: pendingCount || 0,
       processing_jobs: processingCount || 0,
-      completed_today: completedToday || 0,
-      failed_today: failedToday || 0,
-      partial_today: partialToday || 0,
+      completed_in_range: completedInRange || 0,
+      failed_in_range: failedInRange || 0,
+      partial_in_range: partialInRange || 0,
+      failed_books_count: failedBooksCount || 0,
       daily_spend_usd: Math.round(dailySpend * 100) / 100,
       daily_limit_usd: parseFloat(config.daily_spend_limit_usd || '50'),
       max_concurrent_jobs: parseInt(config.max_concurrent_jobs || '3'),
       avg_generation_time_minutes: Math.round(avgDurationMs / 60000 * 10) / 10,
-      success_rate: (completedToday || 0) + (failedToday || 0) + (partialToday || 0) > 0
-        ? Math.round(((completedToday || 0) / ((completedToday || 0) + (failedToday || 0) + (partialToday || 0))) * 100)
+      success_rate: (completedInRange || 0) + (failedInRange || 0) + (partialInRange || 0) > 0
+        ? Math.round(((completedInRange || 0) / ((completedInRange || 0) + (failedInRange || 0) + (partialInRange || 0))) * 100)
         : 100,
+      time_range: timeRange,
       failed_jobs: failedJobs || [],
       stale_jobs: staleJobs || [],
       partial_jobs: enrichedPartialJobs || [],

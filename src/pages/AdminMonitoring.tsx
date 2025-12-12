@@ -4,12 +4,15 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAdmin } from '@/hooks/useAdmin';
 import { Navigate } from 'react-router-dom';
-import { Activity, AlertTriangle, CheckCircle, Clock, DollarSign, RefreshCw, Settings, XCircle, Zap, AlertCircle, Play, Eye } from 'lucide-react';
+import { Activity, AlertTriangle, CheckCircle, Clock, DollarSign, RefreshCw, Settings, XCircle, Zap, AlertCircle, Play, Eye, BookX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
+import { FailedBookDetailModal } from '@/components/admin/FailedBookDetailModal';
 
 interface PartialJob {
   id: string;
@@ -55,14 +58,16 @@ interface PendingJob {
 interface QueueStats {
   pending_jobs: number;
   processing_jobs: number;
-  completed_today: number;
-  failed_today: number;
-  partial_today: number;
+  completed_in_range: number;
+  failed_in_range: number;
+  partial_in_range: number;
+  failed_books_count: number;
   daily_spend_usd: number;
   daily_limit_usd: number;
   max_concurrent_jobs: number;
   avg_generation_time_minutes: number;
   success_rate: number;
+  time_range: string;
   failed_jobs: FailedJob[];
   stale_jobs: StaleJob[];
   partial_jobs: PartialJob[];
@@ -78,6 +83,7 @@ interface FailedJob {
   completed_at: string;
   retry_count: number;
   max_retries: number;
+  attempts: number;
   generation_data: any;
   book_id: string | null;
   book_status: string | null;
@@ -94,12 +100,47 @@ interface StaleJob {
   generation_data: any;
 }
 
+interface FailedBook {
+  id: string;
+  user_id: string;
+  character_name: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  error_log: any[];
+  generation_attempts: number;
+  last_error_message: string | null;
+  last_error_timestamp: string | null;
+  failed_step: string | null;
+  generation_duration_seconds: number | null;
+  complexity: string | null;
+  interests: string[];
+  selected_page_count: number;
+  pages: any[];
+  job?: {
+    id: string;
+    error_message: string | null;
+    failure_reason: string | null;
+    retry_count: number;
+    attempts: number;
+    progress: any;
+    generation_data: any;
+  } | null;
+}
+
 export default function AdminMonitoring() {
   const { isAdmin, loading } = useAdmin();
   const [stats, setStats] = useState<QueueStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [editingConfig, setEditingConfig] = useState(false);
   const [autoRefresh, setAutoRefresh] = useState(true);
+  const [timeRange, setTimeRange] = useState<string>('24h');
+  const [failedBooks, setFailedBooks] = useState<FailedBook[]>([]);
+  const [failedBooksLoading, setFailedBooksLoading] = useState(false);
+  const [failedBooksPagination, setFailedBooksPagination] = useState({ offset: 0, limit: 50, total: 0 });
+  const [selectedBook, setSelectedBook] = useState<FailedBook | null>(null);
+  const [showBookDetail, setShowBookDetail] = useState(false);
+  const [activeTab, setActiveTab] = useState('queue');
   const [configValues, setConfigValues] = useState({
     max_concurrent_jobs: 3,
     daily_spend_limit_usd: 50,
@@ -111,7 +152,9 @@ export default function AdminMonitoring() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      const response = await supabase.functions.invoke('get-queue-stats');
+      const response = await supabase.functions.invoke('get-queue-stats', {
+        body: { timeRange }
+      });
       
       if (response.error) throw response.error;
       
@@ -128,16 +171,105 @@ export default function AdminMonitoring() {
     }
   };
 
+  const loadFailedBooks = async (offset = 0) => {
+    setFailedBooksLoading(true);
+    try {
+      const response = await supabase.functions.invoke('get-failed-books', {
+        body: { timeRange, offset, limit: 50 }
+      });
+      
+      if (response.error) throw response.error;
+      
+      setFailedBooks(response.data.books);
+      setFailedBooksPagination({
+        offset: response.data.pagination.offset,
+        limit: response.data.pagination.limit,
+        total: response.data.pagination.total,
+      });
+    } catch (error) {
+      console.error('Failed to load failed books:', error);
+      toast.error('Failed to load failed books');
+    } finally {
+      setFailedBooksLoading(false);
+    }
+  };
+
   useEffect(() => {
     if (isAdmin) {
       loadStats();
+      if (activeTab === 'failed-books') {
+        loadFailedBooks();
+      }
       // Auto-refresh every 10 seconds when enabled (faster for active monitoring)
       if (autoRefresh) {
-        const interval = setInterval(loadStats, 10000);
+        const interval = setInterval(() => {
+          loadStats();
+          if (activeTab === 'failed-books') {
+            loadFailedBooks(failedBooksPagination.offset);
+          }
+        }, 10000);
         return () => clearInterval(interval);
       }
     }
-  }, [isAdmin, autoRefresh]);
+  }, [isAdmin, autoRefresh, timeRange, activeTab]);
+
+  const retryFailedBook = async (bookId: string, fromBeginning: boolean) => {
+    try {
+      toast.info(fromBeginning ? 'Restarting book generation...' : 'Resuming book generation...');
+      
+      // Get the book's job
+      const { data: job, error: jobError } = await supabase
+        .from('book_generation_jobs')
+        .select('id, retry_count, progress')
+        .eq('book_id', bookId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (jobError || !job) {
+        toast.error('No job found for this book');
+        return;
+      }
+
+      // Reset book status
+      await supabase
+        .from('books')
+        .update({ 
+          status: 'processing',
+          error_log: fromBeginning ? [] : undefined,
+          generation_attempts: fromBeginning ? 0 : undefined,
+          last_error_message: null,
+          failed_step: null,
+        })
+        .eq('id', bookId);
+
+      // Reset job
+      await supabase
+        .from('book_generation_jobs')
+        .update({
+          status: 'pending',
+          started_at: null,
+          last_heartbeat: null,
+          worker_id: null,
+          error_message: null,
+          failure_reason: null,
+          completed_at: null,
+          retry_count: fromBeginning ? 0 : (job.retry_count || 0) + 1,
+          attempts: fromBeginning ? 0 : undefined,
+          progress: fromBeginning ? { currentPage: 0, totalPages: 0, currentStep: 'Restarting' } : job.progress,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id);
+
+      toast.success('Book queued for retry - triggering worker...');
+      await triggerQueueWorker();
+      loadFailedBooks(failedBooksPagination.offset);
+      loadStats();
+    } catch (error) {
+      console.error('Failed to retry book:', error);
+      toast.error('Failed to retry book');
+    }
+  };
 
   const resetJob = async (jobId: string, forceRestart: boolean = false) => {
     try {
@@ -386,6 +518,17 @@ export default function AdminMonitoring() {
             <p className="text-muted-foreground">Real-time job queue, costs, and system health</p>
           </div>
           <div className="flex gap-2 items-center">
+            <Select value={timeRange} onValueChange={setTimeRange}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="24h">Last 24h</SelectItem>
+                <SelectItem value="7d">Last 7 days</SelectItem>
+                <SelectItem value="30d">Last 30 days</SelectItem>
+                <SelectItem value="all">All time</SelectItem>
+              </SelectContent>
+            </Select>
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -405,6 +548,73 @@ export default function AdminMonitoring() {
             </Button>
           </div>
         </div>
+
+        {/* Tabs for Queue vs Failed Books */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList>
+            <TabsTrigger value="queue">Queue Monitoring</TabsTrigger>
+            <TabsTrigger value="failed-books" className="flex items-center gap-2">
+              <BookX className="w-4 h-4" />
+              Failed Books ({stats?.failed_books_count || 0})
+            </TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="failed-books" className="space-y-4">
+            {failedBooksLoading ? (
+              <div className="text-center py-8">Loading failed books...</div>
+            ) : failedBooks.length === 0 ? (
+              <Card><CardContent className="py-8 text-center text-muted-foreground">No failed books in selected time range</CardContent></Card>
+            ) : (
+              <>
+                <div className="text-sm text-muted-foreground">
+                  Showing {failedBooksPagination.offset + 1}-{Math.min(failedBooksPagination.offset + failedBooks.length, failedBooksPagination.total)} of {failedBooksPagination.total} failed books
+                </div>
+                <div className="space-y-3">
+                  {failedBooks.map((book) => (
+                    <Card key={book.id} className="border-red-200 dark:border-red-800">
+                      <CardContent className="p-4">
+                        <div className="flex justify-between items-start">
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium">{book.character_name}</p>
+                              <Badge variant="destructive">{book.failed_step || 'Unknown step'}</Badge>
+                            </div>
+                            <p className="text-xs text-red-600 dark:text-red-400 line-clamp-1">
+                              {book.last_error_message || book.job?.error_message || 'No error message'}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDistanceToNow(new Date(book.updated_at), { addSuffix: true })} • 
+                              {book.generation_attempts || book.job?.attempts || 0} attempts
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => { setSelectedBook(book); setShowBookDetail(true); }}>
+                              <Eye className="w-4 h-4 mr-1" /> Details
+                            </Button>
+                            <Button size="sm" className="bg-orange-600 hover:bg-orange-700" onClick={() => retryFailedBook(book.id, true)}>
+                              <Zap className="w-4 h-4 mr-1" /> Retry
+                            </Button>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+                {failedBooksPagination.total > failedBooksPagination.limit && (
+                  <div className="flex justify-center gap-2">
+                    <Button variant="outline" disabled={failedBooksPagination.offset === 0} onClick={() => loadFailedBooks(Math.max(0, failedBooksPagination.offset - 50))}>
+                      <ChevronLeft className="w-4 h-4" /> Previous
+                    </Button>
+                    <Button variant="outline" disabled={failedBooksPagination.offset + 50 >= failedBooksPagination.total} onClick={() => loadFailedBooks(failedBooksPagination.offset + 50)}>
+                      Next <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+              </>
+            )}
+          </TabsContent>
+          
+          <TabsContent value="queue" className="space-y-6">
 
         {/* Main Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
@@ -437,11 +647,11 @@ export default function AdminMonitoring() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <CheckCircle className="w-4 h-4 text-green-600" />
-                Completed (24h)
+                Completed
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-green-600">{stats?.completed_today || 0}</p>
+              <p className="text-3xl font-bold text-green-600">{stats?.completed_in_range || 0}</p>
             </CardContent>
           </Card>
 
@@ -449,11 +659,11 @@ export default function AdminMonitoring() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <XCircle className="w-4 h-4 text-red-600" />
-                Failed (24h)
+                Failed
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-red-600">{stats?.failed_today || 0}</p>
+              <p className="text-3xl font-bold text-red-600">{stats?.failed_in_range || 0}</p>
             </CardContent>
           </Card>
 
@@ -474,11 +684,11 @@ export default function AdminMonitoring() {
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-orange-600" />
-                Partial (24h)
+                Partial
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-3xl font-bold text-orange-600">{stats?.partial_today || 0}</p>
+              <p className="text-3xl font-bold text-orange-600">{stats?.partial_in_range || 0}</p>
             </CardContent>
           </Card>
 

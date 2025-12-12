@@ -141,9 +141,16 @@ export type Database = {
           cover_url: string | null
           created_at: string | null
           custom_prompt: string | null
+          error_log: Json | null
+          failed_step: string | null
+          generated_prompts: Json | null
+          generation_attempts: number | null
+          generation_duration_seconds: number | null
           id: string
           interests: string[]
           last_cover_attempt_at: string | null
+          last_error_message: string | null
+          last_error_timestamp: string | null
           missing_components: string[] | null
           missing_covers: boolean | null
           pages: Json | null
@@ -169,9 +176,16 @@ export type Database = {
           cover_url?: string | null
           created_at?: string | null
           custom_prompt?: string | null
+          error_log?: Json | null
+          failed_step?: string | null
+          generated_prompts?: Json | null
+          generation_attempts?: number | null
+          generation_duration_seconds?: number | null
           id?: string
           interests: string[]
           last_cover_attempt_at?: string | null
+          last_error_message?: string | null
+          last_error_timestamp?: string | null
           missing_components?: string[] | null
           missing_covers?: boolean | null
           pages?: Json | null
@@ -197,9 +211,16 @@ export type Database = {
           cover_url?: string | null
           created_at?: string | null
           custom_prompt?: string | null
+          error_log?: Json | null
+          failed_step?: string | null
+          generated_prompts?: Json | null
+          generation_attempts?: number | null
+          generation_duration_seconds?: number | null
           id?: string
           interests?: string[]
           last_cover_attempt_at?: string | null
+          last_error_message?: string | null
+          last_error_timestamp?: string | null
           missing_components?: string[] | null
           missing_covers?: boolean | null
           pages?: Json | null
