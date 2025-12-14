@@ -13,7 +13,8 @@ import {
   Plus,
   Sparkles,
   AlertCircle,
-  Image as ImageIcon
+  Image as ImageIcon,
+  ArrowLeft
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -627,6 +628,16 @@ export const BookPreviewStep = () => {
           transition={{ delay: 0.5 }}
           className="flex flex-wrap items-center justify-center gap-4"
         >
+          <Button
+            onClick={() => setStep('complete')}
+            size="lg"
+            variant="ghost"
+            className="gap-2"
+          >
+            <ArrowLeft className="w-5 h-5" />
+            Back to Summary
+          </Button>
+          
           <Button
             onClick={handleRegenerateSelected}
             disabled={selectedPagesForRework.length === 0 && selectedCoverPageIndex === null}
