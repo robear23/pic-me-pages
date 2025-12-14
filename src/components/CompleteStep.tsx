@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { useBookStore } from '@/store/bookStore';
-import { Download, ArrowLeft, ZoomIn, AlertCircle, Check, Loader2, LayoutDashboard } from 'lucide-react';
+import { Download, ArrowLeft, ZoomIn, AlertCircle, Check, Loader2, LayoutDashboard, Eye } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import confetti from 'canvas-confetti';
@@ -544,13 +544,14 @@ export const CompleteStep = () => {
             transition={{ duration: 0.5, delay: 0.25 }}
             className="flex flex-wrap gap-4 mb-8 justify-center"
           >
-            {!maxReworksReached && !selectionMode && (
+            {!selectionMode && (
               <Button
-                onClick={() => setSelectionMode(true)}
-                variant="outline"
+                onClick={() => setStep('preview')}
                 size="lg"
+                className="gap-2 bg-gradient-to-r from-primary to-[hsl(330_80%_60%)]"
               >
-                Select Pages to Rework
+                <Eye className="w-5 h-5" />
+                Preview & Edit Pages
               </Button>
             )}
             
