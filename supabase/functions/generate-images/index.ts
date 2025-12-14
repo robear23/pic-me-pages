@@ -265,83 +265,55 @@ const CARTOON_TRIGGER_WORDS = [
 ];
 
 // SAFE PROMPT GUIDE: Risky activities that commonly trigger MODEL_REFUSED (Rule 7)
-// EXPANDED: Added cricket, jogging, star wars based on actual failure data
+// NOTE: Safe sports like cricket, soccer, football are NOT included - they should work fine
 const RISKY_ACTIVITY_WORDS = [
-  'rock climbing', 'climbing', 'cliff', 'mountain climbing',
-  'cycling', 'biking', 'bike', 'bicycle',
-  'swimming', 'diving', 'underwater', 'pool',
-  'skiing', 'snowboarding', 'sledding',
-  'skateboarding', 'skating', 'rollerblading',
-  'football', 'soccer', 'rugby', 'tackling',
+  'rock climbing', 'cliff', 'mountain climbing',
+  'diving', 'underwater',
+  'skiing', 'snowboarding',
+  'skateboarding', 'rollerblading',
+  'tackling',
   'martial arts', 'karate', 'boxing', 'fighting',
-  'gymnastics', 'acrobatics', 'tumbling',
-  'horse riding', 'horseback', 'pony',
+  'acrobatics', 'tumbling',
+  'horse riding', 'horseback',
   'archery', 'bow', 'arrow',
-  'surfing', 'wakeboarding', 'water skiing',
-  'trampoline', 'bungee', 'parkour',
-  // Added from failure analysis
-  'cricket', 'playing cricket', 'batting', 'bowling',
-  'jogging', 'running', 'sprinting', 'marathon',
+  'wakeboarding', 'water skiing',
+  'bungee', 'parkour',
+  // IP/Violence related only
   'star wars', 'lightsaber', 'jedi', 'sith', 'darth',
-  'water witness', 'international', 'charity', 'organization'
+  'water witness', 'international', 'charity', 'organization',
+  'gun', 'guns', 'shooting', 'weapon', 'weapons', 'hunting',
+  'sword', 'swords', 'fight', 'battle', 'war'
 ];
 
 // SAFE PROMPT GUIDE: 4-Level Safe replacement activities (Rule 7)
-// Level 1: Same activity with safety context
-// Level 2: Reframed activity
-// Level 3: Alternative safer activity  
-// Level 4: Generic safe fallback
+// ONLY for truly problematic terms - safe sports are NOT replaced
 const SAFE_ACTIVITY_REPLACEMENTS: Record<string, string> = {
-  // Level 1 replacements - add safety context
+  // Physical activities that commonly trigger safety filters
   'rock climbing': 'climbing on an indoor climbing wall with safety equipment and colorful holds',
-  'climbing': 'climbing on an indoor wall with a harness',
   'cliff': 'standing on a hilltop with flowers',
-  'cycling': 'riding a bicycle with a helmet along a scenic path',
-  'biking': 'riding a bicycle with a helmet through a park',
-  'bike': 'riding a bicycle with a helmet',
-  'bicycle': 'riding a bicycle with a helmet along a path',
-  'swimming': 'splashing in a wading pool with floaties',
   'diving': 'looking at colorful fish in an aquarium',
-  'pool': 'playing near a fountain in a park',
-  'football': 'playing with a colorful ball in a sunny garden',
-  'soccer': 'kicking a ball gently in a garden with flowers',
-  'rugby': 'playing catch in a park',
+  'skiing': 'playing in soft fluffy snow',
+  'snowboarding': 'building a cheerful snowman',
+  'skateboarding': 'riding a skateboard with a helmet at a beginner-friendly skate park',
+  'rollerblading': 'rollerblading with knee pads on a smooth pathway',
   'tackling': 'playing tag in a meadow',
   'martial arts': 'doing fun stretches and poses',
   'karate': 'doing stretching exercises in a park',
   'boxing': 'practicing exercise moves',
   'fighting': 'practicing dance moves',
-  'gymnastics': 'dancing gracefully',
   'acrobatics': 'doing a ballet pose',
   'tumbling': 'rolling on soft grass',
-  'skiing': 'playing in soft fluffy snow',
-  'snowboarding': 'building a cheerful snowman',
-  'sledding': 'making snow angels',
-  'skateboarding': 'riding a skateboard with a helmet at a beginner-friendly skate park',
-  'skating': 'skating with protective gear',
-  'rollerblading': 'rollerblading with knee pads on a smooth pathway',
   'horse riding': 'gently petting a friendly pony',
   'horseback': 'standing next to a gentle horse',
-  'pony': 'feeding a friendly pony',
   'archery': 'playing with toys outdoors',
   'bow': 'playing in a field',
   'arrow': 'pointing at butterflies',
-  'surfing': 'building sandcastles at the beach',
   'wakeboarding': 'splashing in shallow water',
   'water skiing': 'playing at the beach',
   'underwater': 'looking at fish in an aquarium',
-  'trampoline': 'jumping happily in a garden',
   'bungee': 'playing on a swing',
   'parkour': 'walking through the neighborhood',
-  // Added from failure analysis - cricket, jogging, star wars
-  'cricket': 'playing with a colorful ball in a sunny garden',
-  'playing cricket': 'playing catch with a ball in a park',
-  'batting': 'swinging gently at a playground',
-  'bowling': 'rolling a ball gently in a garden',
-  'jogging': 'walking happily through a park with flowers',
-  'running': 'walking along a scenic trail',
-  'sprinting': 'walking quickly through a meadow',
-  'marathon': 'walking through a beautiful park',
+  // IP/Violence - these MUST be replaced
   'star wars': 'reading an adventure book in a cozy library',
   'lightsaber': 'playing with glowing toys',
   'jedi': 'reading a space adventure book',
@@ -351,7 +323,18 @@ const SAFE_ACTIVITY_REPLACEMENTS: Record<string, string> = {
   'water witness international': 'helping with gardening in a community garden',
   'international': 'exploring a colorful world map',
   'charity': 'helping in a community garden',
-  'organization': 'participating in a fun group activity'
+  'organization': 'participating in a fun group activity',
+  'gun': 'playing with water balloons',
+  'guns': 'playing with water balloons',
+  'shooting': 'playing carnival ring toss games',
+  'weapon': 'playing with colorful toys',
+  'weapons': 'playing with colorful toys',
+  'hunting': 'going on a treasure hunt with a map',
+  'sword': 'having a pretend fight with pool noodles',
+  'swords': 'playing with pool noodles in the backyard',
+  'fight': 'having a pillow fight at a sleepover',
+  'battle': 'playing an exciting board game',
+  'war': 'playing a strategy board game'
 };
 
 // Combined filter list - CRITICAL FIX: Include RISKY_ACTIVITY_WORDS
@@ -799,7 +782,8 @@ async function generateRealisticImage(
   pageIndex: number,
   totalPages: number,
   complexity?: string,
-  maxRetries?: number
+  maxRetries?: number,
+  cachedCharacterDescription?: string  // NEW: Pre-extracted description passed from job level
 ): Promise<string> {
   const MAX_RETRIES = 5; // 5-level fallback: attempts 1-4 WITH photos, attempt 5 WITHOUT photos as last resort
   const selectedModel = getModelForComplexity(complexity);
@@ -824,7 +808,12 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
   
   // Track consecutive IMAGE_OTHER failures for smart early-skip
   let consecutiveImageOtherFailures = 0;
-  let cachedCharacterDescription: string | null = null;
+  
+  // Use the cached description passed from job level, or extract on first need
+  let localCharacterDescription: string | null = cachedCharacterDescription || null;
+  
+  // Log whether we have a cached description
+  console.log(`📸 Page ${pageIndex + 1}: Character description ${localCharacterDescription ? 'AVAILABLE' : 'NOT available'} (${localCharacterDescription ? localCharacterDescription.substring(0, 60) + '...' : 'will extract if needed'})`);
   
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     for (const model of MODELS) {
@@ -860,24 +849,25 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
           console.log(`📝 Attempt 1: Using original prompt with ${characterPhotos.length} photo(s)`);
         } else if (attempt === 2) {
           // Attempt 2: TWO-STAGE APPROACH - use text description of character instead of photo
-          if (characterPhotos.length > 0 && !cachedCharacterDescription) {
+          // CRITICAL FIX: Use cached description from job level for consistency
+          if (!localCharacterDescription && characterPhotos.length > 0) {
             try {
               console.log(`📸 Extracting character description from photo for two-stage approach...`);
               const photoUrl = characterPhotos[0].image_url?.url;
               if (photoUrl) {
                 const { base64, mimeType } = await extractBase64FromUrl(photoUrl);
-                cachedCharacterDescription = await extractCharacterDescription(base64, mimeType, GOOGLE_API_KEY);
-                console.log(`✅ Character description extracted: "${cachedCharacterDescription.substring(0, 100)}..."`);
+                localCharacterDescription = await extractCharacterDescription(base64, mimeType, GOOGLE_API_KEY);
+                console.log(`✅ Character description extracted: "${localCharacterDescription.substring(0, 100)}..."`);
               }
             } catch (descError) {
               console.warn(`⚠️ Failed to extract character description:`, descError);
-              cachedCharacterDescription = 'a friendly person with pleasant features';
+              localCharacterDescription = 'a friendly person with pleasant features';
             }
           }
           
           // Use text description instead of photos
-          if (cachedCharacterDescription) {
-            currentPromptText = `A person with these physical features: ${cachedCharacterDescription}\n\nScene: ${simplifyPromptForRetry(prompt.prompt, 1)}`;
+          if (localCharacterDescription) {
+            currentPromptText = `A person with these physical features: ${localCharacterDescription}\n\nScene: ${simplifyPromptForRetry(prompt.prompt, 1)}`;
             includePhotos = false; // Don't send photos - use text description only
             console.log(`📝 Attempt 2: TWO-STAGE - Using text character description (no photos)`);
           } else {
@@ -888,8 +878,8 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
           }
         } else if (attempt === 3) {
           // Attempt 3: Try text description again with more simplified prompt
-          if (cachedCharacterDescription) {
-            currentPromptText = `A person with these features: ${cachedCharacterDescription}\n\nScene: ${simplifyPromptForRetry(prompt.prompt, 2)}`;
+          if (localCharacterDescription) {
+            currentPromptText = `A person with these features: ${localCharacterDescription}\n\nScene: ${simplifyPromptForRetry(prompt.prompt, 2)}`;
             includePhotos = false;
             console.log(`📝 Attempt 3: TWO-STAGE - Simplified scene with text character description`);
           } else {
@@ -900,8 +890,8 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
           }
         } else if (attempt === 4) {
           // Attempt 4: Safe fallback with character description
-          if (cachedCharacterDescription) {
-            currentPromptText = `A person with these features: ${cachedCharacterDescription}\n\nScene: ${simplifyPromptForRetry(prompt.prompt, 3)}`;
+          if (localCharacterDescription) {
+            currentPromptText = `A person with these features: ${localCharacterDescription}\n\nScene: ${simplifyPromptForRetry(prompt.prompt, 3)}`;
             includePhotos = false;
             console.log(`📝 Attempt 4: TWO-STAGE - Safe fallback with text character description`);
           } else {
@@ -911,11 +901,19 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
             console.log(`📝 Attempt 4: Safe fallback prompt WITH photos`);
           }
         } else {
-          // Attempt 5: LAST RESORT - different safe prompt for each page WITHOUT photos or character
+          // Attempt 5: LAST RESORT - CRITICAL FIX: INCLUDE character description to maintain consistency
           const safePromptIndex = pageIndex % VARIETY_SAFE_PROMPTS.length;
-          currentPromptText = VARIETY_SAFE_PROMPTS[safePromptIndex] + '. Sunny day with cheerful atmosphere.';
+          const safeScene = VARIETY_SAFE_PROMPTS[safePromptIndex];
+          
+          if (localCharacterDescription) {
+            // INCLUDE character features even in last resort to maintain character consistency
+            currentPromptText = `A person with these physical features: ${localCharacterDescription}\n\nScene: ${safeScene}. Sunny day with cheerful atmosphere.`;
+            console.log(`⚠️ Attempt 5: LAST RESORT - generating with CHARACTER DESCRIPTION (safe scene #${safePromptIndex + 1})`);
+          } else {
+            currentPromptText = safeScene + '. Sunny day with cheerful atmosphere.';
+            console.log(`⚠️ Attempt 5: LAST RESORT - generating WITHOUT photos OR character description (safe scene #${safePromptIndex + 1})`);
+          }
           includePhotos = false;
-          console.log(`⚠️ Attempt 5: LAST RESORT - generating WITHOUT photos (safe scene #${safePromptIndex + 1})`);
         }
         
         // Build content parts based on current attempt
@@ -1292,7 +1290,7 @@ serve(async (req) => {
       throw new Error('GOOGLE_API_KEY is required');
     }
 
-    let { prompts, characters, consistentCharacters, batchIndex, batchSize = 2, isReworkMode = false, complexity } = await req.json();
+    let { prompts, characters, consistentCharacters, batchIndex, batchSize = 2, isReworkMode = false, complexity, cachedCharacterDescription } = await req.json();
     
     // Keep character photos as-is - proper conversion happens later
     // (Removed corrupting compression that was truncating base64 strings)
@@ -1342,6 +1340,7 @@ serve(async (req) => {
 
     console.log(`Final: Processing ${validPrompts.length} pages. Page numbers: [${validPrompts.map(p => p.pageNumber).join(', ')}]`);
     console.log(`Complexity level: ${complexity || 'default (medium)'}`);
+    console.log(`Cached character description: ${cachedCharacterDescription ? 'YES (' + cachedCharacterDescription.substring(0, 50) + '...)' : 'NO'}`);
 
     const BATCH_SIZE = 2; // Reduced to prevent CPU timeouts
     const pages: any[] = [];
@@ -1440,7 +1439,8 @@ serve(async (req) => {
             i,
             validPrompts.length,
             complexity,
-            MAX_RETRIES
+            MAX_RETRIES,
+            cachedCharacterDescription  // Pass cached character description
           );
 
           // Step 2: Convert to line art

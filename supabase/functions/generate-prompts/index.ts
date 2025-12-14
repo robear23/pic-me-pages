@@ -35,79 +35,70 @@ serve(async (req) => {
       );
     }
     
-    // INTEREST SANITIZATION: Replace risky interests with safer but VARIED alternatives
-    // This prevents problematic prompts while preserving page variety
+    // INTEREST SANITIZATION: ONLY replace truly problematic interests
+    // Safe sports like cricket, football, soccer, cycling, jogging are PRESERVED
+    // Only IP/trademark and violence-related terms need sanitization
     const INTEREST_SANITIZATION: Record<string, string> = {
-      // Physical activities - use VARIED safe alternatives for each
-      'rock climbing': 'exploring a colorful cave with glowing crystals and friendly bats',
-      'climbing': 'climbing a magical treehouse with fairy lights',
-      'cycling': 'riding a bicycle through autumn leaves on a forest trail',
-      'jogging': 'walking through a magical enchanted forest path',
-      'running': 'chasing butterflies through a wildflower meadow',
-      'sprinting': 'racing toy cars in a backyard track',
-      'marathon': 'walking with friends along a scenic lake path',
-      'skateboarding': 'riding a scooter through a colorful skate park',
-      'skiing': 'making snow angels in fresh powder',
-      'snowboarding': 'building an elaborate igloo in the snow',
-      'surfing': 'collecting seashells on a tropical beach',
-      'diving': 'snorkeling to see colorful coral and fish',
-      'bungee': 'swinging on a tire swing under a big tree',
-      'parkour': 'playing on a colorful obstacle course playground',
-      // Sports - use VARIED safe alternatives
-      'cricket': 'playing with a frisbee in a sunny meadow',
-      'playing cricket': 'playing croquet in a beautiful garden',
-      'football': 'playing catch with a colorful beach ball',
-      'soccer': 'dribbling a ball through cones in a park',
-      'rugby': 'playing tag in a field of sunflowers',
-      'boxing': 'practicing kung fu panda poses',
-      'wrestling': 'playing leapfrog with friends',
-      'martial arts': 'doing tai chi in a zen garden',
-      'karate': 'practicing ballet in a dance studio',
-      'judo': 'doing gymnastics on soft mats',
-      // Fictional/IP - redirect to creative activities
-      'star wars': 'building a rocket ship from cardboard boxes',
+      // Fictional/IP - redirect to creative activities (trademark concerns)
+      'star wars': 'building a rocket ship from cardboard boxes and exploring space themes',
       'starwars': 'stargazing through a telescope at night',
       'lightsaber': 'playing with glow sticks at a party',
       'jedi': 'meditating in a peaceful zen garden',
       'sith': 'exploring a mysterious forest with mushrooms',
-      'darth vader': 'dressing up as a friendly robot',
+      'darth vader': 'dressing up as a friendly robot costume',
       'marvel': 'creating comic strips with colored pencils',
-      'superhero': 'wearing a cape and pretending to fly',
       'avengers': 'assembling a giant puzzle together',
-      // Organizations/charities - redirect to helpful activities
-      'water witness international': 'planting trees in a community orchard',
-      'water witness': 'feeding ducks at a peaceful pond',
-      'charity': 'donating toys at a donation center',
-      'organization': 'helping at a bake sale with cupcakes',
-      // Other - varied safe activities
+      'batman': 'reading adventure books in a cozy library',
+      'superman': 'wearing a cape and pretending to fly',
+      'spiderman': 'climbing on a colorful playground structure',
+      'pokemon': 'exploring nature and discovering colorful creatures',
+      'fortnite': 'building colorful structures with blocks',
+      'minecraft': 'building with colorful blocks and creating structures',
+      
+      // Violence-related - redirect to safe alternatives
       'hunting': 'going on a treasure hunt with a map',
-      'fishing': 'feeding koi fish in a Japanese garden',
-      'archery': 'throwing bean bags at carnival targets',
       'shooting': 'playing carnival ring toss games',
-      'gun': 'playing with water balloons',
+      'gun': 'playing with water balloons in the garden',
+      'guns': 'playing with water balloons in the garden',
       'sword': 'having a pretend sword fight with pool noodles',
+      'swords': 'playing with pool noodles in the backyard',
       'fight': 'having a pillow fight at a sleepover',
-      'battle': 'playing an epic board game adventure'
+      'fighting': 'having a pillow fight at a sleepover',
+      'battle': 'playing an epic board game adventure',
+      'war': 'playing an exciting strategy board game',
+      'weapon': 'playing with colorful toys',
+      'weapons': 'playing with colorful toys',
+      'knife': 'doing arts and crafts with safety scissors',
+      'boxing': 'practicing fun exercise moves',
+      'wrestling': 'playing leapfrog with friends',
+      
+      // Organizations that could trigger safety filters
+      'water witness international': 'exploring nature near a stream and planting flowers',
+      'water witness': 'feeding ducks at a peaceful pond',
+      'charity': 'helping in a community garden',
+      'organization': 'participating in a fun group activity'
     };
     
-    // Sanitize interests before using them
+    // Sanitize interests - ONLY problematic ones, preserve safe sports and activities
     const sanitizeInterest = (interest: string): string => {
       const lowerInterest = interest.toLowerCase().trim();
       
       // Check for exact matches first
       if (INTEREST_SANITIZATION[lowerInterest]) {
-        console.log(`🔄 Sanitized interest: "${interest}" → "${INTEREST_SANITIZATION[lowerInterest]}"`);
+        console.log(`⚠️ Interest SANITIZED: "${interest}" → "${INTEREST_SANITIZATION[lowerInterest]}" (IP/violence concern)`);
         return INTEREST_SANITIZATION[lowerInterest];
       }
       
       // Check for partial matches (if the interest contains a risky term)
       for (const [risky, safe] of Object.entries(INTEREST_SANITIZATION)) {
         if (lowerInterest.includes(risky)) {
-          console.log(`🔄 Sanitized interest (partial match): "${interest}" → "${safe}"`);
+          console.log(`⚠️ Interest SANITIZED (partial): "${interest}" → "${safe}" (contains "${risky}")`);
           return safe;
         }
       }
       
+      // Safe interest - preserve as-is
+      console.log(`✅ Interest PRESERVED: "${interest}" (safe for generation)`);
       return interest;
     };
     
