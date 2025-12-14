@@ -648,6 +648,123 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
       console.log(`📚 Book record created: ${bookId}`);
     }
 
+    // ============================================
+    // CHARACTER DESCRIPTION CACHING (CRITICAL FOR CONSISTENCY)
+    // Extract character description ONCE and use for ALL pages
+    // ============================================
+    let cachedCharacterDescription: string | null = null;
+    
+    // Check if description is already cached in generation_data
+    const existingCachedDescription = (generation_data as any).cachedCharacterDescription;
+    
+    if (existingCachedDescription) {
+      cachedCharacterDescription = existingCachedDescription;
+      console.log(`📸 Using cached character description: "${cachedCharacterDescription!.substring(0, 80)}..."`);
+    } else if (consistentCharacters && characters && characters.length > 0) {
+      // Extract character description from first character's first photo
+      const firstCharacter = characters[0];
+      if (firstCharacter.photos && firstCharacter.photos.length > 0) {
+        const photoUrl = firstCharacter.photos[0];
+        if (photoUrl && typeof photoUrl === 'string') {
+          try {
+            console.log(`📸 Extracting character description from ${firstCharacter.name}'s photo for ALL pages...`);
+            
+            const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+            if (GOOGLE_API_KEY) {
+              // Fetch photo and convert to base64
+              let base64 = '';
+              let mimeType = 'image/jpeg';
+              
+              if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+                const response = await fetch(photoUrl);
+                if (response.ok) {
+                  const blob = await response.blob();
+                  const arrayBuffer = await blob.arrayBuffer();
+                  base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+                }
+              } else if (photoUrl.startsWith('data:')) {
+                const match = photoUrl.match(/^data:(image\/\w+);base64,(.+)$/);
+                if (match) {
+                  base64 = match[2];
+                  mimeType = match[1];
+                }
+              }
+              
+              if (base64.length > 100) {
+                // Call Gemini to extract character description
+                const descResponse = await fetch(
+                  `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      'x-goog-api-key': GOOGLE_API_KEY,
+                      'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                      contents: [{
+                        parts: [
+                          {
+                            inlineData: {
+                              mimeType: mimeType,
+                              data: base64
+                            }
+                          },
+                          {
+                            text: `Describe this person's physical appearance in EXACT detail for an artist to recreate them:
+                            
+REQUIRED DETAILS (be very specific):
+- Hair: color (exact shade), style (length, texture, parting)
+- Face shape: (oval, round, square, heart-shaped, etc.)
+- Eyes: color, shape, size, eyebrow style
+- Nose: shape and size
+- Mouth: lip shape and size
+- Skin tone: (specific shade like fair, olive, tan, brown, etc.)
+- Any distinctive features: freckles, dimples, glasses, etc.
+- General build: slim, average, athletic, etc.
+
+OUTPUT FORMAT: Write a single paragraph describing this person as if for a portrait artist. Be specific but neutral. Do NOT include any age references.
+
+Example: "A person with wavy auburn shoulder-length hair parted in the middle, oval face shape, large hazel eyes with arched eyebrows, small upturned nose, full lips, fair skin with light freckles across the cheeks, slim build."
+
+Write ONLY the description, nothing else.`
+                          }
+                        ]
+                      }],
+                      generationConfig: {
+                        temperature: 0.3,
+                        maxOutputTokens: 300
+                      }
+                    })
+                  }
+                );
+                
+                if (descResponse.ok) {
+                  const descData = await descResponse.json();
+                  cachedCharacterDescription = descData.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+                  
+                  if (cachedCharacterDescription) {
+                    console.log(`✅ Character description extracted for ALL pages: "${cachedCharacterDescription.substring(0, 80)}..."`);
+                    
+                    // Cache it in generation_data for resume
+                    await supabase
+                      .from('book_generation_jobs')
+                      .update({ 
+                        generation_data: { ...generation_data, cachedPrompts: prompts, cachedCharacterDescription: cachedCharacterDescription }
+                      })
+                      .eq('id', job.id);
+                    console.log('💾 Cached character description for potential resume and consistency');
+                  }
+                }
+              }
+            }
+          } catch (descError) {
+            console.warn(`⚠️ Failed to extract character description:`, descError);
+            cachedCharacterDescription = null;
+          }
+        }
+      }
+    }
+
     // Step 2: Generate images one-by-one with timeout protection
     checkTimeout();
     
@@ -884,6 +1001,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
                 complexity: complexityLevel,
                 isReworkMode: false,
                 batchSize: 1,
+                cachedCharacterDescription,  // Pass cached character description for consistency
               }
             }),
             new Promise((_, reject) => 
