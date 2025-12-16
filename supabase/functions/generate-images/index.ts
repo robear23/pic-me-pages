@@ -1237,8 +1237,35 @@ async function convertToLineArt(
 
         console.log(`Successfully converted to line art ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
         
-        // PHASE 1: Skip validation to save memory - accept first successful conversion
-        console.log(`✓ Skipping validation (memory optimization) - accepting line art ${pageIndex + 1}/${totalPages}`);
+        // Re-enable lightweight validation to detect cartoon-like images
+        try {
+          const validation = await validateLineArt(imageData, pageIndex, totalPages);
+          
+          if (!validation.valid) {
+            // Check if it's a color issue (cartoon-like) vs gray percentage issue
+            if (validation.hasColor && validation.colorPercentage && validation.colorPercentage > 5) {
+              console.warn(`⚠️ Line art has color (${validation.colorPercentage.toFixed(1)}% colored pixels) - retrying...`);
+              if (attempt < MAX_RETRIES) {
+                continue; // Retry line art conversion
+              }
+            }
+            
+            if (validation.hasPhotographicElements || validation.hasGradients) {
+              console.warn(`⚠️ Line art validation failed: gray=${validation.grayPixelPercentage.toFixed(1)}%, gradients=${validation.hasGradients}, photographic=${validation.hasPhotographicElements}`);
+              if (attempt < MAX_RETRIES) {
+                continue; // Retry line art conversion
+              }
+            }
+            
+            // If we're on last attempt, accept anyway with warning
+            console.warn(`⚠️ Accepting imperfect line art on final attempt ${attempt}`);
+          } else {
+            console.log(`✓ Line art validation passed for page ${pageIndex + 1}/${totalPages}`);
+          }
+        } catch (validationError) {
+          console.warn(`⚠️ Validation error (continuing anyway):`, validationError);
+        }
+        
         return imageData;
         
       } catch (error) {

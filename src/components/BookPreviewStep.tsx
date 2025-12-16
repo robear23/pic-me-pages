@@ -14,7 +14,8 @@ import {
   Sparkles,
   AlertCircle,
   Image as ImageIcon,
-  ArrowLeft
+  ArrowLeft,
+  ZoomIn
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -23,6 +24,7 @@ import { OrderPhysicalBookDialog } from './OrderPhysicalBookDialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+import { PagePreviewModal } from './PagePreviewModal';
 
 const MAX_COVER_CHANGES = 3;
 
@@ -48,6 +50,7 @@ export const BookPreviewStep = () => {
   const [bookData, setBookData] = useState<any>(null);
   const [coverRegenerationCount, setCoverRegenerationCount] = useState(0);
   const [selectedCoverPageIndex, setSelectedCoverPageIndex] = useState<number | null>(null);
+  const [previewPageIndex, setPreviewPageIndex] = useState<number | null>(null);
   const navigate = useNavigate();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -563,7 +566,7 @@ export const BookPreviewStep = () => {
                           : 'border-border opacity-50 cursor-not-allowed'
                   }
                 `}
-                onClick={() => canSelect && handleTogglePage(page.pageNumber)}
+                onClick={() => setPreviewPageIndex(index)}
               >
                 <img
                   src={page.imageUrl}
@@ -575,6 +578,13 @@ export const BookPreviewStep = () => {
                 {/* Page Number Badge */}
                 <div className="absolute top-2 left-2 bg-background/80 backdrop-blur-sm px-2 py-0.5 rounded text-xs font-medium">
                   {page.pageNumber}
+                </div>
+                
+                {/* Zoom Icon on Hover */}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 flex items-center justify-center transition-colors">
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-background/80 rounded-full p-2">
+                    <ZoomIn className="w-5 h-5 text-foreground" />
+                  </div>
                 </div>
                 
                 {/* Selection Indicator */}
@@ -599,27 +609,31 @@ export const BookPreviewStep = () => {
                     COVER
                   </div>
                 )}
-                
-                {/* Use as Cover Button - only show for unselected rework pages */}
-                {!isSelected && !wasReworked && selectedCoverPageIndex !== index && (
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedCoverPageIndex(index);
-                      toast({
-                        title: 'Cover Selected',
-                        description: `Page ${page.pageNumber} will be used as the cover image.`,
-                      });
-                    }}
-                    className="absolute bottom-2 left-2 bg-background/90 hover:bg-background text-foreground rounded px-2 py-1 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity border"
-                  >
-                    Use as Cover
-                  </button>
-                )}
               </motion.div>
             );
           })}
         </motion.div>
+
+        {/* Page Preview Modal */}
+        <PagePreviewModal
+          isOpen={previewPageIndex !== null}
+          onClose={() => setPreviewPageIndex(null)}
+          pages={pagesToShow}
+          currentIndex={previewPageIndex ?? 0}
+          onNavigate={setPreviewPageIndex}
+          onSelectForRework={handleTogglePage}
+          onUseAsCover={(index) => {
+            setSelectedCoverPageIndex(index);
+            toast({
+              title: 'Cover Selected',
+              description: `Page ${pagesToShow[index]?.pageNumber} will be used as the cover image.`,
+            });
+          }}
+          selectedPagesForRework={selectedPagesForRework}
+          reworkedPageNumbers={reworkedPageNumbers}
+          selectedCoverPageIndex={selectedCoverPageIndex}
+          canSelectForRework={remainingReworks > 0}
+        />
 
         {/* Action Buttons */}
         <motion.div
