@@ -105,11 +105,11 @@ Deno.serve(async (req) => {
 
     console.log('Fetching failed books with params:', { timeRange, dateFilter, offset, limit });
 
-    // Build query for failed books
+    // Build query for failed books - include both 'failed' status AND 'generating' books with failed jobs
     let query = supabase
       .from('books')
       .select('id, user_id, character_name, status, created_at, updated_at, error_log, generation_attempts, last_error_message, last_error_timestamp, failed_step, generation_duration_seconds, complexity, interests, selected_page_count, pages', { count: 'exact' })
-      .eq('status', 'failed')
+      .in('status', ['failed', 'generating']) // Include stuck 'generating' books
       .order('updated_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -117,62 +117,59 @@ Deno.serve(async (req) => {
       query = query.gte('updated_at', dateFilter);
     }
 
-    const { data: failedBooks, count, error: booksError } = await query;
+    const { data: allBooks, count: totalCount, error: booksError } = await query;
 
     if (booksError) {
       console.error('Error fetching failed books:', booksError);
       throw new Error(booksError.message);
     }
 
-    // Enrich with job data
-    const enrichedBooks: FailedBook[] = await Promise.all(
-      (failedBooks || []).map(async (book) => {
-        // Get associated job
-        const { data: jobData } = await supabase
-          .from('book_generation_jobs')
-          .select('id, error_message, failure_reason, retry_count, attempts, progress, generation_data')
-          .eq('book_id', book.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
+    // Enrich with job data and filter to only include books with failed jobs
+    const enrichedBooksPromises = (allBooks || []).map(async (book: any) => {
+      // Get associated job
+      const { data: jobData } = await supabase
+        .from('book_generation_jobs')
+        .select('id, error_message, failure_reason, retry_count, attempts, progress, generation_data, status')
+        .eq('book_id', book.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-        return {
-          ...book,
-          error_log: book.error_log || [],
-          generation_attempts: book.generation_attempts || 0,
-          pages: book.pages || [],
-          job: jobData || null,
-        };
-      })
-    );
+      // For 'generating' books, only include if job has failed
+      if (book.status === 'generating' && (!jobData || jobData.status !== 'failed')) {
+        return null; // Filter out - not actually failed
+      }
 
-    // Also get count of all failed books for stats
-    let totalQuery = supabase
-      .from('books')
-      .select('id', { count: 'exact', head: true })
-      .eq('status', 'failed');
-    
-    if (dateFilter) {
-      totalQuery = totalQuery.gte('updated_at', dateFilter);
-    }
-    
-    const { count: totalFailed } = await totalQuery;
+      return {
+        ...book,
+        error_log: book.error_log || [],
+        generation_attempts: book.generation_attempts || 0,
+        pages: book.pages || [],
+        job: jobData || null,
+      };
+    });
+
+    const enrichedBooksRaw = await Promise.all(enrichedBooksPromises);
+    const enrichedBooks: FailedBook[] = enrichedBooksRaw.filter((b): b is FailedBook => b !== null);
+
+    // Get accurate count including stuck 'generating' books with failed jobs
+    const actualCount = enrichedBooks.length;
 
     const response = {
       books: enrichedBooks,
       pagination: {
         offset,
         limit,
-        total: count || 0,
-        hasMore: (offset + limit) < (count || 0),
+        total: actualCount,
+        hasMore: (offset + limit) < (totalCount || 0), // Use totalCount for pagination hint
       },
       stats: {
-        totalFailed: totalFailed || 0,
+        totalFailed: actualCount,
         timeRange,
       }
     };
 
-    console.log(`Returning ${enrichedBooks.length} failed books (total: ${count})`);
+    console.log(`Returning ${enrichedBooks.length} failed/stuck books`);
 
     return new Response(JSON.stringify(response), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

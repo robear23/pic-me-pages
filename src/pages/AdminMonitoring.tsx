@@ -444,6 +444,30 @@ export default function AdminMonitoring() {
     }
   };
 
+  const syncBookStatusWithJob = async (bookId: string, targetStatus: 'failed' | 'generating') => {
+    try {
+      toast.info(`Syncing book status to "${targetStatus}"...`);
+      
+      const { error } = await supabase
+        .from('books')
+        .update({ 
+          status: targetStatus,
+          last_error_message: targetStatus === 'failed' ? 'Status synced by admin - job failed' : null,
+          last_error_timestamp: targetStatus === 'failed' ? new Date().toISOString() : null,
+        })
+        .eq('id', bookId);
+
+      if (error) throw error;
+
+      toast.success(`Book status synced to "${targetStatus}"`);
+      loadFailedBooks(failedBooksPagination.offset);
+      loadStats();
+    } catch (error) {
+      console.error('Failed to sync book status:', error);
+      toast.error('Failed to sync book status');
+    }
+  };
+
   const triggerQueueWorker = async () => {
     try {
       const response = await fetch(
@@ -571,13 +595,18 @@ export default function AdminMonitoring() {
                 </div>
                 <div className="space-y-3">
                   {failedBooks.map((book) => (
-                    <Card key={book.id} className="border-red-200 dark:border-red-800">
+                    <Card key={book.id} className={`${book.status === 'generating' ? 'border-orange-300 dark:border-orange-700' : 'border-red-200 dark:border-red-800'}`}>
                       <CardContent className="p-4">
                         <div className="flex justify-between items-start">
                           <div className="space-y-1">
                             <div className="flex items-center gap-2">
                               <p className="font-medium">{book.character_name}</p>
-                              <Badge variant="destructive">{book.failed_step || 'Unknown step'}</Badge>
+                              <Badge variant={book.status === 'generating' ? 'secondary' : 'destructive'}>
+                                {book.status === 'generating' ? 'Stuck (generating)' : (book.failed_step || 'Failed')}
+                              </Badge>
+                              {book.job?.failure_reason && (
+                                <Badge variant="outline" className="text-xs">{book.job.failure_reason}</Badge>
+                              )}
                             </div>
                             <p className="text-xs text-red-600 dark:text-red-400 line-clamp-1">
                               {book.last_error_message || book.job?.error_message || 'No error message'}
@@ -585,12 +614,18 @@ export default function AdminMonitoring() {
                             <p className="text-xs text-muted-foreground">
                               {formatDistanceToNow(new Date(book.updated_at), { addSuffix: true })} • 
                               {book.generation_attempts || book.job?.attempts || 0} attempts
+                              {book.job?.progress?.currentPage > 0 && ` • ${book.job.progress.currentPage}/${book.job.progress.totalPages} pages`}
                             </p>
                           </div>
                           <div className="flex gap-2">
                             <Button size="sm" variant="outline" onClick={() => { setSelectedBook(book); setShowBookDetail(true); }}>
                               <Eye className="w-4 h-4 mr-1" /> Details
                             </Button>
+                            {book.status === 'generating' && (
+                              <Button size="sm" variant="secondary" onClick={() => syncBookStatusWithJob(book.id, 'failed')}>
+                                <RefreshCw className="w-4 h-4 mr-1" /> Sync Failed
+                              </Button>
+                            )}
                             <Button size="sm" className="bg-orange-600 hover:bg-orange-700" onClick={() => retryFailedBook(book.id, true)}>
                               <Zap className="w-4 h-4 mr-1" /> Retry
                             </Button>
