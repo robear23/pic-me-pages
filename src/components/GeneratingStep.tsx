@@ -31,6 +31,9 @@ export const GeneratingStep = () => {
     generatedBookId,
     paymentBypassed,
     orderId,
+    supportingCast,
+    supportingCastPerPage,
+    supportingCastPageCount,
     setStep,
   } = useBookStore();
   
@@ -247,6 +250,35 @@ export const GeneratingStep = () => {
           photoCount: c.photos.filter(p => p !== null).length
         })));
 
+        // Process supporting cast photos to base64
+        console.log('Processing supporting cast photos...');
+        const processedSupportingCast = await Promise.all(
+          supportingCast.map(async (member) => ({
+            id: member.id,
+            photo: await (async () => {
+              if (!member.photo) return null;
+              if (typeof member.photo === 'string') {
+                console.log(`✓ Supporting cast photo is already a URL/string`);
+                return member.photo;
+              }
+              return new Promise<string | null>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                  console.log(`✓ Converted supporting cast photo to base64`);
+                  resolve(reader.result as string);
+                };
+                reader.onerror = () => {
+                  console.error('Failed to read supporting cast photo');
+                  resolve(null);
+                };
+                reader.readAsDataURL(member.photo as File);
+              });
+            })(),
+          }))
+        );
+
+        console.log('Processed supporting cast:', processedSupportingCast.length, 'members');
+
         // FIX #2: Check for existing pending/processing jobs before creating a new one
         const { data: existingJobs } = await supabase
           .from('book_generation_jobs')
@@ -288,6 +320,9 @@ export const GeneratingStep = () => {
                 isReworkMode,
                 selectedPagesForRework,
                 generatedBookId,
+                supportingCast: processedSupportingCast,
+                supportingCastPerPage,
+                supportingCastPageCount,
               },
               status: 'pending', // Reset to pending to be picked up
               updated_at: new Date().toISOString(),
@@ -324,6 +359,9 @@ export const GeneratingStep = () => {
                 isReworkMode,
                 selectedPagesForRework,
                 generatedBookId,
+                supportingCast: processedSupportingCast,
+                supportingCastPerPage,
+                supportingCastPageCount,
               }
             })
             .select()

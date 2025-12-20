@@ -11,6 +11,11 @@ export interface Character {
   photos: (File | string | null)[];
 }
 
+export interface SupportingCastMember {
+  id: string;
+  photo: File | string | null;
+}
+
 export interface GeneratedPage {
   pageNumber: number;
   imageUrl: string;
@@ -33,6 +38,9 @@ interface BookState {
   complexityLevel: ComplexityLevel;
   customPrompt: string;
   selectedInterests: string[];
+  supportingCast: SupportingCastMember[];
+  supportingCastPerPage: number;
+  supportingCastPageCount: number;
   generatedPages: GeneratedPage[];
   generationProgress: number;
   generationStatus: string;
@@ -67,6 +75,11 @@ interface BookState {
   setCustomPrompt: (prompt: string) => void;
   toggleInterest: (interest: string) => void;
   setInterests: (interests: string[]) => void;
+  setSupportingCast: (cast: SupportingCastMember[]) => void;
+  addSupportingCastMember: (photo: File | string) => void;
+  removeSupportingCastMember: (id: string) => void;
+  setSupportingCastPerPage: (count: number) => void;
+  setSupportingCastPageCount: (count: number) => void;
   togglePageForRework: (pageNumber: number) => void;
   setGeneratedPages: (pages: GeneratedPage[]) => void;
   setGenerationProgress: (progress: number) => void;
@@ -99,6 +112,9 @@ const initialState = {
   complexityLevel: 'medium' as ComplexityLevel, // Default to medium
   customPrompt: '',
   selectedInterests: [] as string[],
+  supportingCast: [] as SupportingCastMember[],
+  supportingCastPerPage: 1,
+  supportingCastPageCount: 4,
   generatedPages: [] as GeneratedPage[],
   generationProgress: 0,
   generationStatus: '',
@@ -184,6 +200,28 @@ export const useBookStore = create<BookState>((set, get) => ({
     }),
   
   setInterests: (interests) => set({ selectedInterests: interests }),
+  
+  setSupportingCast: (cast) => set({ supportingCast: cast }),
+  
+  addSupportingCastMember: (photo) =>
+    set((state) => {
+      if (state.supportingCast.length >= 5) return state;
+      return {
+        supportingCast: [...state.supportingCast, {
+          id: Math.random().toString(36).substring(7),
+          photo,
+        }],
+      };
+    }),
+  
+  removeSupportingCastMember: (id) =>
+    set((state) => ({
+      supportingCast: state.supportingCast.filter((c) => c.id !== id),
+    })),
+  
+  setSupportingCastPerPage: (count) => set({ supportingCastPerPage: count }),
+  
+  setSupportingCastPageCount: (count) => set({ supportingCastPageCount: count }),
   
   togglePageForRework: (pageNumber) =>
     set((state) => {
