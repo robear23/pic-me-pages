@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion';
-import { Book, Star, TrendingUp } from 'lucide-react';
-import { Badge } from './ui/badge';
+import { Book } from 'lucide-react';
 import { BindingSelector } from './BindingSelector';
 import type { PageCount, BindingType } from '@/types/bookOptions';
 import { getOptionsForPageCount } from '@/types/bookOptions';
@@ -21,14 +20,6 @@ export const PageCountCard = ({
   onBindingSelect,
 }: PageCountCardProps) => {
   const options = getOptionsForPageCount(pageCount);
-
-  const getBadge = () => {
-    if (pageCount === 24) return { text: 'BEST VALUE', icon: Star };
-    if (pageCount === 12) return { text: 'RECOMMENDED', icon: TrendingUp };
-    return null;
-  };
-
-  const badge = getBadge();
 
   const handleCardClick = () => {
     onSelect(pageCount);
@@ -59,16 +50,6 @@ export const PageCountCard = ({
         }
       }}
     >
-      {/* Badge */}
-      {badge && (
-        <div className="absolute -top-3 left-1/2 transform -translate-x-1/2 z-10">
-          <Badge className="bg-gradient-to-r from-primary via-purple-500 to-pink-500 text-white px-3 py-1 text-xs font-bold shadow-lg">
-            <badge.icon className="w-3 h-3 mr-1 inline-block" />
-            {badge.text}
-          </Badge>
-        </div>
-      )}
-
       {/* Page Count Header */}
       <div className="text-center mb-4 sm:mb-6 pt-2">
         <motion.div 
@@ -86,8 +67,6 @@ export const PageCountCard = ({
         </p>
       </div>
 
-      {/* Removed image section per requirements */}
-
       {/* Binding Selector */}
       <BindingSelector
         pageCount={pageCount}
@@ -98,32 +77,6 @@ export const PageCountCard = ({
         }}
         options={options}
       />
-
-      {/* Value Messaging */}
-      {pageCount === 24 && (
-        <motion.div 
-          className="mt-3 sm:mt-4 text-center"
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2 }}
-        >
-          <p className="text-xs sm:text-sm text-primary font-semibold">
-            💰 Save $5 vs two 12-page books
-          </p>
-        </motion.div>
-      )}
-      {pageCount === 32 && (
-        <motion.div 
-          className="mt-3 sm:mt-4 text-center"
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2 }}
-        >
-          <p className="text-xs sm:text-sm text-primary font-semibold">
-            📚 33% more pages, only $10 more
-          </p>
-        </motion.div>
-      )}
     </motion.div>
   );
 };

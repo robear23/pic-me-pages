@@ -71,7 +71,7 @@ export const BookOptionsStep = () => {
     setStep('interests');
   };
 
-  const pageCounts: PageCount[] = [12, 24, 32];
+  const pageCounts: PageCount[] = [12];
 
   return (
     <div className="min-h-screen w-full px-4 py-8 md:py-12 lg:py-20">
