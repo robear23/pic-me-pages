@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { UKProductType } from '@/types/ukBookOptions';
-import type { Character, ComplexityLevel } from './bookStore';
+import type { Character, ComplexityLevel, SupportingCastMember } from './bookStore';
 
 export type UKBookStep = 
   | 'uk-hero' 
@@ -37,6 +37,9 @@ interface UKBookState {
   complexityLevel: ComplexityLevel;
   customPrompt: string;
   selectedInterests: string[];
+  supportingCast: SupportingCastMember[];
+  supportingCastPerPage: number;
+  supportingCastPageCount: number;
   
   // UK-specific product selection
   selectedProduct: UKProductType | null;
@@ -54,6 +57,11 @@ interface UKBookState {
   setComplexityLevel: (level: ComplexityLevel) => void;
   setCustomPrompt: (prompt: string) => void;
   setSelectedInterests: (interests: string[]) => void;
+  setSupportingCast: (cast: SupportingCastMember[]) => void;
+  addSupportingCastMember: (photo: File | string) => void;
+  removeSupportingCastMember: (id: string) => void;
+  setSupportingCastPerPage: (count: number) => void;
+  setSupportingCastPageCount: (count: number) => void;
   setSelectedProduct: (product: UKProductType) => void;
   setShippingAddress: (address: ShippingAddress | null) => void;
   setUKOrderId: (id: string | null) => void;
@@ -69,6 +77,9 @@ const initialState = {
   complexityLevel: 'medium' as ComplexityLevel,
   customPrompt: '',
   selectedInterests: [] as string[],
+  supportingCast: [] as SupportingCastMember[],
+  supportingCastPerPage: 1,
+  supportingCastPageCount: 4,
   selectedProduct: null,
   shippingAddress: null,
   ukOrderId: null,
@@ -85,6 +96,23 @@ export const useUKBookStore = create<UKBookState>((set) => ({
   setComplexityLevel: (level) => set({ complexityLevel: level }),
   setCustomPrompt: (prompt) => set({ customPrompt: prompt }),
   setSelectedInterests: (interests) => set({ selectedInterests: interests }),
+  setSupportingCast: (cast) => set({ supportingCast: cast }),
+  addSupportingCastMember: (photo) =>
+    set((state) => {
+      if (state.supportingCast.length >= 5) return state;
+      return {
+        supportingCast: [...state.supportingCast, {
+          id: Math.random().toString(36).substring(7),
+          photo,
+        }],
+      };
+    }),
+  removeSupportingCastMember: (id) =>
+    set((state) => ({
+      supportingCast: state.supportingCast.filter((c) => c.id !== id),
+    })),
+  setSupportingCastPerPage: (count) => set({ supportingCastPerPage: count }),
+  setSupportingCastPageCount: (count) => set({ supportingCastPageCount: count }),
   setSelectedProduct: (product) => set({ selectedProduct: product }),
   setShippingAddress: (address) => set({ shippingAddress: address }),
   setUKOrderId: (id) => set({ ukOrderId: id }),
