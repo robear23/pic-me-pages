@@ -890,7 +890,7 @@ const Dashboard = () => {
       bookStore.setGeneratedPages(validPages);
       bookStore.setGeneratedBookId(fullBook.id);
       bookStore.setReworkedPageNumbers((fullBook.reworked_page_numbers || []) as number[]);
-      bookStore.setBookOptions((fullBook.selected_page_count || 24) as PageCount, (fullBook.selected_binding_type || 'premium') as BindingType);
+      bookStore.setBookOptions((fullBook.selected_page_count || 12) as PageCount, (fullBook.selected_binding_type || 'premium') as BindingType);
       bookStore.setCoverImageUrl(fullBook.cover_image_url);
       bookStore.setBackCoverImageUrl(fullBook.back_cover_image_url);
       bookStore.setComplexityLevel((fullBook.complexity || 'medium') as ComplexityLevel);
@@ -947,7 +947,7 @@ const Dashboard = () => {
       bookStore.setGeneratedPages(validPages);
       bookStore.setGeneratedBookId(fullBook.id);
       bookStore.setReworkedPageNumbers((fullBook.reworked_page_numbers || []) as number[]);
-      bookStore.setBookOptions((fullBook.selected_page_count || 24) as PageCount, (fullBook.selected_binding_type || 'premium') as BindingType);
+      bookStore.setBookOptions((fullBook.selected_page_count || 12) as PageCount, (fullBook.selected_binding_type || 'premium') as BindingType);
       bookStore.setCoverImageUrl(fullBook.cover_image_url);
       bookStore.setBackCoverImageUrl(fullBook.back_cover_image_url);
       bookStore.setComplexityLevel((fullBook.complexity || 'medium') as ComplexityLevel);
@@ -1021,7 +1021,7 @@ const Dashboard = () => {
       bookStore.setGeneratedPages(validPages);
       bookStore.setGeneratedBookId(fullBook.id);
       bookStore.setReworkedPageNumbers((fullBook.reworked_page_numbers || []) as number[]);
-      bookStore.setBookOptions((fullBook.selected_page_count || 24) as PageCount, (fullBook.selected_binding_type || 'premium') as BindingType);
+      bookStore.setBookOptions((fullBook.selected_page_count || 12) as PageCount, (fullBook.selected_binding_type || 'premium') as BindingType);
       bookStore.setCoverImageUrl(fullBook.cover_image_url);
       bookStore.setBackCoverImageUrl(fullBook.back_cover_image_url);
       bookStore.setComplexityLevel((fullBook.complexity || 'medium') as ComplexityLevel);

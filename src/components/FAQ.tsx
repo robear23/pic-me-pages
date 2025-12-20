@@ -60,7 +60,7 @@ const faqs = [
   {
     question: 'How many pages can I get?',
     answer:
-      'Standard books include 12 unique coloring pages. We also offer extended versions with 24 or 36 pages for longer adventures!',
+      'All books include 12 unique coloring pages - the perfect amount for hours of creative fun!',
   },
   {
     question: 'Do I need to create an account?',
