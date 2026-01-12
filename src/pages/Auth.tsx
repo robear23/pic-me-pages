@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,6 +23,14 @@ const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { user, loading } = useAuth();
+
+  // Redirect already-authenticated users to dashboard
+  useEffect(() => {
+    if (!loading && user) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, loading, navigate]);
 
   const {
     register,
@@ -32,6 +41,9 @@ const Auth = () => {
   });
 
   const onSubmit = async (data: AuthFormData) => {
+    // Prevent double-submission
+    if (isLoading) return;
+    
     setIsLoading(true);
     try {
       if (isLogin) {
@@ -43,7 +55,7 @@ const Auth = () => {
         if (error) throw error;
         
         toast.success('Welcome back!');
-        navigate('/dashboard');
+        // Navigation will be handled by the useEffect watching user state
       } else {
         const redirectUrl = `${window.location.origin}/dashboard`;
         const { error } = await supabase.auth.signUp({
@@ -57,18 +69,39 @@ const Auth = () => {
         if (error) throw error;
         
         toast.success('Account created! Welcome to ColorStory.');
-        navigate('/dashboard');
+        // Navigation will be handled by the useEffect watching user state
       }
     } catch (error: any) {
       if (error.message.includes('already registered')) {
         toast.error('This email is already registered. Try logging in instead.');
+      } else if (error.message.includes('Invalid login credentials')) {
+        toast.error('Invalid email or password. Please try again.');
+      } else if (error.message.includes('rate limit') || error.status === 429) {
+        toast.error('Too many attempts. Please wait a moment and try again.');
       } else {
         toast.error(error.message || 'An error occurred');
       }
-    } finally {
       setIsLoading(false);
     }
   };
+
+  // Show loading state while checking auth
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  // Don't render the form if user is already authenticated (they'll be redirected)
+  if (user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-foreground">Redirecting...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background relative overflow-hidden flex items-center justify-center">
@@ -109,6 +142,7 @@ const Auth = () => {
                 placeholder="you@example.com"
                 {...register('email')}
                 className="mt-1"
+                disabled={isLoading}
               />
               {errors.email && (
                 <p className="text-sm text-destructive mt-1">{errors.email.message}</p>
@@ -123,6 +157,7 @@ const Auth = () => {
                 placeholder="••••••••"
                 {...register('password')}
                 className="mt-1"
+                disabled={isLoading}
               />
               {errors.password && (
                 <p className="text-sm text-destructive mt-1">{errors.password.message}</p>
@@ -139,6 +174,7 @@ const Auth = () => {
               type="button"
               onClick={() => setIsLogin(!isLogin)}
               className="text-sm text-primary hover:underline"
+              disabled={isLoading}
             >
               {isLogin
                 ? "Don't have an account? Sign up"
