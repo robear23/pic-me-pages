@@ -27,6 +27,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Keep an always-current reference so async callbacks don't overwrite newer auth state
+  const currentSessionRef = useRef<Session | null>(null);
+
   useEffect(() => {
     // Disable supabase-js automatic refresh to prevent refresh storms (429 rate limits)
     // and handle refresh scheduling ourselves in a single place.
@@ -60,6 +63,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             if (error) throw error;
 
             // Keep local state in sync even if the auth event is delayed
+            currentSessionRef.current = data.session;
             setSession(data.session);
             setUser(data.session?.user ?? null);
             scheduleRefresh(data.session);
@@ -82,6 +86,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      // supabase-js may restart auto refresh after SIGNED_IN; stop it every time to prevent storms.
+      try {
+        supabase.auth.stopAutoRefresh();
+      } catch {
+        // ignore
+      }
+
+      currentSessionRef.current = nextSession;
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
       setLoading(false);
@@ -90,6 +102,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      // If an auth event already set a session, don't let a stale getSession(null) wipe it out.
+      if (currentSessionRef.current && !session) {
+        setLoading(false);
+        scheduleRefresh(currentSessionRef.current);
+        return;
+      }
+
+      currentSessionRef.current = session;
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
