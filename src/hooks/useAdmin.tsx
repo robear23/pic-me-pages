@@ -1,43 +1,56 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function useAdmin() {
+  const { user, loading: authLoading } = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    checkAdminStatus();
-  }, []);
+    let cancelled = false;
 
-  async function checkAdminStatus() {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
+    const checkAdminStatus = async () => {
+      if (authLoading) return;
+
       if (!user) {
-        setIsAdmin(false);
-        setLoading(false);
+        if (!cancelled) {
+          setIsAdmin(false);
+          setLoading(false);
+        }
         return;
       }
 
-      const { data, error } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .eq('role', 'admin')
-        .single();
+      try {
+        setLoading(true);
 
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error checking admin status:', error);
+        const { data, error } = await supabase
+          .from("user_roles")
+          .select("role")
+          .eq("user_id", user.id)
+          .eq("role", "admin")
+          .single();
+
+        if (error && error.code !== "PGRST116") {
+          console.error("Error checking admin status:", error);
+        }
+
+        if (!cancelled) setIsAdmin(!!data);
+      } catch (error) {
+        console.error("Error checking admin status:", error);
+        if (!cancelled) setIsAdmin(false);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
+    };
 
-      setIsAdmin(!!data);
-    } catch (error) {
-      console.error('Error checking admin status:', error);
-      setIsAdmin(false);
-    } finally {
-      setLoading(false);
-    }
-  }
+    checkAdminStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id, authLoading]);
 
   return { isAdmin, loading };
 }
+
