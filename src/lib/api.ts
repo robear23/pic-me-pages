@@ -19,22 +19,31 @@ export interface Character {
 
 const callEdgeFunction = async (functionName: string, body: any, retries = 3) => {
   const { supabase } = await import('@/integrations/supabase/client');
-  const { data: { session } } = await supabase.auth.getSession();
-  
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  // Always send the backend API key; only send Authorization when we have a user session.
+  // (Using the publishable key as a Bearer token can cause requests to look "logged out".)
+  const headersBase: Record<string, string> = {
+    'Content-Type': 'application/json',
+    apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+  };
+
+  if (session?.access_token) {
+    headersBase.Authorization = `Bearer ${session.access_token}`;
+  }
+
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
+          headers: headersBase,
           body: JSON.stringify(body),
         }
       );
-      
       if (!response.ok) {
         if (response.status === 429) {
           const errorData = await response.json().catch(() => ({}));
