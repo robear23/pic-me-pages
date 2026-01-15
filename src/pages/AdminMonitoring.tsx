@@ -470,20 +470,37 @@ export default function AdminMonitoring() {
 
   const triggerQueueWorker = async () => {
     try {
+      // Get current session for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast.error('Not authenticated - please log in again');
+        return;
+      }
+
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/queue-worker`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+            'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
         }
       );
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+      
       const result = await response.json();
       console.log('Queue worker result:', result);
       toast.success('Queue worker triggered');
       loadStats();
     } catch (error) {
       console.error('Failed to trigger queue worker:', error);
-      toast.error('Failed to trigger queue worker');
+      toast.error(`Failed to trigger queue worker: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
