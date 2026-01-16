@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { useAdmin } from '@/hooks/useAdmin';
+import { useAuth } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
 import { Activity, AlertTriangle, CheckCircle, Clock, DollarSign, RefreshCw, Settings, XCircle, Zap, AlertCircle, Play, Eye, BookX, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
@@ -130,6 +131,7 @@ interface FailedBook {
 
 export default function AdminMonitoring() {
   const { isAdmin, loading } = useAdmin();
+  const { session } = useAuth(); // Use session from context instead of getSession()
   const [stats, setStats] = useState<QueueStats | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [editingConfig, setEditingConfig] = useState(false);
@@ -149,7 +151,7 @@ export default function AdminMonitoring() {
   const loadStats = async () => {
     setRefreshing(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      // Use session from context - no need to call getSession() which triggers refresh storms
       if (!session) throw new Error('Not authenticated');
 
       const response = await supabase.functions.invoke('get-queue-stats', {
@@ -195,7 +197,8 @@ export default function AdminMonitoring() {
   };
 
   useEffect(() => {
-    if (isAdmin) {
+    // Only run if we have a valid session and admin status confirmed
+    if (isAdmin && session) {
       loadStats();
       if (activeTab === 'failed-books') {
         loadFailedBooks();
@@ -211,7 +214,7 @@ export default function AdminMonitoring() {
         return () => clearInterval(interval);
       }
     }
-  }, [isAdmin, autoRefresh, timeRange, activeTab]);
+  }, [isAdmin, session, autoRefresh, timeRange, activeTab]);
 
   const retryFailedBook = async (bookId: string, fromBeginning: boolean) => {
     try {
@@ -470,8 +473,7 @@ export default function AdminMonitoring() {
 
   const triggerQueueWorker = async () => {
     try {
-      // Get current session for authentication
-      const { data: { session } } = await supabase.auth.getSession();
+      // Use session from context - no need to call getSession() which triggers refresh storms
       if (!session?.access_token) {
         toast.error('Not authenticated - please log in again');
         return;
