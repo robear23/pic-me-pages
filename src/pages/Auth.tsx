@@ -43,7 +43,7 @@ const Auth = () => {
   const onSubmit = async (data: AuthFormData) => {
     // Prevent double-submission
     if (isLoading) return;
-    
+
     setIsLoading(true);
     try {
       if (isLogin) {
@@ -51,9 +51,9 @@ const Auth = () => {
           email: data.email,
           password: data.password,
         });
-        
+
         if (error) throw error;
-        
+
         toast.success('Welcome back!');
         // Navigation will be handled by the useEffect watching user state
       } else {
@@ -65,22 +65,23 @@ const Auth = () => {
             emailRedirectTo: redirectUrl,
           },
         });
-        
+
         if (error) throw error;
-        
+
         toast.success('Account created! Welcome to ColorStory.');
         // Navigation will be handled by the useEffect watching user state
       }
     } catch (error: any) {
-      if (error.message.includes('already registered')) {
+      if (error.message?.includes('already registered')) {
         toast.error('This email is already registered. Try logging in instead.');
-      } else if (error.message.includes('Invalid login credentials')) {
+      } else if (error.message?.includes('Invalid login credentials')) {
         toast.error('Invalid email or password. Please try again.');
-      } else if (error.message.includes('rate limit') || error.status === 429) {
+      } else if (error.message?.includes('rate limit') || error.status === 429) {
         toast.error('Too many attempts. Please wait a moment and try again.');
       } else {
         toast.error(error.message || 'An error occurred');
       }
+    } finally {
       setIsLoading(false);
     }
   };

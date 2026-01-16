@@ -26,29 +26,44 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
-  const hasAuthEventRef = useRef(false);
+
+  // Tracks whether we've already received a *non-null* session via an auth event.
+  // This prevents a late getSession() result from overwriting a fresh session,
+  // while still allowing getSession() to establish the initial session.
+  const hasNonNullSessionEventRef = useRef(false);
 
   useEffect(() => {
     let mounted = true;
 
-    // Set up auth state listener FIRST
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
-      hasAuthEventRef.current = true;
+
+      // Avoid ending "loading" due to an INITIAL_SESSION event with a null session;
+      // getSession() will resolve shortly and establish the true initial state.
+      if (event === 'INITIAL_SESSION' && !nextSession) {
+        return;
+      }
+
+      if (nextSession?.access_token) {
+        hasNonNullSessionEventRef.current = true;
+      }
+
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
       setLoading(false);
     });
 
-    // THEN check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!mounted) return;
 
-      // If an auth event already fired (e.g. SIGNED_IN), don't let a stale
-      // getSession() result overwrite the fresh session and bounce the user.
-      if (hasAuthEventRef.current) return;
+      // If we already got a real session from an auth event, don't let a late
+      // getSession() call overwrite it with a null/older value.
+      if (hasNonNullSessionEventRef.current && !session) {
+        setLoading(false);
+        return;
+      }
 
       setSession(session);
       setUser(session?.user ?? null);
