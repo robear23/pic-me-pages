@@ -1,3 +1,5 @@
+import { getStoredAccessToken } from '@/contexts/AuthContext';
+
 export interface GeneratedPrompt {
   pageNumber: number;
   interest: string;
@@ -17,21 +19,23 @@ export interface Character {
   photos?: string[];
 }
 
+/**
+ * Calls a Supabase Edge Function with automatic retries.
+ * Uses the centralized session from AuthContext instead of calling getSession()
+ * to prevent refresh storms and rate limiting issues.
+ */
 const callEdgeFunction = async (functionName: string, body: any, retries = 3) => {
-  const { supabase } = await import('@/integrations/supabase/client');
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
+  // Use the stored access token from AuthContext singleton
+  // This avoids triggering concurrent refresh_token calls
+  const accessToken = getStoredAccessToken();
 
-  // Always send the backend API key; only send Authorization when we have a user session.
-  // (Using the publishable key as a Bearer token can cause requests to look "logged out".)
   const headersBase: Record<string, string> = {
     'Content-Type': 'application/json',
     apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
   };
 
-  if (session?.access_token) {
-    headersBase.Authorization = `Bearer ${session.access_token}`;
+  if (accessToken) {
+    headersBase.Authorization = `Bearer ${accessToken}`;
   }
 
   for (let attempt = 0; attempt < retries; attempt++) {
