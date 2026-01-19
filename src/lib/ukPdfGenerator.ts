@@ -3,7 +3,7 @@ import { UK_PDF_CONFIG, getUKContentArea, inchesToPoints } from './ukPdfConfig';
 import { supabase } from '@/integrations/supabase/client';
 import { toDataUrl } from './repairPdf';
 import { convertToGrayscale, ensureImageDPI } from './imageProcessing';
-
+import { getStoredSession } from '@/contexts/AuthContext';
 /**
  * Create a colored cover page (front or back) for UK book
  * 
@@ -100,8 +100,8 @@ export async function generateUKBookPdf(
   onProgress?: (current: number, total: number) => void
 ): Promise<string> {
   try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
+    const userId = getStoredSession()?.user?.id;
+    if (!userId) {
       throw new Error('User must be authenticated to generate PDF');
     }
     
@@ -228,7 +228,7 @@ export async function generateUKBookPdf(
     console.log(`✓ UK PDF generated: ${sizeMB} MB`);
     
     // Upload to storage
-    const fileName = `${user.id}/${bookId}/uk-book-${Date.now()}.pdf`;
+    const fileName = `${userId}/${bookId}/uk-book-${Date.now()}.pdf`;
     console.log('[UK PDF] Uploading to path:', fileName);
     
     const { error: uploadError } = await supabase.storage
@@ -264,8 +264,8 @@ export async function generateUKCoverOnly(
   childName: string
 ): Promise<string> {
   try {
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-    if (userError || !user) {
+    const userId = getStoredSession()?.user?.id;
+    if (!userId) {
       throw new Error('User must be authenticated to generate PDF');
     }
     
@@ -288,7 +288,7 @@ export async function generateUKCoverOnly(
     createCoverPage(pdf, 'front', childName);
     
     const pdfBlob = pdf.output('blob');
-    const fileName = `${user.id}/${bookId}/uk-cover-${Date.now()}.pdf`;
+    const fileName = `${userId}/${bookId}/uk-cover-${Date.now()}.pdf`;
     
     const { error: uploadError } = await supabase.storage
       .from('pdfs')
