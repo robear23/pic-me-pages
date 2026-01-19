@@ -31,6 +31,32 @@ let currentSession: Session | null = null;
 export const getStoredSession = (): Session | null => currentSession;
 export const getStoredAccessToken = (): string | null => currentSession?.access_token ?? null;
 
+const base64UrlToBase64 = (input: string) => {
+  const pad = '='.repeat((4 - (input.length % 4)) % 4);
+  return (input + pad).replace(/-/g, '+').replace(/_/g, '/');
+};
+
+const getJwtExpMs = (jwt: string): number | null => {
+  try {
+    const parts = jwt.split('.');
+    if (parts.length < 2) return null;
+    const payloadJson = atob(base64UrlToBase64(parts[1]));
+    const payload = JSON.parse(payloadJson) as { exp?: number };
+    return typeof payload.exp === 'number' ? payload.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+};
+
+const getSessionExpiresAtMs = (s: Session): number | null => {
+  // Prefer expires_at if available
+  if (typeof (s as any).expires_at === 'number') {
+    return (s as any).expires_at * 1000;
+  }
+  // Fallback to JWT exp
+  return s.access_token ? getJwtExpMs(s.access_token) : null;
+};
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -38,11 +64,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // Tracks whether we've established a session (null or valid) from a reliable source
   const initializedRef = useRef(false);
-  
+
   // Track the latest session to prevent stale updates
   const sessionRef = useRef<Session | null>(null);
 
-  // Update both state and singleton when session changes
+  // Robust token refresh control (prevents refresh storms / 429 loops)
+  const refreshTimerRef = useRef<number | null>(null);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
+  const lastRefreshAttemptAtRef = useRef<number>(0);
+  const lastRefreshErrorAtRef = useRef<number>(0);
+  const backoffMsRef = useRef<number>(0);
+
+  const clearRefreshTimer = useCallback(() => {
+    if (refreshTimerRef.current) {
+      window.clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = null;
+    }
+  }, []);
+
   const updateSession = useCallback((newSession: Session | null) => {
     sessionRef.current = newSession;
     currentSession = newSession; // Update singleton for non-React code
@@ -54,7 +93,92 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return sessionRef.current?.access_token ?? null;
   }, []);
 
+  const scheduleRefresh = useCallback(
+    (s: Session) => {
+      clearRefreshTimer();
+
+      const expiresAtMs = getSessionExpiresAtMs(s);
+      if (!expiresAtMs) return;
+
+      // Refresh a bit before expiry, but prevent tight loops.
+      const bufferMs = 90_000; // 90s
+      const now = Date.now();
+      let delayMs = Math.max(0, expiresAtMs - now - bufferMs);
+
+      // If something keeps producing very short-lived sessions, back off.
+      const refreshedVeryRecently = now - lastRefreshAttemptAtRef.current < 60_000;
+      if (refreshedVeryRecently && delayMs < 60_000) {
+        delayMs = 60_000;
+      }
+
+      // Apply backoff if we recently hit rate limits.
+      if (backoffMsRef.current > 0) {
+        delayMs = Math.max(delayMs, backoffMsRef.current);
+      }
+
+      refreshTimerRef.current = window.setTimeout(() => {
+        void refreshNow('scheduled');
+      }, delayMs);
+    },
+    [clearRefreshTimer]
+  );
+
+  const refreshNow = useCallback(
+    async (reason: 'scheduled' | 'focus' | 'manual') => {
+      if (refreshInFlightRef.current) return refreshInFlightRef.current;
+
+      refreshInFlightRef.current = (async () => {
+        lastRefreshAttemptAtRef.current = Date.now();
+
+        const { data, error } = await supabase.auth.refreshSession();
+
+        if (error) {
+          lastRefreshErrorAtRef.current = Date.now();
+
+          const status = (error as any).status;
+          const msg = String((error as any).message || error);
+          const isRateLimit = status === 429 || /rate\s*limit/i.test(msg);
+
+          // Backoff on rate limits to avoid being auto-signed-out.
+          if (isRateLimit) {
+            backoffMsRef.current = backoffMsRef.current
+              ? Math.min(backoffMsRef.current * 2, 5 * 60_000)
+              : 30_000;
+          } else {
+            backoffMsRef.current = Math.min(Math.max(backoffMsRef.current, 10_000), 60_000);
+          }
+
+          // Try again later; do NOT clear session here.
+          if (sessionRef.current) {
+            scheduleRefresh(sessionRef.current);
+          }
+          return;
+        }
+
+        // Successful refresh resets backoff.
+        backoffMsRef.current = 0;
+
+        if (data?.session) {
+          updateSession(data.session);
+        }
+      })()
+        .catch((e) => {
+          // Avoid unhandled promise rejections
+          console.error('[AuthContext] refreshSession failed:', e);
+        })
+        .finally(() => {
+          refreshInFlightRef.current = null;
+        });
+
+      return refreshInFlightRef.current;
+    },
+    [scheduleRefresh, updateSession]
+  );
+
   useEffect(() => {
+    // Disable built-in auto refresh; we do controlled refresh to avoid storms.
+    (supabase.auth as any).stopAutoRefresh?.();
+
     let mounted = true;
 
     const {
@@ -64,43 +188,36 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       console.log('[AuthContext] Auth event:', event, nextSession ? 'has session' : 'no session');
 
-      // Handle different auth events appropriately
       switch (event) {
         case 'INITIAL_SESSION':
-          // INITIAL_SESSION with null just means no cached session yet
-          // Wait for getSession() to confirm the true initial state
           if (nextSession) {
             updateSession(nextSession);
             initializedRef.current = true;
             setLoading(false);
           }
-          // If null, don't update - let getSession() handle it
           break;
 
         case 'SIGNED_IN':
         case 'TOKEN_REFRESHED':
-          // These events always represent valid, fresh sessions
           updateSession(nextSession);
           initializedRef.current = true;
           setLoading(false);
           break;
 
         case 'SIGNED_OUT':
-          // User explicitly signed out
+          // We only clear session on explicit sign-out; refresh errors are handled by backoff.
           updateSession(null);
+          backoffMsRef.current = 0;
+          clearRefreshTimer();
           initializedRef.current = true;
           setLoading(false);
           break;
 
         case 'USER_UPDATED':
-          // User data changed but session should still be valid
-          if (nextSession) {
-            updateSession(nextSession);
-          }
+          if (nextSession) updateSession(nextSession);
           break;
 
         default:
-          // For any other events, update if we have a session
           if (nextSession) {
             updateSession(nextSession);
             initializedRef.current = true;
@@ -109,37 +226,44 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     });
 
-    // getSession() as fallback for initial state
-    supabase.auth.getSession().then(({ data: { session: fetchedSession }, error }) => {
+    // One-time fallback for initial state (avoid repeated session reads)
+    supabase.auth.getSession().then(({ data: { session: fetchedSession } }) => {
       if (!mounted) return;
 
-      console.log('[AuthContext] getSession result:', fetchedSession ? 'has session' : 'no session', error ? `error: ${error.message}` : '');
-
-      // Only use getSession result if we haven't been initialized by an auth event
-      // OR if we have no session yet and getSession found one
       if (!initializedRef.current) {
         updateSession(fetchedSession);
         initializedRef.current = true;
-        setLoading(false);
-      } else if (fetchedSession && !sessionRef.current) {
-        // We were initialized with null but getSession found a session
-        updateSession(fetchedSession);
-        setLoading(false);
-      } else {
-        // Just make sure loading is false
-        setLoading(false);
       }
+      setLoading(false);
     });
+
+    const onVisibility = () => {
+      // If the tab becomes visible and we have a session, ensure a refresh is scheduled.
+      if (document.visibilityState === 'visible' && sessionRef.current) {
+        void refreshNow('focus');
+      }
+    };
+
+    document.addEventListener('visibilitychange', onVisibility);
 
     return () => {
       mounted = false;
+      document.removeEventListener('visibilitychange', onVisibility);
       subscription.unsubscribe();
+      clearRefreshTimer();
     };
-  }, [updateSession]);
+  }, [clearRefreshTimer, refreshNow, updateSession]);
+
+  // Whenever session changes, schedule the next refresh.
+  useEffect(() => {
+    if (session) {
+      scheduleRefresh(session);
+    } else {
+      clearRefreshTimer();
+    }
+  }, [session, scheduleRefresh, clearRefreshTimer]);
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, getAccessToken }}>
-      {children}
-    </AuthContext.Provider>
+    <AuthContext.Provider value={{ user, session, loading, getAccessToken }}>{children}</AuthContext.Provider>
   );
 };
