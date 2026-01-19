@@ -2,7 +2,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { jsPDF } from 'jspdf';
 import { LULU_CONFIG, getBindingType, isColorPackage, validatePageCount, getContentArea } from './luluConfig';
 import { validateImageResolution, convertToGrayscale, ensureImageDPI } from './imageProcessing';
-
+import { getStoredSession } from '@/contexts/AuthContext';
 export async function toDataUrl(url: string): Promise<string> {
   // If already a data URL, return as-is to avoid re-converting
   if (url.startsWith('data:')) {
@@ -22,9 +22,9 @@ export async function toDataUrl(url: string): Promise<string> {
 export async function generateCoverPdf(bookId: string, coverImageUrl: string): Promise<string> {
   try {
     // Get current user for proper path structure
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const userId = getStoredSession()?.user?.id;
     
-    if (userError || !user) {
+    if (!userId) {
       throw new Error('User must be authenticated to generate PDF');
     }
 
@@ -63,7 +63,7 @@ export async function generateCoverPdf(bookId: string, coverImageUrl: string): P
     const pdfBlob = pdf.output('blob');
 
     // Upload to storage with userId/bookId path structure for RLS compliance
-    const fileName = `${user.id}/${bookId}/cover-${Date.now()}.pdf`;
+    const fileName = `${userId}/${bookId}/cover-${Date.now()}.pdf`;
     console.log('[generateCoverPdf] Uploading to path:', fileName);
     
     const { error: uploadError } = await supabase.storage
@@ -109,9 +109,9 @@ export async function generateCoverWrapPdf(
 ): Promise<string> {
   try {
     // Get current user for proper path structure
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const userId = getStoredSession()?.user?.id;
     
-    if (userError || !user) {
+    if (!userId) {
       throw new Error('User must be authenticated to generate PDF');
     }
 
@@ -169,7 +169,7 @@ export async function generateCoverWrapPdf(
     console.log(`✓ PDF dimensions verified: ${pdfWidthInches.toFixed(3)}" x ${pdfHeightInches.toFixed(3)}"`);
 
     // Upload to storage
-    const fileName = `${user.id}/${bookId}/cover-wrap-${Date.now()}.pdf`;
+    const fileName = `${userId}/${bookId}/cover-wrap-${Date.now()}.pdf`;
     console.log('[generateCoverWrapPdf] Uploading to path:', fileName);
     
     const { error: uploadError } = await supabase.storage
@@ -282,9 +282,9 @@ export async function repairBookPdf(
 ): Promise<string> {
   try {
     // Get current user for proper path structure
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    const userId = getStoredSession()?.user?.id;
     
-    if (userError || !user) {
+    if (!userId) {
       throw new Error('User must be authenticated to generate PDF');
     }
 
@@ -450,7 +450,7 @@ export async function repairBookPdf(
     console.log(`✓ PDF generated: ${(pdfBlob.size / 1024 / 1024).toFixed(2)} MB`);
 
     // Upload to storage with userId/bookId path structure for RLS compliance
-    const fileName = `${user.id}/${bookId}/interior-${Date.now()}.pdf`;
+    const fileName = `${userId}/${bookId}/interior-${Date.now()}.pdf`;
     console.log('[repairBookPdf] Uploading to path:', fileName);
     
     const { error: uploadError } = await supabase.storage
