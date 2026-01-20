@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
-import { User, Session } from '@supabase/supabase-js';
+import type { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
+import { disableSupabaseAutoRefresh } from '@/contexts/auth/supabaseAutoRefresh';
 
 interface AuthContextType {
   user: User | null;
@@ -30,6 +31,9 @@ let currentSession: Session | null = null;
 
 export const getStoredSession = (): Session | null => currentSession;
 export const getStoredAccessToken = (): string | null => currentSession?.access_token ?? null;
+
+// Keep built-in refresh disabled as early as possible.
+disableSupabaseAutoRefresh();
 
 const base64UrlToBase64 = (input: string) => {
   const pad = '='.repeat((4 - (input.length % 4)) % 4);
@@ -74,6 +78,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const lastRefreshAttemptAtRef = useRef<number>(0);
   const lastRefreshErrorAtRef = useRef<number>(0);
   const backoffMsRef = useRef<number>(0);
+
+  // Storm guard: if refresh events happen too frequently, disable refresh temporarily.
+  const stormWindowStartRef = useRef<number>(0);
+  const stormCountRef = useRef<number>(0);
+  const autoRefreshDisabledUntilRef = useRef<number>(0);
 
   const clearRefreshTimer = useCallback(() => {
     if (refreshTimerRef.current) {
@@ -120,17 +129,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         void refreshNow('scheduled');
       }, delayMs);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [clearRefreshTimer]
   );
 
   const refreshNow = useCallback(
     async (reason: 'scheduled' | 'focus' | 'manual') => {
+      const now = Date.now();
+      if (now < autoRefreshDisabledUntilRef.current) {
+        console.warn('[AuthContext] refreshNow skipped (storm guard active)', { reason });
+        return;
+      }
+
       if (refreshInFlightRef.current) return refreshInFlightRef.current;
 
       refreshInFlightRef.current = (async () => {
         lastRefreshAttemptAtRef.current = Date.now();
 
         const { data, error } = await supabase.auth.refreshSession();
+
+        // refreshSession can re-enable internal auto refresh; keep it off.
+        disableSupabaseAutoRefresh();
 
         if (error) {
           lastRefreshErrorAtRef.current = Date.now();
@@ -176,41 +195,68 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   );
 
   useEffect(() => {
-    // Disable built-in auto refresh; we do controlled refresh to avoid storms.
-    (supabase.auth as any).stopAutoRefresh?.();
+    // Keep built-in auto refresh disabled.
+    disableSupabaseAutoRefresh();
 
     let mounted = true;
+
+    const finalizeInit = () => {
+      initializedRef.current = true;
+      setLoading(false);
+    };
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
 
+      // Ensure the built-in refresher never comes back.
+      disableSupabaseAutoRefresh();
+
       console.log('[AuthContext] Auth event:', event, nextSession ? 'has session' : 'no session');
+
+      const now = Date.now();
 
       switch (event) {
         case 'INITIAL_SESSION':
-          if (nextSession) {
-            updateSession(nextSession);
-            initializedRef.current = true;
-            setLoading(false);
-          }
+          updateSession(nextSession);
+          finalizeInit();
           break;
 
         case 'SIGNED_IN':
-        case 'TOKEN_REFRESHED':
           updateSession(nextSession);
-          initializedRef.current = true;
-          setLoading(false);
+          finalizeInit();
           break;
+
+        case 'TOKEN_REFRESHED': {
+          // Storm detection: if we get multiple TOKEN_REFRESHED events in a short window,
+          // the SDK is likely stuck in a refresh loop → it will hit 429 and sign the user out.
+          if (stormWindowStartRef.current === 0 || now - stormWindowStartRef.current > 10_000) {
+            stormWindowStartRef.current = now;
+            stormCountRef.current = 0;
+          }
+          stormCountRef.current += 1;
+
+          if (stormCountRef.current >= 3) {
+            console.error(
+              '[AuthContext] Refresh-token storm detected; disabling refresh for 5 minutes to prevent 429 + sign-out.'
+            );
+            autoRefreshDisabledUntilRef.current = now + 5 * 60_000;
+            clearRefreshTimer();
+            disableSupabaseAutoRefresh();
+          }
+
+          updateSession(nextSession);
+          finalizeInit();
+          break;
+        }
 
         case 'SIGNED_OUT':
           // We only clear session on explicit sign-out; refresh errors are handled by backoff.
           updateSession(null);
           backoffMsRef.current = 0;
           clearRefreshTimer();
-          initializedRef.current = true;
-          setLoading(false);
+          finalizeInit();
           break;
 
         case 'USER_UPDATED':
@@ -218,11 +264,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           break;
 
         default:
-          if (nextSession) {
-            updateSession(nextSession);
-            initializedRef.current = true;
-            setLoading(false);
-          }
+          if (nextSession) updateSession(nextSession);
+          if (!initializedRef.current) finalizeInit();
       }
     });
 
@@ -238,9 +281,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     const onVisibility = () => {
-      // If the tab becomes visible and we have a session, ensure a refresh is scheduled.
-      if (document.visibilityState === 'visible' && sessionRef.current) {
+      if (document.visibilityState !== 'visible') return;
+      if (!sessionRef.current) return;
+      if (Date.now() < autoRefreshDisabledUntilRef.current) return;
+
+      // Only refresh on focus if we're close to expiry; otherwise just ensure a refresh is scheduled.
+      const expiresAtMs = getSessionExpiresAtMs(sessionRef.current);
+      if (expiresAtMs && expiresAtMs - Date.now() < 2 * 60_000) {
         void refreshNow('focus');
+      } else {
+        scheduleRefresh(sessionRef.current);
       }
     };
 
@@ -252,7 +302,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       subscription.unsubscribe();
       clearRefreshTimer();
     };
-  }, [clearRefreshTimer, refreshNow, updateSession]);
+  }, [clearRefreshTimer, refreshNow, scheduleRefresh, updateSession]);
 
   // Whenever session changes, schedule the next refresh.
   useEffect(() => {
