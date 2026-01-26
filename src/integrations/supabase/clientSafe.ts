@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 
 import type { Database } from "./types";
+import { createSupabaseAuthStorage } from "./authStorage";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -22,7 +23,7 @@ export const SUPABASE_AUTH_STORAGE_KEY = 'colorstory_auth_v2';
  */
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: localStorage,
+    storage: createSupabaseAuthStorage(SUPABASE_AUTH_STORAGE_KEY),
     persistSession: true,
     autoRefreshToken: false,
     storageKey: SUPABASE_AUTH_STORAGE_KEY,
