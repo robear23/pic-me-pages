@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { ArrowLeft, CreditCard, AlertTriangle, Check, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { useToast } from '@/hooks/use-toast';
+import { createCheckoutSession, verifyPayment } from '@/lib/api';
 import { supabase } from '@/integrations/supabase/clientSafe';
 import { useSearchParams } from 'react-router-dom';
 import {
@@ -57,11 +58,7 @@ export const PaymentStep = () => {
           console.log('Verifying payment for session:', sessionId);
 
           // Call edge function to verify payment and create order
-          const { data, error } = await supabase.functions.invoke('verify-payment', {
-            body: { sessionId }
-          });
-
-          if (error) throw error;
+          const data = await verifyPayment(sessionId);
 
           if (data?.orderId) {
             setOrderId(data.orderId);
@@ -116,15 +113,11 @@ export const PaymentStep = () => {
     setLoading(true);
     try {
       // Call edge function to create Stripe checkout session
-      const { data, error } = await supabase.functions.invoke('create-checkout-session', {
-        body: {
-          pageCount: selectedPageCount,
-          binding: selectedBinding,
-          price: selectedPrice,
-        }
+      const data = await createCheckoutSession({
+        pageCount: selectedPageCount,
+        binding: selectedBinding,
+        price: selectedPrice,
       });
-
-      if (error) throw error;
 
       console.log('Opening Stripe checkout in new tab...');
       
@@ -152,7 +145,7 @@ export const PaymentStep = () => {
       console.error('Checkout error:', error);
       toast({
         title: 'Payment Error',
-        description: 'Failed to initiate checkout. Please try again.',
+        description: error instanceof Error ? error.message : 'Failed to initiate checkout. Please try again.',
         variant: 'destructive',
       });
     } finally {

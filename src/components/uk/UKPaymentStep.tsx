@@ -7,7 +7,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { useUKBookStore } from '@/store/ukBookStore';
 import { UK_BOOK_OPTIONS } from '@/types/ukBookOptions';
-import { supabase } from '@/integrations/supabase/clientSafe';
+import { ukCreateCheckout, ukVerifyPayment } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Separator } from '@/components/ui/separator';
 
@@ -55,13 +55,7 @@ export function UKPaymentStep() {
     try {
       console.log('[UK Payment] Verifying payment session:', sessionId);
 
-      const { data, error } = await supabase.functions.invoke('uk-verify-payment', {
-        body: { sessionId }
-      });
-
-      if (error) {
-        throw error;
-      }
+      const data = await ukVerifyPayment(sessionId);
 
       if (data && data.success) {
         console.log('[UK Payment] Payment verified:', data);
@@ -117,20 +111,14 @@ export function UKPaymentStep() {
 
       console.log('[UK Payment] Creating checkout session');
 
-      const { data, error } = await supabase.functions.invoke('uk-create-checkout', {
-        body: {
-          productType: selectedProduct,
-          stripePriceId: productOption.stripePriceId,
-          childName: characterName,
-          interests: selectedInterests,
-          customPrompt: customPrompt || null,
-          shippingAddress: shippingAddress || null,
-        }
+      const data = await ukCreateCheckout({
+        productType: selectedProduct,
+        stripePriceId: productOption.stripePriceId,
+        childName: characterName,
+        interests: selectedInterests,
+        customPrompt: customPrompt || null,
+        shippingAddress: shippingAddress || null,
       });
-
-      if (error) {
-        throw error;
-      }
 
       if (!data || !data.url) {
         throw new Error('No checkout URL received');
@@ -156,7 +144,7 @@ export function UKPaymentStep() {
       console.error('[UK Payment] Checkout error:', error);
       toast({
         title: 'Checkout Failed',
-        description: error.message || 'Failed to create checkout session',
+        description: error?.message || 'Failed to create checkout session',
         variant: 'destructive',
       });
     } finally {
