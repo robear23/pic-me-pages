@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/clientSafe";
 import { useAuth } from "@/contexts/AuthContext";
 
 export function useAdmin() {

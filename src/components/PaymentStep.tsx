@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { ArrowLeft, CreditCard, AlertTriangle, Check, Loader2 } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/clientSafe';
 import { useSearchParams } from 'react-router-dom';
 import {
   AlertDialog,

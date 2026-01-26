@@ -1,6 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { UK_PDF_CONFIG, getUKContentArea, inchesToPoints } from './ukPdfConfig';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/clientSafe';
 import { toDataUrl } from './repairPdf';
 import { convertToGrayscale, ensureImageDPI } from './imageProcessing';
 import { getStoredSession } from '@/contexts/AuthContext';

@@ -22,7 +22,7 @@ import { useNavigate } from 'react-router-dom';
 import confetti from 'canvas-confetti';
 import { OrderPhysicalBookDialog } from './OrderPhysicalBookDialog';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/clientSafe';
 import { useToast } from '@/hooks/use-toast';
 import { PagePreviewModal } from './PagePreviewModal';
 

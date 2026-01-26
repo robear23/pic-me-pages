@@ -5,7 +5,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { useUKBookStore } from '@/store/ukBookStore';
 import { useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/clientSafe';
 import { UK_UPGRADE_PRICE, UK_UPGRADE_PRICE_ID } from '@/types/ukBookOptions';
 import confetti from 'canvas-confetti';
 

@@ -1,4 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/clientSafe';
 import { repairBookPdf, generateCoverWrapPdf } from './repairPdf';
 
 interface SaveBookParams {

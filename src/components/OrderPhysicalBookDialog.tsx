@@ -21,7 +21,7 @@ import {
 import { useToast } from '@/hooks/use-toast';
 import { createPrintOrder, ShippingAddress } from '@/lib/api';
 import { Package, Book, Sparkles, CheckCircle, Edit2 } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/clientSafe';
 import { generateCoverWrapPdf, repairBookPdf } from '@/lib/repairPdf';
 import type { BindingType, PageCount } from '@/types/bookOptions';
 import { BindingSelector } from './BindingSelector';

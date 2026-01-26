@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Plus, Shield, LogOut, Menu, X, BookOpen } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAdmin } from '@/hooks/useAdmin';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/clientSafe';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { useBookStore } from '@/store/bookStore';
