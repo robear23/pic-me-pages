@@ -1,4 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/clientSafe';
 import { jsPDF } from 'jspdf';
 import { LULU_CONFIG, getBindingType, isColorPackage, validatePageCount, getContentArea } from './luluConfig';
 import { validateImageResolution, convertToGrayscale, ensureImageDPI } from './imageProcessing';

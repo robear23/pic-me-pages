@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogTrigger, DialogTitle, DialogDescription } 
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { OrderPhysicalBookDialog } from './OrderPhysicalBookDialog';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/clientSafe';
 import { useToast } from '@/hooks/use-toast';
 
 export const CompleteStep = () => {

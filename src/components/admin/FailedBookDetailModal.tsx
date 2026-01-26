@@ -6,7 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { formatDistanceToNow, format } from 'date-fns';
 import { Download, RefreshCw, Zap, AlertTriangle, Clock, CheckCircle, XCircle, Shield, Gift, Mail } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/integrations/supabase/clientSafe';
 import { toast } from '@/hooks/use-toast';
 
 interface ErrorLogEntry {
