@@ -269,16 +269,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       }
     });
 
-    // One-time fallback for initial state (avoid repeated session reads)
-    supabase.auth.getSession().then(({ data: { session: fetchedSession } }) => {
-      if (!mounted) return;
-
-      if (!initializedRef.current) {
-        updateSession(fetchedSession);
-        initializedRef.current = true;
-      }
-      setLoading(false);
-    });
+    // NOTE:
+    // We intentionally avoid calling supabase.auth.getSession() here.
+    // In some browser environments it can trigger session recovery paths that
+    // attempt refresh_token calls during startup, contributing to refresh storms.
+    // We rely on the INITIAL_SESSION event from onAuthStateChange instead.
 
     const onVisibility = () => {
       if (document.visibilityState !== 'visible') return;
