@@ -19,16 +19,42 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader) {
-      throw new Error('No authorization header');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 401,
+        }
+      );
     }
 
     const token = authHeader.replace('Bearer ', '');
+
+    // Prefer claims validation first (signing-keys compatible)
+    const { data: claimsData, error: claimsError } = await supabase.auth.getClaims(token);
+    if (claimsError || !claimsData?.claims?.sub) {
+      console.error('Authentication failed (claims):', claimsError);
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 401,
+        }
+      );
+    }
+
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     
     if (authError || !user || !user.email) {
       console.error('Authentication failed:', authError);
-      throw new Error('User not authenticated or email not available');
+      return new Response(
+        JSON.stringify({ error: 'User not authenticated or email not available' }),
+        {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: 401,
+        }
+      );
     }
 
     console.log('Authenticated user:', user.id);

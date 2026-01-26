@@ -181,3 +181,47 @@ export const generateCover = async (
     characters
   }, 1); // Only 1 retry for expensive AI calls
 };
+
+// ----------------------------
+// Payments (Stripe Checkout)
+// ----------------------------
+
+export const createCheckoutSession = async (params: {
+  pageCount: number;
+  binding: string;
+  price: number;
+}): Promise<{ url: string }> => {
+  if (!getStoredAccessToken()) {
+    throw new Error('Please sign in to continue.');
+  }
+  return callEdgeFunction('create-checkout-session', params);
+};
+
+export const verifyPayment = async (sessionId: string): Promise<any> => {
+  if (!getStoredAccessToken()) {
+    throw new Error('Please sign in to continue.');
+  }
+  return callEdgeFunction('verify-payment', { sessionId });
+};
+
+export const ukCreateCheckout = async (body: {
+  productType: string;
+  stripePriceId: string;
+  childName: string;
+  interests?: string[];
+  customPrompt?: string | null;
+  shippingAddress?: any;
+  bookId?: string;
+}): Promise<{ url: string }> => {
+  if (!getStoredAccessToken()) {
+    throw new Error('Please sign in to continue.');
+  }
+  return callEdgeFunction('uk-create-checkout', body);
+};
+
+export const ukVerifyPayment = async (sessionId: string): Promise<any> => {
+  if (!getStoredAccessToken()) {
+    throw new Error('Please sign in to continue.');
+  }
+  return callEdgeFunction('uk-verify-payment', { sessionId });
+};
