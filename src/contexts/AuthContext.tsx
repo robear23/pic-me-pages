@@ -244,6 +244,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             autoRefreshDisabledUntilRef.current = now + 5 * 60_000;
             clearRefreshTimer();
             disableSupabaseAutoRefresh();
+
+              // Persist a marker so next load can hard-reset auth storage if needed.
+              try {
+                localStorage.setItem('colorstory_auth_refresh_storm_at', String(now));
+              } catch {
+                // ignore
+              }
           }
 
           updateSession(nextSession);

@@ -13,6 +13,21 @@ export const cleanupSupabaseAuthStorage = () => {
   if (typeof window === 'undefined') return;
 
   try {
+    // If we detected a refresh-token storm recently, force-clear our safe auth session.
+    // This avoids getting stuck bouncing between "almost signed in" and SIGNED_OUT.
+    const STORM_MARKER_KEY = 'colorstory_auth_refresh_storm_at';
+    const SAFE_AUTH_KEY = 'colorstory_auth_v2';
+    const stormAtRaw = localStorage.getItem(STORM_MARKER_KEY);
+    const stormAt = stormAtRaw ? Number(stormAtRaw) : 0;
+
+    if (stormAt && Number.isFinite(stormAt)) {
+      const stormWindowMs = 15 * 60_000;
+      if (Date.now() - stormAt < stormWindowMs) {
+        localStorage.removeItem(SAFE_AUTH_KEY);
+      }
+      localStorage.removeItem(STORM_MARKER_KEY);
+    }
+
     const keysToRemove: string[] = [];
 
     for (let i = 0; i < localStorage.length; i += 1) {
