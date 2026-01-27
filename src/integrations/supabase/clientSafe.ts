@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import type { Database } from "./types";
 import { createSupabaseAuthStorage } from "./authStorage";
+import { patchSupabaseAuth } from "./patchAuth";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -30,3 +31,6 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     detectSessionInUrl: true,
   },
 });
+
+// Patch auth immediately (as early as possible) to prevent refresh storms during startup.
+patchSupabaseAuth((supabase as any).auth);
