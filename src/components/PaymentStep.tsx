@@ -24,7 +24,7 @@ import {
 
 export const PaymentStep = () => {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isAdmin } = useAdmin();
+  const { isAdmin, loading: adminLoading } = useAdmin();
   const { user } = useAuth();
   const { toast } = useToast();
   const { 
@@ -384,7 +384,7 @@ export const PaymentStep = () => {
           )}
 
           {/* Admin Bypass Section */}
-          {isAdmin && (
+          {!adminLoading && isAdmin && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
