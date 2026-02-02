@@ -69,7 +69,7 @@ export function UKProductSelection() {
     setAdminBypass
   } = useUKBookStore();
   const [showShippingForm, setShowShippingForm] = useState(false);
-  const { isAdmin } = useAdmin();
+  const { isAdmin, loading: adminLoading } = useAdmin();
   
   const form = useForm<ShippingFormData>({
     resolver: zodResolver(shippingSchema),
@@ -355,7 +355,7 @@ export function UKProductSelection() {
           Back
         </Button>
         
-        {isAdmin && (
+        {!adminLoading && isAdmin && (
           <Button
             variant="outline"
             size="lg"
