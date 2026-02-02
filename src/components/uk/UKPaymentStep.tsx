@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { CreditCard, ShieldCheck, ArrowLeft, AlertCircle } from 'lucide-react';
+import { CreditCard, ShieldCheck, ArrowLeft, AlertCircle, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -10,6 +10,7 @@ import { UK_BOOK_OPTIONS } from '@/types/ukBookOptions';
 import { ukCreateCheckout, ukVerifyPayment } from '@/lib/api';
 import { useToast } from '@/hooks/use-toast';
 import { Separator } from '@/components/ui/separator';
+import { useAdmin } from '@/hooks/useAdmin';
 
 export function UKPaymentStep() {
   const {
@@ -22,13 +23,33 @@ export function UKPaymentStep() {
     setUKOrderId,
     setGeneratedBookId,
     setStep,
+    setAdminBypass,
+    setSelectedInterests,
+    setCustomPrompt,
   } = useUKBookStore();
 
   const { toast } = useToast();
+  const { isAdmin, loading: adminLoading } = useAdmin();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
   const [popupBlocked, setPopupBlocked] = useState(false);
+
+  const handleAdminSkipPayment = () => {
+    console.log('[ADMIN] Skipping payment and proceeding directly to generation');
+    
+    // If no interests and no custom prompt, add defaults for testing
+    if (selectedInterests.length === 0 && !customPrompt) {
+      console.log('[ADMIN] No interests/prompt set, adding default test data');
+      setSelectedInterests(['adventure', 'magic']);
+      setCustomPrompt('A fun test adventure');
+    }
+    
+    // Mark this as admin bypass so generation step allows proceeding without order
+    setAdminBypass(true);
+    
+    setStep('uk-generating');
+  };
 
   useEffect(() => {
     // Check for payment callback
@@ -290,6 +311,18 @@ export function UKPaymentStep() {
                   Popup was blocked. Redirecting to checkout...
                 </AlertDescription>
               </Alert>
+            )}
+
+            {!adminLoading && isAdmin && (
+              <Button
+                variant="outline"
+                size="lg"
+                onClick={handleAdminSkipPayment}
+                className="w-full mb-4 border-amber-500 text-amber-700 hover:bg-amber-50"
+              >
+                <Shield className="w-4 h-4 mr-2" />
+                Skip Payment (Admin)
+              </Button>
             )}
 
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
