@@ -24,20 +24,19 @@ export function useAdmin() {
       try {
         setLoading(true);
 
-        const { data, error } = await supabase
-          .from("user_roles")
-          .select("role")
-          .eq("user_id", user.id)
-          .eq("role", "admin")
-          .single();
+        // Use a SECURITY DEFINER RPC to avoid any client-side/RLS edge cases.
+        const { data, error } = await supabase.rpc('has_role', {
+          _user_id: user.id,
+          _role: 'admin',
+        });
 
-        if (error && error.code !== "PGRST116") {
-          console.error("Error checking admin status:", error);
+        if (error) {
+          console.error('Error checking admin status (has_role):', error);
         }
 
-        if (!cancelled) setIsAdmin(!!data);
+        if (!cancelled) setIsAdmin(Boolean(data));
       } catch (error) {
-        console.error("Error checking admin status:", error);
+        console.error('Error checking admin status:', error);
         if (!cancelled) setIsAdmin(false);
       } finally {
         if (!cancelled) setLoading(false);
