@@ -9,7 +9,7 @@ import { ArrowLeft, CreditCard, AlertTriangle, Check, Loader2 } from 'lucide-rea
 import { Alert, AlertDescription } from './ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { createCheckoutSession, verifyPayment } from '@/lib/api';
-import { supabase } from '@/integrations/supabase/clientSafe';
+import { createTestOrderForUser } from '@/lib/orders';
 import { useSearchParams } from 'react-router-dom';
 import {
   AlertDialog,
@@ -158,19 +158,8 @@ export const PaymentStep = () => {
 
     setLoading(true);
     try {
-      // Create test order in database
-      const { data: order, error } = await supabase
-        .from('orders')
-        .insert({
-          user_id: user.id,
-          order_type: 'test_mode',
-          price_paid: 0,
-          status: 'test',
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
+      // Create test order in database (use stored JWT to avoid client auth edge cases)
+      const order = await createTestOrderForUser(user.id);
 
       // Set flags in store
       setPaymentBypassed(true);
@@ -187,7 +176,7 @@ export const PaymentStep = () => {
       console.error('Bypass error:', error);
       toast({
         title: 'Error',
-        description: 'Failed to create test order. Please try again.',
+        description: error instanceof Error ? error.message : 'Failed to create test order. Please try again.',
         variant: 'destructive',
       });
     } finally {
