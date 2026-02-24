@@ -1,17 +1,13 @@
-project_id = "yzcqvuidasgljeifvmxk"
+project_id = "uakusxymtpceugxbaaig"
 
 [functions.process-book-generation]
 verify_jwt = false
-timeout_sec = 900
-memory_mb = 512
 
 [functions.generate-prompts]
 verify_jwt = false
 
 [functions.generate-images]
 verify_jwt = false
-timeout_sec = 900
-memory_mb = 512
 
 [functions.upload-character-photos]
 verify_jwt = false
@@ -37,8 +33,6 @@ verify_jwt = true
 [functions.retry-book-cover]
 verify_jwt = true
 
-[functions.retry-book-cover-v2]
-verify_jwt = true
 
 [functions.uk-create-checkout]
 verify_jwt = true
