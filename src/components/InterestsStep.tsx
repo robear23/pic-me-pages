@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useState, useMemo, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { useBookStore, type SupportingCastMember } from '@/store/bookStore';
@@ -9,37 +9,6 @@ import { useNavigate } from 'react-router-dom';
 import { Alert, AlertDescription } from './ui/alert';
 import { Slider } from './ui/slider';
 
-// SAFE PROMPT GUIDE: Activities that may need safety modifications
-const POTENTIALLY_RISKY_INTERESTS = [
-  'rock climbing', 'climbing', 'cycling', 'biking', 'bike', 'swimming', 'diving',
-  'skiing', 'snowboarding', 'skateboarding', 'skating', 'football', 'soccer',
-  'martial arts', 'karate', 'boxing', 'gymnastics', 'horse riding', 'archery',
-  'surfing', 'trampoline', 'parkour'
-];
-
-// SAFE PROMPT GUIDE: Safe alternatives for risky interests
-const SAFETY_MODIFICATIONS: Record<string, string> = {
-  'rock climbing': 'indoor rock climbing with safety equipment',
-  'climbing': 'indoor climbing with safety gear',
-  'cycling': 'cycling with a helmet',
-  'biking': 'biking with safety gear',
-  'skateboarding': 'skateboarding with helmet and pads',
-  'skating': 'skating with protective gear',
-  'swimming': 'swimming with floaties',
-  'football': 'playing catch',
-  'soccer': 'kicking a ball in the garden',
-  'martial arts': 'practicing exercise poses',
-  'karate': 'doing stretches',
-  'boxing': 'exercising',
-  'gymnastics': 'dancing gracefully',
-  'horse riding': 'visiting friendly animals',
-  'archery': 'outdoor activities',
-  'surfing': 'playing at the beach',
-  'skiing': 'playing in the snow',
-  'snowboarding': 'building a snowman',
-  'trampoline': 'jumping happily',
-  'parkour': 'exploring the neighborhood'
-};
 
 interface InterestsStepProps {
   isUKFlow?: boolean;
@@ -98,14 +67,6 @@ export const InterestsStep = ({ isUKFlow = false }: InterestsStepProps) => {
     .map(i => i.trim())
     .filter(i => i.length > 0);
   
-  // SAFE PROMPT GUIDE: Check for potentially risky interests
-  const riskyInterests = useMemo(() => {
-    const combined = parsedInterests.join(' ').toLowerCase();
-    return POTENTIALLY_RISKY_INTERESTS.filter(risky => combined.includes(risky));
-  }, [parsedInterests]);
-  
-  const hasRiskyInterests = riskyInterests.length > 0;
-  
   // Valid if either interests OR supporting cast provided
   const hasSupportingCast = supportingCast.length > 0;
   const isComplete = parsedInterests.length >= 1 || hasSupportingCast;
@@ -115,18 +76,7 @@ export const InterestsStep = ({ isUKFlow = false }: InterestsStepProps) => {
     (supportingCastPerPage === 0 || supportingCastPageCount === 0);
   
   const handleNext = () => {
-    // Apply safety modifications to interests
-    let safeInterests = parsedInterests.map(interest => {
-      const lowerInterest = interest.toLowerCase();
-      for (const [risky, safe] of Object.entries(SAFETY_MODIFICATIONS)) {
-        if (lowerInterest.includes(risky)) {
-          return interest.replace(new RegExp(risky, 'gi'), safe);
-        }
-      }
-      return interest;
-    });
-    
-    setInterests(safeInterests);
+    setInterests(parsedInterests);
     if (isUKFlow) {
       (setStep as any)('uk-product-selection');
     } else {
@@ -231,23 +181,6 @@ export const InterestsStep = ({ isUKFlow = false }: InterestsStepProps) => {
               Separate interests with commas • {parsedInterests.length} interest{parsedInterests.length !== 1 ? 's' : ''}
             </p>
           </div>
-
-          {/* Safety Notice for Risky Interests */}
-          {hasRiskyInterests && (
-            <Alert className="mb-6 border-amber-500/50 bg-amber-500/10">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-              <AlertDescription className="text-sm">
-                <span className="font-medium">Note:</span> We'll automatically adjust{' '}
-                {riskyInterests.map((r, i) => (
-                  <span key={r}>
-                    <span className="font-semibold">"{r}"</span>
-                    {i < riskyInterests.length - 1 ? ', ' : ''}
-                  </span>
-                ))}{' '}
-                to be more suitable for AI-generated coloring book illustrations.
-              </AlertDescription>
-            </Alert>
-          )}
 
           {/* Supporting Cast Section */}
           <div className="space-y-4 mb-8 p-6 backdrop-blur-lg bg-white/5 border border-glass-border rounded-xl">

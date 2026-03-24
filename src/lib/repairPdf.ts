@@ -8,7 +8,7 @@ export async function toDataUrl(url: string): Promise<string> {
   if (url.startsWith('data:')) {
     return url;
   }
-  
+
   const response = await fetch(url);
   const blob = await response.blob();
   return new Promise((resolve, reject) => {
@@ -23,7 +23,7 @@ export async function generateCoverPdf(bookId: string, coverImageUrl: string): P
   try {
     // Get current user for proper path structure
     const userId = getStoredSession()?.user?.id;
-    
+
     if (!userId) {
       throw new Error('User must be authenticated to generate PDF');
     }
@@ -37,7 +37,7 @@ export async function generateCoverPdf(bookId: string, coverImageUrl: string): P
       putOnlyUsedFonts: true, // Only include fonts that are actually used
       floatPrecision: 16, // High precision for measurements
     });
-    
+
     // Add PDF/X metadata for print-ready status
     pdf.setProperties({
       title: 'Print-Ready Book Cover',
@@ -65,7 +65,7 @@ export async function generateCoverPdf(bookId: string, coverImageUrl: string): P
     // Upload to storage with userId/bookId path structure for RLS compliance
     const fileName = `${userId}/${bookId}/cover-${Date.now()}.pdf`;
     console.log('[generateCoverPdf] Uploading to path:', fileName);
-    
+
     const { error: uploadError } = await supabase.storage
       .from('pdfs')
       .upload(fileName, pdfBlob, {
@@ -110,7 +110,7 @@ export async function generateCoverWrapPdf(
   try {
     // Get current user for proper path structure
     const userId = getStoredSession()?.user?.id;
-    
+
     if (!userId) {
       throw new Error('User must be authenticated to generate PDF');
     }
@@ -128,7 +128,7 @@ export async function generateCoverWrapPdf(
       putOnlyUsedFonts: true, // Only include fonts that are actually used
       floatPrecision: 16, // High precision for measurements
     });
-    
+
     // Add PDF/X metadata for print-ready status
     pdf.setProperties({
       title: 'Print-Ready Book Cover Wrap',
@@ -161,7 +161,7 @@ export async function generateCoverWrapPdf(
 
     // Convert PDF to blob
     const pdfBlob = pdf.output('blob');
-    
+
     // Log PDF dimensions for verification
     const pdfDimensions = pdf.internal.pageSize;
     const pdfWidthInches = pdfDimensions.getWidth() / LULU_CONFIG.POINTS_PER_INCH;
@@ -171,7 +171,7 @@ export async function generateCoverWrapPdf(
     // Upload to storage
     const fileName = `${userId}/${bookId}/cover-wrap-${Date.now()}.pdf`;
     console.log('[generateCoverWrapPdf] Uploading to path:', fileName);
-    
+
     const { error: uploadError } = await supabase.storage
       .from('pdfs')
       .upload(fileName, pdfBlob, {
@@ -210,17 +210,17 @@ export async function generateCoverWrapPdf(
 function drawCoverMarginGuides(doc: jsPDF) {
   const currentDrawColor = doc.getDrawColor();
   const currentLineWidth = doc.getLineWidth();
-  
+
   const halfWidth = (LULU_CONFIG.COVER_WIDTH / 2) * LULU_CONFIG.POINTS_PER_INCH;
   const fullWidth = LULU_CONFIG.COVER_WIDTH * LULU_CONFIG.POINTS_PER_INCH;
   const fullHeight = LULU_CONFIG.COVER_HEIGHT * LULU_CONFIG.POINTS_PER_INCH;
   const bleedPt = LULU_CONFIG.BLEED * LULU_CONFIG.POINTS_PER_INCH;
-  
+
   // Draw outer bleed line (red)
   doc.setDrawColor(255, 0, 0);
   doc.setLineWidth(0.5);
   doc.rect(0, 0, fullWidth, fullHeight);
-  
+
   // Draw trim lines (blue)
   doc.setDrawColor(0, 0, 255);
   doc.rect(
@@ -229,11 +229,11 @@ function drawCoverMarginGuides(doc: jsPDF) {
     fullWidth - (bleedPt * 2),
     fullHeight - (bleedPt * 2)
   );
-  
+
   // Draw center divider between back and front
   doc.setDrawColor(128, 128, 128);
   doc.line(halfWidth, 0, halfWidth, fullHeight);
-  
+
   // Draw safety margins (green) - 0.25" recommended
   const safetyMargin = 0.25 * LULU_CONFIG.POINTS_PER_INCH;
   doc.setDrawColor(0, 255, 0);
@@ -251,7 +251,7 @@ function drawCoverMarginGuides(doc: jsPDF) {
     halfWidth - bleedPt - (safetyMargin * 2),
     fullHeight - (bleedPt * 2) - (safetyMargin * 2)
   );
-  
+
   // Add labels
   doc.setFontSize(10);
   doc.setTextColor(255, 255, 255);
@@ -262,7 +262,7 @@ function drawCoverMarginGuides(doc: jsPDF) {
   doc.text('Bleed 0.125"', 0.15, 0.15);
   doc.setTextColor(0, 255, 0);
   doc.text('Safety 0.25"', 0.4, 0.9);
-  
+
   doc.setDrawColor(currentDrawColor);
   doc.setLineWidth(currentLineWidth);
   doc.setTextColor(0);
@@ -283,17 +283,17 @@ export async function repairBookPdf(
   try {
     // Get current user for proper path structure
     const userId = getStoredSession()?.user?.id;
-    
+
     if (!userId) {
       throw new Error('User must be authenticated to generate PDF');
     }
 
     // Determine binding type and color mode
-    const bindingType = options?.podPackageId 
-      ? getBindingType(options.podPackageId) 
+    const bindingType = options?.podPackageId
+      ? getBindingType(options.podPackageId)
       : 'SADDLE';
-    const isColor = options?.podPackageId 
-      ? isColorPackage(options.podPackageId) 
+    const isColor = options?.podPackageId
+      ? isColorPackage(options.podPackageId)
       : false;
 
     console.log(`[repairBookPdf] Creating Lulu-compliant interior PDF`);
@@ -310,7 +310,7 @@ export async function repairBookPdf(
       putOnlyUsedFonts: true, // Only include fonts that are actually used
       floatPrecision: 16, // High precision for measurements
     });
-    
+
     // Add PDF/X metadata for print-ready status
     pdf.setProperties({
       title: 'Print-Ready Book Interior',
@@ -322,7 +322,7 @@ export async function repairBookPdf(
 
     // Get content area with gutter
     const contentArea = getContentArea(bindingType);
-    
+
     console.log(`  Content area: ${contentArea.width.toFixed(2)}" x ${contentArea.height.toFixed(2)}"`);
     console.log(`  Safety margin: ${LULU_CONFIG.SAFETY_MARGIN}"`);
     console.log(`  Gutter (binding): ${bindingType === 'COIL' ? LULU_CONFIG.GUTTER_COIL : LULU_CONFIG.GUTTER_SADDLE}"`);
@@ -338,10 +338,19 @@ export async function repairBookPdf(
 
     let processedPages = 0;
     const totalPages = options?.pageCount || Math.max(options?.minPages || 12, validPages.length);
+    const CHUNK_SIZE = 4; // Process 4 pages at a time before yielding to garbage collector
 
     for (let i = 0; i < validPages.length; i++) {
       const page = validPages[i];
-      
+
+      // Memory optimization: Pause every few pages to allow browser garbage collection
+      if (i > 0 && i % CHUNK_SIZE === 0) {
+        console.log(`[Memory Check] Yielding to garbage collector after ${i} pages...`);
+        // Report progress specifically during this pause for better UX
+        options?.onProgress?.(processedPages, totalPages);
+        await new Promise(resolve => setTimeout(resolve, 800)); // 800ms pause
+      }
+
       if (i > 0) {
         pdf.addPage([LULU_CONFIG.PAGE_WIDTH * LULU_CONFIG.POINTS_PER_INCH, LULU_CONFIG.PAGE_HEIGHT * LULU_CONFIG.POINTS_PER_INCH], 'portrait');
       }
@@ -353,9 +362,13 @@ export async function repairBookPdf(
         continue;
       }
 
+      let dataUrl = '';
+      let processedImage = '';
+      const img = new Image();
+
       try {
         // Convert to data URL
-        const dataUrl = await toDataUrl(page.imageUrl);
+        dataUrl = await toDataUrl(page.imageUrl);
 
         // Validate resolution (warning only)
         const resValidation = await validateImageResolution(
@@ -369,7 +382,7 @@ export async function repairBookPdf(
         }
 
         // Convert to grayscale for B&W books
-        let processedImage = dataUrl;
+        processedImage = dataUrl;
         if (!isColor) {
           processedImage = await convertToGrayscale(dataUrl);
         }
@@ -383,9 +396,9 @@ export async function repairBookPdf(
 
         // Add image with proper placement respecting margins
         // Calculate actual image dimensions after DPI processing
-        const img = new Image();
-        await new Promise((resolve) => {
+        await new Promise((resolve, reject) => {
           img.onload = resolve;
+          img.onerror = reject;
           img.src = processedImage;
         });
 
@@ -420,6 +433,14 @@ export async function repairBookPdf(
         console.log(`✓ Page ${i + 1} added`);
       } catch (error) {
         console.error(`Failed to add page ${i + 1}:`, error);
+      } finally {
+        // CRITICAL MEMORY OPTIMIZATION: Manually clear large strings and DOM references
+        // Mobile browsers (especially iOS Safari) will crash if we don't aggressively free this memory
+        img.onload = null;
+        img.onerror = null;
+        img.src = '';
+        dataUrl = '';
+        processedImage = '';
       }
 
       processedPages++;
@@ -428,14 +449,14 @@ export async function repairBookPdf(
 
     // Validate and adjust page count for binding type
     const validation = validatePageCount(processedPages, bindingType);
-    
+
     if (!validation.valid) {
       console.warn(validation.message);
-      
+
       // Add blank pages to reach adjusted count
       const blankPagesNeeded = validation.adjustedCount - processedPages;
       console.log(`Adding ${blankPagesNeeded} blank pages for ${bindingType} binding compliance`);
-      
+
       for (let i = 0; i < blankPagesNeeded; i++) {
         pdf.addPage([LULU_CONFIG.PAGE_WIDTH * LULU_CONFIG.POINTS_PER_INCH, LULU_CONFIG.PAGE_HEIGHT * LULU_CONFIG.POINTS_PER_INCH], 'portrait');
         processedPages++;
@@ -452,7 +473,7 @@ export async function repairBookPdf(
     // Upload to storage with userId/bookId path structure for RLS compliance
     const fileName = `${userId}/${bookId}/interior-${Date.now()}.pdf`;
     console.log('[repairBookPdf] Uploading to path:', fileName);
-    
+
     const { error: uploadError } = await supabase.storage
       .from('pdfs')
       .upload(fileName, pdfBlob, {
@@ -492,7 +513,7 @@ export async function repairBookPdf(
 // Helper function to draw interior margin guides for testing/validation
 function drawMarginGuides(doc: jsPDF, bindingType: 'SADDLE' | 'COIL') {
   const contentArea = getContentArea(bindingType);
-  
+
   // Convert all measurements to points
   const pageWidthPt = LULU_CONFIG.PAGE_WIDTH * LULU_CONFIG.POINTS_PER_INCH;
   const pageHeightPt = LULU_CONFIG.PAGE_HEIGHT * LULU_CONFIG.POINTS_PER_INCH;
@@ -507,16 +528,16 @@ function drawMarginGuides(doc: jsPDF, bindingType: 'SADDLE' | 'COIL') {
   const contentAreaTopPt = contentArea.top * LULU_CONFIG.POINTS_PER_INCH;
   const contentAreaWidthPt = contentArea.width * LULU_CONFIG.POINTS_PER_INCH;
   const contentAreaHeightPt = contentArea.height * LULU_CONFIG.POINTS_PER_INCH;
-  
+
   // Save current state
   const currentDrawColor = doc.getDrawColor();
   const currentLineWidth = doc.getLineWidth();
-  
+
   // Draw bleed line (outermost - red)
   doc.setDrawColor(255, 0, 0);
   doc.setLineWidth(0.5);
   doc.rect(0, 0, pageWidthPt, pageHeightPt);
-  
+
   // Draw trim line (blue)
   doc.setDrawColor(0, 0, 255);
   doc.rect(
@@ -525,7 +546,7 @@ function drawMarginGuides(doc: jsPDF, bindingType: 'SADDLE' | 'COIL') {
     trimWidthPt,
     trimHeightPt
   );
-  
+
   // Draw safety margin (green)
   doc.setDrawColor(0, 255, 0);
   doc.rect(
@@ -534,7 +555,7 @@ function drawMarginGuides(doc: jsPDF, bindingType: 'SADDLE' | 'COIL') {
     contentRightPt - contentLeftPt,
     contentBottomPt - contentTopPt
   );
-  
+
   // Draw content area with gutter (yellow)
   doc.setDrawColor(255, 255, 0);
   doc.rect(
@@ -543,7 +564,7 @@ function drawMarginGuides(doc: jsPDF, bindingType: 'SADDLE' | 'COIL') {
     contentAreaWidthPt,
     contentAreaHeightPt
   );
-  
+
   // Add labels
   doc.setFontSize(8);
   doc.setTextColor(255, 0, 0);
@@ -554,7 +575,7 @@ function drawMarginGuides(doc: jsPDF, bindingType: 'SADDLE' | 'COIL') {
   doc.text('Safety (0.5")', 0.75 * LULU_CONFIG.POINTS_PER_INCH, 0.75 * LULU_CONFIG.POINTS_PER_INCH);
   doc.setTextColor(255, 255, 0);
   doc.text(`Content (${bindingType === 'COIL' ? 'w/ gutter' : 'no gutter'})`, contentAreaLeftPt + (0.1 * LULU_CONFIG.POINTS_PER_INCH), contentAreaTopPt + (0.15 * LULU_CONFIG.POINTS_PER_INCH));
-  
+
   // Restore state
   doc.setDrawColor(currentDrawColor);
   doc.setLineWidth(currentLineWidth);

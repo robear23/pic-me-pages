@@ -30,10 +30,10 @@ export const VideoHeroSection = () => {
           playsInline
           className="absolute inset-0 w-full h-full object-cover opacity-80"
         >
-          <source src="/videos/Final-4.mp4" type="video/mp4" />
+          <source src="/videos/Magical_effects_drifting_202603200925.mp4" type="video/mp4" />
         </video>
         {/* Subtle overlay for readability */}
-        <div className="absolute inset-0 bg-background/40" />
+        <div className="absolute inset-0 bg-background/20" />
       </div>
 
       {/* Hero Content */}
@@ -42,7 +42,7 @@ export const VideoHeroSection = () => {
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5 }}
-          className="bg-background/70 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8 md:p-12 text-center"
+          className="bg-background/40 backdrop-blur-xl border border-white/20 rounded-3xl shadow-2xl p-8 md:p-12 text-center"
         >
           {/* Logo/Headline Image */}
           {/* Logo */}

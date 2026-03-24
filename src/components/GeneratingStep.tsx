@@ -79,12 +79,10 @@ export const GeneratingStep = () => {
     return () => clearInterval(checkInterval);
   }, [lastProgressUpdate, jobStatus]);
 
-  // Update last progress when job progress changes
+  // Update last progress when job progress changes (use progress >= 0, not truthy, to avoid 0% false stale)
   useEffect(() => {
-    if (progress) {
-      setLastProgressUpdate(Date.now());
-      setShowStaleWarning(false);
-    }
+    setLastProgressUpdate(Date.now());
+    setShowStaleWarning(false);
   }, [progress]);
 
   // Check for existing pending job on mount
@@ -110,7 +108,11 @@ export const GeneratingStep = () => {
         setCanLeave(true);
         if (existingJobs[0].progress) {
           const prog = existingJobs[0].progress as any;
-          setProgress(Math.min((prog.currentPage || 0) / (prog.totalPages || 1) * 100, 95));
+          const effectiveTotalPages = (prog.totalPages || 0) > 0 ? prog.totalPages : (selectedPageCount || 12);
+          const progressPercent = effectiveTotalPages > 0
+            ? Math.round(((prog.currentPage || 0) / effectiveTotalPages) * 90) + 5
+            : 5;
+          setProgress(Math.min(progressPercent, 95));
           setCurrentStep(prog.currentStep || 'Processing...');
         }
         return;
@@ -342,6 +344,15 @@ export const GeneratingStep = () => {
       }
         
         if (!jobToUse) {
+          // Ensure session is fresh before INSERT (expired JWT → auth.uid() = NULL → RLS fail)
+          const { data: { session: currentSession } } = await supabase.auth.getSession();
+          const tokenExpiresAt = (currentSession as any)?.expires_at;
+          const tokenExpired = tokenExpiresAt && (tokenExpiresAt * 1000) < Date.now() + 10_000;
+          if (!currentSession || tokenExpired) {
+            console.log('Session missing or expired, refreshing before job creation...');
+            await supabase.auth.refreshSession();
+          }
+
           // Create new job only if none exists
           const { data: job, error: jobError } = await supabase
             .from('book_generation_jobs')
@@ -369,9 +380,12 @@ export const GeneratingStep = () => {
 
           if (jobError) {
             console.error('Failed to create job:', jobError);
+            const isRlsError = jobError.message?.includes('row-level security') || jobError.code === '42501';
             toast({
               title: 'Failed to Start Generation',
-              description: jobError.message,
+              description: isRlsError
+                ? 'Your session expired. Please refresh the page and try again.'
+                : jobError.message,
               variant: 'destructive',
             });
             return;
@@ -515,27 +529,55 @@ export const GeneratingStep = () => {
   }, [jobId, jobStatus, toast]); // FIX 1: Added jobStatus to dependencies
   
   // FIX 2: Add periodic polling as fallback to Realtime
+  // This handles cases where Realtime is broken/slow - polls all status changes, not just failures
   useEffect(() => {
     if (!jobId || jobStatus === 'completed' || jobStatus === 'failed' || jobStatus === 'partial') return;
-    
+
     const checkJobStatus = async () => {
       const { data: job } = await supabase
         .from('book_generation_jobs')
-        .select('status, error_message')
+        .select('status, error_message, progress')
         .eq('id', jobId)
         .single();
-      
-      if (job?.status === 'failed') {
+
+      if (!job) return;
+
+      if (job.status === 'failed') {
         console.log('📍 Polling detected failed job that Realtime missed');
         setJobStatus('failed');
         setErrorMessage(job.error_message || 'Generation failed');
+      } else if (job.status === 'processing' || job.status === 'completed' || job.status === 'partial') {
+        // Update status if Realtime missed it
+        if (jobStatus !== job.status) {
+          console.log('📍 Polling detected status change that Realtime missed:', job.status);
+          setJobStatus(job.status as any);
+        }
+        // Always sync progress from DB as fallback
+        if (job.progress) {
+          const { currentStep: step, currentPage, totalPages } = job.progress as any;
+          const effectiveTotalPages = totalPages > 0 ? totalPages : (selectedPageCount || 12);
+          const progressPercent = effectiveTotalPages > 0
+            ? Math.round((currentPage / effectiveTotalPages) * 90) + 5
+            : 5;
+          const cappedProgress = job.status === 'completed' || job.status === 'partial'
+            ? 100
+            : Math.min(progressPercent, 95);
+          setProgress(prev => Math.max(prev, cappedProgress)); // Never go backwards
+          setCurrentStep(prev => step || prev);
+          if (cappedProgress > 0) {
+            setLastProgressUpdate(Date.now());
+            setShowStaleWarning(false);
+          }
+        }
       }
     };
-    
-    // Poll every 30 seconds as fallback
-    const interval = setInterval(checkJobStatus, 30000);
+
+    // Poll every 15 seconds as fallback (faster than before)
+    const interval = setInterval(checkJobStatus, 15000);
+    // Also check immediately on mount/jobId change
+    checkJobStatus();
     return () => clearInterval(interval);
-  }, [jobId, jobStatus]);
+  }, [jobId, jobStatus, selectedPageCount]);
 
   // Stall detection (FIX #1: Enable for pending AND processing)
   useEffect(() => {
@@ -550,11 +592,18 @@ export const GeneratingStep = () => {
         .single();
       
       if (!job) return;
-      
+
+      // If DB shows the job failed, surface it immediately — never reset failed jobs
+      if (job.status === 'failed') {
+        console.log('🔴 Stall check: DB shows job failed — surfacing to UI');
+        setJobStatus('failed');
+        return;
+      }
+
       const progress = job.progress as any;
-      const isPausedForMemory = progress?.currentStep === 'paused_for_memory' || 
+      const isPausedForMemory = progress?.currentStep === 'paused_for_memory' ||
                                progress?.currentStep === 'pausing_for_memory_cleanup';
-      
+
       // ✅ FIX 3: For paused jobs, trigger after 2 minutes of no activity
       // For running jobs, use the standard 5-minute total time check
       if (isPausedForMemory) {
@@ -564,13 +613,13 @@ export const GeneratingStep = () => {
           console.log('⚠️ Paused job inactive for 2+ minutes, triggering processor...');
           await supabase.functions.invoke('process-book-generation');
         }
-      } else if (job.started_at) {
-        // Running job: use normal stall detection
-        const staleTime = job.last_heartbeat 
+      } else if (job.status === 'processing' && job.started_at) {
+        // Only reset PROCESSING jobs with a stale heartbeat — never reset failed ones
+        const staleTime = job.last_heartbeat
           ? Date.now() - new Date(job.last_heartbeat).getTime()
           : Infinity;
         const totalTime = Date.now() - new Date(job.started_at).getTime();
-        
+
         if (staleTime > 3 * 60 * 1000 && totalTime > 5 * 60 * 1000) {
           console.warn('⚠️ Job stalled (no heartbeat for 3+ mins, running 5+ mins), resetting...');
           await supabase
@@ -579,11 +628,12 @@ export const GeneratingStep = () => {
               status: 'pending',
               started_at: null,
               last_heartbeat: null,
+              attempts: 0,
               error_message: 'Job stalled. Retrying...',
               updated_at: new Date().toISOString()
             })
             .eq('id', jobId);
-          
+
           await supabase.functions.invoke('process-book-generation');
         }
       }

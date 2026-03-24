@@ -32,13 +32,13 @@ async function urlToBase64(url: string): Promise<string> {
 // Helper to extract and validate base64 from various formats
 async function extractBase64FromUrl(photoUrl: string): Promise<{ base64: string; mimeType: string }> {
   console.log(`🔍 Processing photo URL (type: ${photoUrl.startsWith('http') ? 'HTTP' : photoUrl.startsWith('data:') ? 'data URL' : 'raw base64'}, length: ${photoUrl.length})`);
-  
+
   // Case 1: HTTP/HTTPS URL from Supabase storage
   if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
     const base64 = await urlToBase64(photoUrl);
     return { base64, mimeType: 'image/jpeg' }; // Assume JPEG for HTTP URLs
   }
-  
+
   // Case 2: Data URL (data:image/png;base64,...)
   if (photoUrl.startsWith('data:')) {
     const match = photoUrl.match(/^data:(image\/\w+);base64,(.+)$/);
@@ -48,14 +48,14 @@ async function extractBase64FromUrl(photoUrl: string): Promise<{ base64: string;
     }
     throw new Error('Invalid data URL format');
   }
-  
+
   // Case 3: Raw base64 string
   // Validate it looks like base64 (alphanumeric + / + = only)
   if (/^[A-Za-z0-9+/]+=*$/.test(photoUrl)) {
     console.log(`✅ Using raw base64 string (length: ${photoUrl.length})`);
     return { base64: photoUrl, mimeType: 'image/jpeg' };
   }
-  
+
   throw new Error('Unrecognized photo URL format');
 }
 
@@ -64,9 +64,9 @@ async function extractBase64FromUrl(photoUrl: string): Promise<{ base64: string;
 async function extractCharacterDescription(photoBase64: string, mimeType: string, GOOGLE_API_KEY: string): Promise<string> {
   try {
     console.log(`🔍 Extracting character description from photo...`);
-    
+
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent`,
       {
         method: 'POST',
         headers: {
@@ -110,23 +110,23 @@ Write ONLY the description, nothing else.`
         })
       }
     );
-    
+
     if (!response.ok) {
       console.warn(`⚠️ Character description extraction failed: ${response.status}`);
       return 'a friendly person with pleasant features';
     }
-    
+
     const data = await response.json();
     const description = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    
+
     if (!description) {
       console.warn(`⚠️ No description text in response`);
       return 'a friendly person with pleasant features';
     }
-    
+
     console.log(`✅ Extracted character description: "${description.substring(0, 100)}..."`);
     return description;
-    
+
   } catch (error) {
     console.error(`❌ Character description extraction error:`, error);
     return 'a friendly person with pleasant features';
@@ -205,7 +205,7 @@ const getLineArtSystemMessage = (complexity?: string): string => {
     detailed: 'FINE 1-2px outlines - Thin, intricate lines for ages 7+ and adults'
   };
   const selectedOutline = outlineGuidance[complexity as keyof typeof outlineGuidance] || outlineGuidance.medium;
-  
+
   return `CRITICAL: Convert the INPUT IMAGE ONLY to pure black and white line art. Do NOT regenerate the scene.
 
 CRITICAL COLOR RULES - ABSOLUTE REQUIREMENT:
@@ -250,104 +250,104 @@ CRITICAL RULES:
 OUTPUT: Clean black and white line drawing with NO gray tones, NO colors, and NO photographic shadows.`;
 };
 
-// PHASE 5: Safety filter word blacklist + PHASE 2: Cartoon trigger words
+// PHASE 5: Safety filter word blacklist - Nano Banana 2 handles context much better
+// Only block words that truly cause model refusals in coloring book context
 const SAFETY_FILTER_WORDS = [
-  'magical', 'mystical', 'enchanted', 'admiring', 'gazing', 'wonder',
-  'dramatic', 'artistic', 'creative', 'drawing', 'playful', 'teasing',
-  'mysterious', 'ethereal', 'dreamy', 'fantastical', 'whimsical'
+  'teasing', 'provocative', 'suggestive'
 ];
 
 // PHASE 2: Cartoon trigger words that cause illustrated/stylized outputs
+// Nano Banana 2 has better instruction following - only block explicit style triggers
 const CARTOON_TRIGGER_WORDS = [
   'cartoon', 'animated', 'illustration', 'sketch', 'stylized',
-  'cute', 'adorable', 'charming', 'lovely', 'sweet',
-  'artistic', 'fantasy', 'imaginary', 'storybook', 'fairytale'
+  'storybook', 'fairytale', 'clipart'
 ];
 
-// SAFE PROMPT GUIDE: Risky activities that commonly trigger MODEL_REFUSED (Rule 7)
-// NOTE: Safe sports like cricket, soccer, football are NOT included - they should work fine
+// SAFE PROMPT GUIDE: Words that truly trigger MODEL_REFUSED - Nano Banana 2 is less restrictive
+// REMOVED from this list (Nano Banana 2 handles with safety context):
+//   Sports: rock climbing, skiing, snowboarding, skateboarding, horse riding, martial arts,
+//           archery, boxing, wakeboarding, acrobatics, tumbling, rollerblading, diving, parkour
+// KEPT: Violence, weapons, and IP that will always trigger refusals
 const RISKY_ACTIVITY_WORDS = [
-  'rock climbing', 'cliff', 'mountain climbing',
-  'diving', 'underwater',
-  'skiing', 'snowboarding',
-  'skateboarding', 'rollerblading',
-  'tackling',
-  'martial arts', 'karate', 'boxing', 'fighting',
-  'acrobatics', 'tumbling',
-  'horse riding', 'horseback',
-  'archery', 'bow', 'arrow',
-  'wakeboarding', 'water skiing',
-  'bungee', 'parkour',
-  // IP/Violence related only
+  // IP/Trademark - always replace
   'star wars', 'lightsaber', 'jedi', 'sith', 'darth',
-  'water witness', 'international', 'charity', 'organization',
+  'water witness', 'water witness international',
+  // Violence/Weapons - always replace
   'gun', 'guns', 'shooting', 'weapon', 'weapons', 'hunting',
-  'sword', 'swords', 'fight', 'battle', 'war'
+  'sword', 'swords', 'fight', 'fighting', 'battle', 'war'
 ];
 
 // SAFE PROMPT GUIDE: 4-Level Safe replacement activities (Rule 7)
-// ONLY for truly problematic terms - safe sports are NOT replaced
+// Used in retry attempts when initial prompt triggers refusal
+// Sports now get safety-context additions rather than full replacement
 const SAFE_ACTIVITY_REPLACEMENTS: Record<string, string> = {
-  // Physical activities that commonly trigger safety filters
-  'rock climbing': 'climbing on an indoor climbing wall with safety equipment and colorful holds',
-  'cliff': 'standing on a hilltop with flowers',
-  'diving': 'looking at colorful fish in an aquarium',
-  'skiing': 'playing in soft fluffy snow',
-  'snowboarding': 'building a cheerful snowman',
-  'skateboarding': 'riding a skateboard with a helmet at a beginner-friendly skate park',
-  'rollerblading': 'rollerblading with knee pads on a smooth pathway',
-  'tackling': 'playing tag in a meadow',
+  // Physical activities - add safety context rather than replace (for retry fallbacks)
+  'rock climbing': 'rock climbing with a safety harness and helmet on a colorful indoor climbing wall',
+  'cliff': 'standing on a scenic hilltop surrounded by flowers and trees',
+  'diving': 'snorkeling with a mask looking at colorful fish in clear water',
+  'skiing': 'skiing down a gentle snowy slope with a helmet and colorful ski jacket',
+  'snowboarding': 'snowboarding on a gentle snowy hill with a helmet and colorful gear',
+  'skateboarding': 'skateboarding with a helmet and knee pads at a beginner-friendly skate park',
+  'rollerblading': 'rollerblading with a helmet and knee pads on a smooth park pathway',
+  'tackling': 'playing friendly touch football in a meadow',
   'martial arts': 'doing fun stretches and poses',
   'karate': 'doing stretching exercises in a park',
   'boxing': 'practicing exercise moves',
-  'fighting': 'practicing dance moves',
-  'acrobatics': 'doing a ballet pose',
-  'tumbling': 'rolling on soft grass',
-  'horse riding': 'gently petting a friendly pony',
-  'horseback': 'standing next to a gentle horse',
-  'archery': 'playing with toys outdoors',
-  'bow': 'playing in a field',
-  'arrow': 'pointing at butterflies',
-  'wakeboarding': 'splashing in shallow water',
-  'water skiing': 'playing at the beach',
-  'underwater': 'looking at fish in an aquarium',
-  'bungee': 'playing on a swing',
-  'parkour': 'walking through the neighborhood',
+  'fighting': 'practicing friendly martial arts moves at a gym',
+  'acrobatics': 'doing gymnastics poses on a mat with a coach',
+  'tumbling': 'doing gymnastics rolls on a soft gym mat',
+  'horse riding': 'horseback riding with a helmet on a gentle horse along a trail',
+  'horseback': 'riding a gentle horse with a helmet along a scenic path',
+  'archery': 'doing target archery at an archery range with safety equipment',
+  'bow': 'playing with a toy bow and arrow set outdoors',
+  'arrow': 'aiming at a colorful archery target in a safe range',
+  'wakeboarding': 'wakeboarding with a life jacket on a calm lake',
+  'water skiing': 'water skiing with a life jacket on a sunny lake',
+  'underwater': 'snorkeling with a mask looking at colorful fish in clear water',
+  'bungee': 'jumping on a colorful trampoline with safety netting',
+  'parkour': 'climbing on a colorful playground obstacle course',
   // IP/Violence - these MUST be replaced
-  'star wars': 'reading an adventure book in a cozy library',
-  'lightsaber': 'playing with glowing toys',
-  'jedi': 'reading a space adventure book',
-  'sith': 'exploring a colorful garden',
-  'darth': 'playing dress-up with costumes',
-  'water witness': 'exploring nature near a stream',
-  'water witness international': 'helping with gardening in a community garden',
-  'international': 'exploring a colorful world map',
-  'charity': 'helping in a community garden',
-  'organization': 'participating in a fun group activity',
-  'gun': 'playing with water balloons',
-  'guns': 'playing with water balloons',
-  'shooting': 'playing carnival ring toss games',
-  'weapon': 'playing with colorful toys',
-  'weapons': 'playing with colorful toys',
-  'hunting': 'going on a treasure hunt with a map',
-  'sword': 'having a pretend fight with pool noodles',
-  'swords': 'playing with pool noodles in the backyard',
-  'fight': 'having a pillow fight at a sleepover',
-  'battle': 'playing an exciting board game',
-  'war': 'playing a strategy board game'
+  'star wars': 'reading an adventure book about space exploration in a cozy library',
+  'lightsaber': 'playing with glowing light-up toys at night',
+  'jedi': 'reading a space adventure book with rockets and planets',
+  'sith': 'exploring a colorful dark forest with glowing mushrooms',
+  'darth': 'playing dress-up with a dramatic costume and cape',
+  'water witness': 'exploring nature near a babbling stream with wildflowers',
+  'water witness international': 'helping plant flowers in a community garden',
+  'gun': 'playing with water balloons in the garden on a sunny day',
+  'guns': 'playing with water balloons in the garden on a sunny day',
+  'shooting': 'playing carnival ring toss games at a fair',
+  'weapon': 'playing with colorful foam toys in the backyard',
+  'weapons': 'playing with colorful foam toys in the backyard',
+  'hunting': 'going on a nature treasure hunt with a map and magnifying glass',
+  'sword': 'having a friendly duel with foam pool noodles',
+  'swords': 'playing with foam pool noodles in the backyard',
+  'fight': 'having a fun pillow fight at a sleepover party',
+  'battle': 'playing an exciting board game with friends around a table',
+  'war': 'playing a fun strategy board game with colorful pieces'
 };
 
-// Combined filter list - CRITICAL FIX: Include RISKY_ACTIVITY_WORDS
-const ALL_FILTER_WORDS = [...SAFETY_FILTER_WORDS, ...CARTOON_TRIGGER_WORDS, ...RISKY_ACTIVITY_WORDS];
-
-// PHASE 5: Pre-filter prompts to remove problematic words
-// PHASE 2: Enhanced to include cartoon trigger words
+// PHASE 5: Pre-filter prompts - replace risky words with safe alternatives, remove style triggers
+// Nano Banana 2: Only remove true style triggers (cartoon/sketch words) and replace violent/IP terms
 function preFilterPrompt(prompt: string): string {
   let filtered = prompt;
-  for (const word of ALL_FILTER_WORDS) {
+
+  // First: Replace risky activity words with safe alternatives (preserves meaning)
+  for (const [risky, safe] of Object.entries(SAFE_ACTIVITY_REPLACEMENTS)) {
+    const regex = new RegExp(`\\b${risky.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+    if (regex.test(filtered)) {
+      filtered = filtered.replace(regex, safe);
+      console.log(`🔄 preFilter: Replaced "${risky}" with safe alternative`);
+    }
+  }
+
+  // Then: Remove pure style/cartoon trigger words that cause wrong output format
+  const styleWords = [...SAFETY_FILTER_WORDS, ...CARTOON_TRIGGER_WORDS];
+  for (const word of styleWords) {
     const regex = new RegExp(`\\b${word}\\b`, 'gi');
     filtered = filtered.replace(regex, '');
   }
+
   // Clean up extra spaces
   return filtered.replace(/\s+/g, ' ').trim();
 }
@@ -355,7 +355,7 @@ function preFilterPrompt(prompt: string): string {
 // PHASE 7: Replace risky activities with safe alternatives
 function sanitizePromptForSafety(prompt: string): string {
   let safePrompt = prompt;
-  
+
   // Replace specific risky activities with safe alternatives
   for (const [risky, safe] of Object.entries(SAFE_ACTIVITY_REPLACEMENTS)) {
     const regex = new RegExp(`\\b${risky}\\b`, 'gi');
@@ -364,7 +364,7 @@ function sanitizePromptForSafety(prompt: string): string {
       console.log(`🔄 Safety: Replaced "${risky}" with "${safe}"`);
     }
   }
-  
+
   // Remove remaining risky words that don't have specific replacements
   for (const word of RISKY_ACTIVITY_WORDS) {
     if (!SAFE_ACTIVITY_REPLACEMENTS[word]) {
@@ -372,7 +372,7 @@ function sanitizePromptForSafety(prompt: string): string {
       safePrompt = safePrompt.replace(regex, '');
     }
   }
-  
+
   return safePrompt.replace(/\s+/g, ' ').trim();
 }
 
@@ -384,22 +384,22 @@ function sanitizePromptForSafety(prompt: string): string {
 function simplifyPromptForRetry(originalPrompt: string, attemptNumber: number): string {
   const nameMatch = originalPrompt.match(/^([A-Z][a-z]+)/);
   const characterName = nameMatch ? nameMatch[1] : '';
-  
+
   // Remove any age/identity words first
-  const AGE_WORDS = ['child', 'children', 'kid', 'kids', 'young', 'little', 'small', 
-                     'boy', 'girl', 'toddler', 'teenager', 'baby', 'year-old', 'years old'];
+  const AGE_WORDS = ['child', 'children', 'kid', 'kids', 'young', 'little', 'small',
+    'boy', 'girl', 'toddler', 'teenager', 'baby', 'year-old', 'years old'];
   let cleanedPrompt = originalPrompt;
   for (const word of AGE_WORDS) {
     const regex = new RegExp(`\\b${word}\\b`, 'gi');
     cleanedPrompt = cleanedPrompt.replace(regex, '');
   }
   cleanedPrompt = cleanedPrompt.replace(/\s+/g, ' ').trim();
-  
+
   if (attemptNumber === 1) {
     // Level 1: Add safety context to the prompt
     console.log(`🔒 Attempt ${attemptNumber}: Adding safety context...`);
     let safePrompt = cleanedPrompt;
-    
+
     // Add safety context for physical activities
     for (const [risky, safe] of Object.entries(SAFE_ACTIVITY_REPLACEMENTS)) {
       const regex = new RegExp(`\\b${risky}\\b`, 'gi');
@@ -408,20 +408,20 @@ function simplifyPromptForRetry(originalPrompt: string, attemptNumber: number): 
         console.log(`✓ Replaced "${risky}" with "${safe}"`);
       }
     }
-    
+
     // Also remove safety filter words
     for (const word of SAFETY_FILTER_WORDS) {
       const regex = new RegExp(`\\b${word}\\b`, 'gi');
       safePrompt = safePrompt.replace(regex, '');
     }
-    
+
     return safePrompt.replace(/\s+/g, ' ').trim() + ` ${EDUCATIONAL_CONTEXT}`;
   }
-  
+
   if (attemptNumber === 2) {
     // Level 2: Reframe with educational/learning context
     console.log(`🔒 Attempt ${attemptNumber}: Reframing with learning context...`);
-    
+
     // Find any activity mentioned and reframe it
     let activity = 'having fun';
     for (const risky of RISKY_ACTIVITY_WORDS) {
@@ -433,10 +433,10 @@ function simplifyPromptForRetry(originalPrompt: string, attemptNumber: number): 
         }
       }
     }
-    
+
     return `Learning and practicing ${activity} in a safe, supervised environment. Bright, cheerful setting with colorful surroundings. ${EDUCATIONAL_CONTEXT}`;
   }
-  
+
   if (attemptNumber === 3) {
     // Level 3: Use completely safe alternative activity
     console.log(`🔒 Attempt ${attemptNumber}: Using safe alternative activity...`);
@@ -450,23 +450,23 @@ function simplifyPromptForRetry(originalPrompt: string, attemptNumber: number): 
     const randomSafe = safeActivities[Math.floor(Math.random() * safeActivities.length)];
     return `${randomSafe}. Bright sunlight, cheerful atmosphere. ${EDUCATIONAL_CONTEXT}`;
   }
-  
+
   // Level 4: Ultimate fallback - absolute minimal safe prompt
   console.log(`⚠️ Attempt ${attemptNumber}: Using ultimate fallback prompt`);
   return `Smiling happily in a bright, cheerful garden with colorful flowers and butterflies. Studio lighting. Safe, wholesome, educational scene.`;
 }
 
-// Use Google's Gemini API directly - cheapest model with image generation
+// Use Google's Gemini API directly - Nano Banana 2 (latest, faster, better quality)
 const getModelForComplexity = (complexity?: string): string => {
-  console.log(`Using gemini-2.5-flash-image via Google API (requested: ${complexity || 'default'})`);
-  return 'gemini-2.5-flash-image'; // Remove "google/" prefix for direct API
+  console.log(`Using gemini-3.1-flash-image-preview (Nano Banana 2) via Google API (requested: ${complexity || 'default'})`);
+  return 'gemini-3.1-flash-image-preview';
 };
 
 // PHASE 4: Enhanced validation with brightness boost capability
 // PHASE 2: Added gradient detection and line quality measurement
 // PHASE 6: Added color detection - reject images with actual colors (not grayscale)
-async function validateLineArt(base64Image: string, pageIndex?: number, totalPages?: number): Promise<{ 
-  valid: boolean; 
+async function validateLineArt(base64Image: string, pageIndex?: number, totalPages?: number): Promise<{
+  valid: boolean;
   grayPixelPercentage: number;
   hasPhotographicElements: boolean;
   hasGradients: boolean;
@@ -483,13 +483,13 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
     // Decode and validate image dimensions
     const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
     const image = await Image.decode(buffer);
-    
+
     // Safety check for valid dimensions
     if (image.width < 10 || image.height < 10) {
       console.error('Image dimensions too small:', image.width, 'x', image.height);
       return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0, hasColor: false, colorPercentage: 0 };
     }
-    
+
     let totalPixels = 0;
     let grayPixels = 0;
     let nearGrayPixels = 0;
@@ -497,7 +497,7 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
     let edgePixels = 0; // PHASE 2: Count crisp black/white edges (good line art)
     let coloredPixels = 0; // PHASE 6: Count pixels with actual color (RGB variance)
     const threshold = 30;
-    
+
     // Sample every 100th pixel for faster validation (optimized for performance)
     const step = 100;
     // Start at 1 to avoid ImageScript boundary issues (1-indexed coordinates)
@@ -506,34 +506,34 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
         try {
           totalPixels++;
           const color = image.getPixelAt(x, y);
-        
+
           const r = (color >> 24) & 0xFF;
           const g = (color >> 16) & 0xFF;
           const b = (color >> 8) & 0xFF;
           const avg = (r + g + b) / 3;
-          
+
           // PHASE 6: Color detection - check if RGB channels differ significantly
           // For grayscale images, R ≈ G ≈ B. For colored images, they differ.
           const rg_diff = Math.abs(r - g);
           const rb_diff = Math.abs(r - b);
           const gb_diff = Math.abs(g - b);
           const maxColorDiff = Math.max(rg_diff, rb_diff, gb_diff);
-          
+
           // If RGB channels differ by more than 25, it's colored (not grayscale)
           if (maxColorDiff > 25) {
             coloredPixels++;
           }
-          
+
           const isBlack = r <= threshold && g <= threshold && b <= threshold;
           const isWhite = r >= (255 - threshold) && g >= (255 - threshold) && b >= (255 - threshold);
-          
+
           if (!isBlack && !isWhite) {
             grayPixels++;
             if (avg > 60 && avg < 195) {
               nearGrayPixels++;
             }
           }
-          
+
           // PHASE 2: Detect gradients (smooth transitions indicate remaining photographic elements)
           if (x < image.width - step && y < image.height - step) {
             const neighborColor = image.getPixelAt(x + step, y + step);
@@ -541,13 +541,13 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
             const nG = (neighborColor >> 16) & 0xFF;
             const nB = (neighborColor >> 8) & 0xFF;
             const nAvg = (nR + nG + nB) / 3;
-            
+
             // Gradient: smooth color transition (10-80 intensity difference)
             const diff = Math.abs(avg - nAvg);
             if (diff > 10 && diff < 80 && !isBlack && !isWhite) {
               gradientPixels++;
             }
-            
+
             // PHASE 2: Detect crisp edges (sharp black/white transitions = good line art)
             if ((isBlack && nAvg > 200) || (isWhite && nAvg < 55)) {
               edgePixels++;
@@ -559,65 +559,65 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
         }
       }
     }
-    
+
     if (totalPixels === 0) {
       return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0, hasColor: false, colorPercentage: 0 };
     }
-    
+
     const grayPercentage = (grayPixels / totalPixels) * 100;
     const nearGrayPercentage = (nearGrayPixels / totalPixels) * 100;
     const blackPercentage = ((totalPixels - grayPixels) / totalPixels) * 100;
-    
+
     // PHASE 2: Calculate gradient and line quality metrics
     const gradientPercentage = (gradientPixels / totalPixels) * 100;
     const edgePercentage = (edgePixels / totalPixels) * 100;
     const lineQuality = edgePercentage / Math.max(gradientPercentage, 1); // Higher = better line art
-    
+
     // PHASE 6: Calculate color percentage
     const colorPercentage = (coloredPixels / totalPixels) * 100;
     const COLOR_THRESHOLD = 5; // Max 5% colored pixels allowed
     const hasColor = colorPercentage > COLOR_THRESHOLD;
-    
+
     // PHASE 6: CRITICAL - Reject images with actual colors (not grayscale)
     if (hasColor) {
       console.error(`CRITICAL: Image has ${colorPercentage.toFixed(1)}% colored pixels (threshold: ${COLOR_THRESHOLD}%) - not grayscale line art!`);
-      return { 
-        valid: false, 
-        grayPixelPercentage: grayPercentage, 
-        hasPhotographicElements: true, 
-        hasGradients: true, 
+      return {
+        valid: false,
+        grayPixelPercentage: grayPercentage,
+        hasPhotographicElements: true,
+        hasGradients: true,
         lineQuality: 0,
         hasColor: true,
         colorPercentage: colorPercentage
       };
     }
-    
+
     // CRITICAL: Check for complete conversion failure
     if (grayPercentage > 50) {
       console.error(`CRITICAL: Image is ${grayPercentage.toFixed(1)}% gray - still a photo!`);
       return { valid: false, grayPixelPercentage: grayPercentage, hasPhotographicElements: true, hasGradients: true, lineQuality: 0, hasColor: false, colorPercentage: colorPercentage };
     }
-    
+
     // PHASE 2: Relaxed thresholds for better success rate
     const GRAY_THRESHOLD = 45; // Increased from 35% - allow more compression artifacts
     const MID_GRAY_THRESHOLD = 25; // Increased from 20% - allow more anti-aliasing
     const GRADIENT_THRESHOLD = 15; // PHASE 2: Max 15% gradients allowed
     const MIN_LINE_QUALITY = 0.6; // PHASE 2: Minimum line quality score
-    
+
     const hasExcessiveGray = grayPercentage > GRAY_THRESHOLD;
     const hasExcessiveMidTones = nearGrayPercentage > MID_GRAY_THRESHOLD;
     const hasGradients = gradientPercentage > GRADIENT_THRESHOLD; // PHASE 2: Gradient check
     const hasGoodLines = lineQuality >= MIN_LINE_QUALITY; // PHASE 2: Line quality check
-    
+
     // PHASE 2: Enhanced photo-like detection including gradients
     const hasPhotographicElements = nearGrayPercentage > MID_GRAY_THRESHOLD || hasGradients;
     const isPhotoLike = hasPhotographicElements && grayPercentage > 50;
-    
+
     // PHASE 2: Validation bypass for borderline cases (35-45% gray with good black/white ratio AND good lines)
     const isBorderline = grayPercentage >= 35 && grayPercentage <= GRAY_THRESHOLD && blackPercentage > 50;
     const isValid = !hasExcessiveGray && !hasExcessiveMidTones && !isPhotoLike && !hasGradients && hasGoodLines;
     const acceptBorderline = isBorderline && !isPhotoLike && hasGoodLines;
-    
+
     // PHASE 1: Enhanced logging with detailed pixel analysis
     // PHASE 2: Added gradient and line quality metrics
     // PHASE 6: Added color detection metrics
@@ -632,11 +632,11 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
   - Photo-like: ${isPhotoLike ? 'Yes (>50% gray)' : 'No'}
   - Borderline: ${isBorderline ? 'Yes (accepting)' : 'No'}
   - Result: ${isValid || acceptBorderline ? '✓ PASS' : '✗ FAIL'}`);
-    
+
     // PHASE 4: Accept borderline images with warning
     if (acceptBorderline && !isValid) {
       console.warn(`⚠️ Accepting borderline line art (${grayPercentage.toFixed(1)}% gray) - black/white ratio and lines are good`);
-      return { 
+      return {
         valid: true, // Accept it
         grayPixelPercentage: grayPercentage,
         hasPhotographicElements: false, // Override since we're accepting
@@ -646,9 +646,9 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
         colorPercentage: colorPercentage
       };
     }
-    
-    return { 
-      valid: isValid, 
+
+    return {
+      valid: isValid,
       grayPixelPercentage: grayPercentage,
       hasPhotographicElements: hasPhotographicElements,
       hasGradients: hasGradients,
@@ -656,7 +656,7 @@ async function validateLineArt(base64Image: string, pageIndex?: number, totalPag
       hasColor: false,
       colorPercentage: colorPercentage
     };
-    
+
   } catch (error) {
     console.error('Line art validation error:', error);
     return { valid: false, grayPixelPercentage: 100, hasPhotographicElements: true, hasGradients: true, lineQuality: 0, hasColor: false, colorPercentage: 0 };
@@ -676,83 +676,83 @@ async function validateRealisticImage(base64Image: string): Promise<{
     const base64Data = base64Image.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
     const image = await Image.decode(buffer);
-    
+
     // Safety check for valid dimensions
     if (image.width < 10 || image.height < 10) {
       console.error('Image dimensions too small:', image.width, 'x', image.height);
       return { valid: false, isCartoonLike: true, colorVariance: 0, hasUniformColors: true, edgeSharpness: 1.0 };
     }
-    
+
     let totalSamples = 0;
     let colorDifferences = 0;
     let uniformColorRegions = 0; // PHASE 2: Count flat color areas (cartoon indicator)
     let sharpEdges = 0; // PHASE 2: Count sharp color boundaries (cartoon indicator)
-    
+
     // Sample every 60th pixel for faster validation
     const step = 60;
     for (let y = step; y < image.height - step; y += step) {
       for (let x = step; x < image.width - step; x += step) {
         // Ensure we're within bounds
         if (x >= image.width - 1 || y >= image.height - 1) continue;
-        
+
         totalSamples++;
-        
+
         // Get current pixel and neighbor
         const color1 = image.getPixelAt(x, y);
         const color2 = image.getPixelAt(x + 1, y + 1);
-        
+
         const r1 = (color1 >> 24) & 0xFF;
         const g1 = (color1 >> 16) & 0xFF;
         const b1 = (color1 >> 8) & 0xFF;
-        
+
         const r2 = (color2 >> 24) & 0xFF;
         const g2 = (color2 >> 16) & 0xFF;
         const b2 = (color2 >> 8) & 0xFF;
-        
+
         // Calculate color difference between neighbors
         const diff = Math.abs(r1 - r2) + Math.abs(g1 - g2) + Math.abs(b1 - b2);
-        
+
         // Photorealistic images have more subtle color variations
         // Cartoons have sharp color boundaries
         if (diff > 10 && diff < 100) {
           colorDifferences++;
         }
-        
+
         // PHASE 2: Detect uniform flat colors (cartoon indicator)
         if (diff < 5) {
           uniformColorRegions++;
         }
-        
+
         // PHASE 2: Detect sharp color boundaries (cartoon indicator)
         if (diff > 100) {
           sharpEdges++;
         }
       }
     }
-    
+
     if (totalSamples === 0) {
       return { valid: false, isCartoonLike: true, colorVariance: 0, hasUniformColors: true, edgeSharpness: 1.0 };
     }
-    
+
     const variancePercentage = (colorDifferences / totalSamples) * 100;
     const uniformPercentage = (uniformColorRegions / totalSamples) * 100;
     const edgeSharpness = (sharpEdges / totalSamples) * 100;
-    
+
     // PHASE 2: Enhanced cartoon detection with multiple indicators
     const hasUniformColors = uniformPercentage > 40; // >40% flat colors = likely cartoon
     const hasSharpEdges = edgeSharpness > 15; // >15% sharp boundaries = likely cartoon
-    
+
     // PHASE 2: Multi-criteria validation
     const isCartoonLike = variancePercentage < 8 || hasUniformColors || hasSharpEdges;
     const isRealistic = variancePercentage >= 10 && !hasUniformColors && !hasSharpEdges;
-    
+
     console.log(`[VALIDATION DETAIL] Realistic image:
   - Color variance: ${variancePercentage.toFixed(1)}%
   - Uniform colors: ${uniformPercentage.toFixed(1)}% (threshold: 40%)
   - Edge sharpness: ${edgeSharpness.toFixed(1)}% (threshold: 15%)
   - Classification: ${isCartoonLike ? 'Cartoon-like' : isRealistic ? 'Photorealistic' : 'Borderline'}
   - Result: ${isRealistic ? '✓ PASS' : isCartoonLike ? '✗ CARTOON' : '⚠️ BORDERLINE'}`);
-    
+
     return {
       valid: isRealistic,
       isCartoonLike: isCartoonLike,
@@ -760,7 +760,7 @@ async function validateRealisticImage(base64Image: string): Promise<{
       hasUniformColors: hasUniformColors,
       edgeSharpness: edgeSharpness
     };
-    
+
   } catch (error) {
     console.error('Realistic validation error:', error);
     return { valid: false, isCartoonLike: true, colorVariance: 0, hasUniformColors: true, edgeSharpness: 1.0 };
@@ -788,14 +788,14 @@ async function generateRealisticImage(
   const MAX_RETRIES = 5; // 5-level fallback: attempts 1-4 WITH photos, attempt 5 WITHOUT photos as last resort
   const selectedModel = getModelForComplexity(complexity);
   const MODELS = [selectedModel];
-  
+
   // Extract original prompt text for simplification
   const originalTextPart = originalContentParts.find((p: any) => p.type === 'text');
   const originalPromptText = originalTextPart?.text || prompt.prompt || '';
-  
+
   // Extract character photos (non-text parts)
   const characterPhotos = originalContentParts.filter((p: any) => p.type === 'image_url');
-  
+
   // CRITICAL: Character match emphasis for simplified prompts
   const CHARACTER_MATCH_EMPHASIS = `
 CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
@@ -805,22 +805,22 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
 - Think: same person photographed doing a different activity
 - The character's identity is MORE important than the activity
 `;
-  
+
   // Track consecutive IMAGE_OTHER failures for smart early-skip
   let consecutiveImageOtherFailures = 0;
-  
+
   // Use the cached description passed from job level, or extract on first need
   let localCharacterDescription: string | null = cachedCharacterDescription || null;
-  
+
   // Log whether we have a cached description
   console.log(`📸 Page ${pageIndex + 1}: Character description ${localCharacterDescription ? 'AVAILABLE' : 'NOT available'} (${localCharacterDescription ? localCharacterDescription.substring(0, 60) + '...' : 'will extract if needed'})`);
-  
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     for (const model of MODELS) {
       try {
         console.log(`Step 1/2 - Generating realistic image ${pageIndex + 1}/${totalPages} (attempt ${attempt}/${MAX_RETRIES}, model: ${model})`);
-        
-// VARIETY_SAFE_PROMPTS for last resort fallback (attempt 5) - each page gets different scene
+
+        // VARIETY_SAFE_PROMPTS for last resort fallback (attempt 5) - each page gets different scene
         const VARIETY_SAFE_PROMPTS = [
           'Smiling happily in a bright garden with colorful flowers and butterflies',
           'Reading an exciting adventure book in a cozy library with bookshelves',
@@ -835,13 +835,13 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
           'Playing with bubbles in a garden with rainbow colors',
           'Looking at colorful fish in a beautiful aquarium'
         ];
-        
+
         // CRITICAL FIX: Keep photos in ALL attempts except last resort (attempt 5)
         let currentPromptText: string;
         let includePhotos: boolean;
         let photoMatchEmphasis = '';
         let useCharacterDescription = false; // NEW: Flag for two-stage approach
-        
+
         if (attempt === 1) {
           // Attempt 1: Use original prompt with photos
           currentPromptText = originalPromptText;
@@ -864,7 +864,7 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
               localCharacterDescription = 'a friendly person with pleasant features';
             }
           }
-          
+
           // Use text description instead of photos
           if (localCharacterDescription) {
             currentPromptText = `A person with these physical features: ${localCharacterDescription}\n\nScene: ${simplifyPromptForRetry(prompt.prompt, 1)}`;
@@ -904,7 +904,7 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
           // Attempt 5: LAST RESORT - CRITICAL FIX: INCLUDE character description to maintain consistency
           const safePromptIndex = pageIndex % VARIETY_SAFE_PROMPTS.length;
           const safeScene = VARIETY_SAFE_PROMPTS[safePromptIndex];
-          
+
           if (localCharacterDescription) {
             // INCLUDE character features even in last resort to maintain character consistency
             currentPromptText = `A person with these physical features: ${localCharacterDescription}\n\nScene: ${safeScene}. Sunny day with cheerful atmosphere.`;
@@ -915,26 +915,26 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
           }
           includePhotos = false;
         }
-        
+
         // Build content parts based on current attempt
         const currentContentParts: any[] = [];
-        
+
         // Add photos ONLY if includePhotos is true
         if (includePhotos && characterPhotos.length > 0) {
           currentContentParts.push(...characterPhotos);
         }
-        
+
         // Add the prompt text (with system message)
         const complexityNote = complexity ? `\n\nCOMPLEXITY LEVEL: ${complexity.toUpperCase()}` : '';
         const photoContext = includePhotos && characterPhotos.length > 0
           ? '\n\nMatch the person in the reference photo exactly. '
           : '\n\nGenerate a friendly, cheerful scene with a generic happy person. ';
-        
+
         currentContentParts.push({
           type: 'text',
           text: REALISTIC_SYSTEM_MESSAGE + photoMatchEmphasis + complexityNote + photoContext + currentPromptText
         });
-        
+
         // Transform content parts to Google's native format
         const parts = await Promise.all(currentContentParts.map(async (part: any) => {
           if (part.type === 'text') {
@@ -961,36 +961,52 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
           }
           return part;
         }));
-        
+
         // Filter out null parts (failed photo processing)
         const validParts = parts.filter(p => p !== null);
-        
+
         console.log(`📤 Sending request with ${validParts.length} parts (${validParts.filter((p: any) => p.inlineData).length} images, ${validParts.filter((p: any) => p.text).length} text)`);
 
-        const imageResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-          {
-            method: 'POST',
-            headers: {
-              'x-goog-api-key': GOOGLE_API_KEY,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              contents: [{
-                parts: validParts
-              }],
-              generationConfig: {
-                responseModalities: ['IMAGE']
+        const step1Controller = new AbortController();
+        const step1TimeoutId = setTimeout(() => step1Controller.abort(), 60000); // 60s timeout
+        let imageResponse: Response;
+        try {
+          imageResponse = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+            {
+              method: 'POST',
+              headers: {
+                'x-goog-api-key': GOOGLE_API_KEY,
+                'Content-Type': 'application/json',
               },
-              // Add safety settings to be less restrictive for educational content
-              safetySettings: GEMINI_SAFETY_SETTINGS
-            }),
+              body: JSON.stringify({
+                contents: [{
+                  parts: validParts
+                }],
+                generationConfig: {
+                  responseModalities: ['IMAGE']
+                },
+                // Add safety settings to be less restrictive for educational content
+                safetySettings: GEMINI_SAFETY_SETTINGS
+              }),
+              signal: step1Controller.signal,
+            }
+          );
+        } catch (fetchErr) {
+          clearTimeout(step1TimeoutId);
+          const isTimeout = fetchErr instanceof Error && fetchErr.name === 'AbortError';
+          console.error(`Step 1 fetch ${isTimeout ? 'timed out (60s)' : 'failed'} on attempt ${attempt}`);
+          if (attempt < MAX_RETRIES) {
+            await new Promise(resolve => setTimeout(resolve, BASE_DELAY * attempt));
+            continue;
           }
-        );
+          throw new Error(`Step 1 fetch failed after ${MAX_RETRIES} attempts: ${isTimeout ? 'timeout' : String(fetchErr)}`);
+        }
+        clearTimeout(step1TimeoutId);
 
         if (imageResponse.status === 429) {
-          const backoffDelay = Math.min(BASE_DELAY * Math.pow(2, attempt - 1), 30000);
-          console.error(`Rate limit hit on attempt ${attempt} with model ${model}, backing off for ${backoffDelay}ms`);
+          const backoffDelay = Math.min(5000 * Math.pow(2, attempt - 1), 20000); // 5s, 10s, 20s
+          console.error(`Rate limit hit on attempt ${attempt} with model ${model}, backing off for ${backoffDelay / 1000}s`);
           await new Promise(resolve => setTimeout(resolve, backoffDelay));
           continue;
         }
@@ -1009,36 +1025,36 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
           const errorData = await imageResponse.json();
           const errorMessage = errorData.error?.message || 'Unknown error';
           console.error(`Step 1 API error (${imageResponse.status}): ${errorMessage}`);
-          
+
           // Check for safety filter errors
-          if (errorMessage.toLowerCase().includes('safety') || 
-              errorMessage.toLowerCase().includes('refused') || 
-              errorMessage.toLowerCase().includes('policy') ||
-              errorMessage.toLowerCase().includes('blocked') ||
-              errorMessage.toLowerCase().includes('harmful') ||
-              errorMessage.toLowerCase().includes('inappropriate')) {
-            
+          if (errorMessage.toLowerCase().includes('safety') ||
+            errorMessage.toLowerCase().includes('refused') ||
+            errorMessage.toLowerCase().includes('policy') ||
+            errorMessage.toLowerCase().includes('blocked') ||
+            errorMessage.toLowerCase().includes('harmful') ||
+            errorMessage.toLowerCase().includes('inappropriate')) {
+
             console.warn(`⚠️ Safety filter triggered on attempt ${attempt}`);
             console.log(`Prompt excerpt: ${currentPromptText.substring(0, 100)}...`);
-            
+
             // Continue to next attempt (which will use simpler prompt)
             if (attempt < MAX_RETRIES) {
               const delay = BASE_DELAY * Math.pow(2, attempt - 1);
               await new Promise(resolve => setTimeout(resolve, delay));
               continue;
             }
-            
+
             throw new Error(`MODEL_REFUSED: Safety filter triggered after ${MAX_RETRIES} attempts`);
           }
-          
+
           // Check for region restriction
-          if (errorMessage.toLowerCase().includes('not available in your country') || 
-              errorMessage.toLowerCase().includes('not available in your region')) {
+          if (errorMessage.toLowerCase().includes('not available in your country') ||
+            errorMessage.toLowerCase().includes('not available in your region')) {
             const err: any = new Error('REGION_BLOCKED: Image generation is not available in your country');
             err.isRegionRestriction = true;
             throw err;
           }
-          
+
           // Retry on transient errors
           if (attempt < MAX_RETRIES) {
             const delay = BASE_DELAY * Math.pow(2, attempt - 1);
@@ -1050,7 +1066,7 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
         }
 
         const data = await imageResponse.json();
-        
+
         // DEBUG LOGGING: Log full API response structure to understand failures
         console.log(`🔍 API Response structure (page ${pageIndex + 1}, attempt ${attempt}):`, JSON.stringify({
           hasCandidate: !!data.candidates?.[0],
@@ -1062,29 +1078,29 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
           hasImagePart: !!data.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData),
           partTypes: data.candidates?.[0]?.content?.parts?.map((p: any) => Object.keys(p).join(','))
         }));
-        
+
         // Extract base64 image from Google's response format
         const imagePart = data.candidates?.[0]?.content?.parts?.find(
           (p: any) => p.inlineData
         );
-        
+
         if (!imagePart?.inlineData?.data) {
           console.error(`❌ No image data in Step 1 response (attempt ${attempt}/${MAX_RETRIES})`);
           console.log(`Prompt excerpt: "${currentPromptText.substring(0, 150)}..."`);
           console.log(`📊 Full response for debugging:`, JSON.stringify(data).substring(0, 500));
-          
+
           const finishReason = data.candidates?.[0]?.finishReason;
-          
+
           // Check if this is a safety/content block
           if (finishReason === 'SAFETY' || data.promptFeedback?.blockReason) {
             console.warn(`⚠️ Safety block detected: finishReason=${finishReason}, blockReason=${data.promptFeedback?.blockReason}`);
           }
-          
+
           // SMART EARLY-SKIP: Track IMAGE_OTHER failures (photo rejection)
           if (finishReason === 'IMAGE_OTHER') {
             consecutiveImageOtherFailures++;
             console.warn(`⚠️ IMAGE_OTHER failure detected (count: ${consecutiveImageOtherFailures})`);
-            
+
             // If photos are being consistently rejected, skip directly to last resort
             if (consecutiveImageOtherFailures >= 2 && attempt < MAX_RETRIES - 1) {
               console.log(`⚡ Detected ${consecutiveImageOtherFailures} consecutive IMAGE_OTHER failures - skipping to last resort (attempt 5)`);
@@ -1094,12 +1110,12 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
               break; // Break from model loop to trigger next attempt
             }
           }
-          
+
           if (attempt < MAX_RETRIES) {
             console.log(`🔄 Retrying with simpler prompt and/or without photos...`);
             continue;
           }
-          
+
           throw new Error(`MODEL_REFUSED: No image generated after ${MAX_RETRIES} attempts`);
         }
 
@@ -1108,9 +1124,9 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
         const imageData = `data:${step1MimeType};base64,${imagePart.inlineData.data}`;
 
         console.log(`✅ Successfully generated realistic image ${pageIndex + 1}/${totalPages} on attempt ${attempt} (photos: ${includePhotos ? 'yes' : 'no'})`);
-        
+
         return imageData;
-        
+
       } catch (error) {
         console.error(`Step 1 error (attempt ${attempt}, model ${model}):`, error);
         if (attempt === MAX_RETRIES && model === MODELS[MODELS.length - 1]) {
@@ -1119,7 +1135,7 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
       }
     }
   }
-  
+
   throw new Error('Failed to generate realistic image after all retries');
 }
 
@@ -1136,49 +1152,66 @@ async function convertToLineArt(
   const selectedModel = getModelForComplexity(complexity);
   // Only use valid models - gemini-2.0-flash-image-generation does NOT exist
   const MODELS = [selectedModel];
-  
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     for (const model of MODELS) {
       try {
         console.log(`Step 2/2 - Converting to line art ${pageIndex + 1}/${totalPages} (attempt ${attempt}/${MAX_RETRIES}, model: ${model})`);
-        
+
         // Transform to Google's native format
         const base64Data = realisticImageBase64.replace(/^data:image\/\w+;base64,/, '');
         const inputMimeType = realisticImageBase64.match(/^data:(image\/\w+);base64,/)?.[1] || 'image/png';
-        
+
         const lineArtSystemMessage = getLineArtSystemMessage(complexity);
         console.log(`[COMPLEXITY] Line art conversion using '${complexity || 'medium'}' complexity`);
-        
-        const imageResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-          {
-            method: 'POST',
-            headers: {
-              'x-goog-api-key': GOOGLE_API_KEY,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  { text: lineArtSystemMessage + `\n\nConvert THIS PROVIDED IMAGE to clean black and white line art. Focus on converting the image you see, not recreating the scene.` },
-                  {
-                    inlineData: {
-                      mimeType: inputMimeType,
-                      data: base64Data
+
+        const step2Controller = new AbortController();
+        const step2TimeoutId = setTimeout(() => step2Controller.abort(), 60000); // 60s timeout
+        let imageResponse: Response;
+        try {
+          imageResponse = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+            {
+              method: 'POST',
+              headers: {
+                'x-goog-api-key': GOOGLE_API_KEY,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    { text: lineArtSystemMessage + `\n\nConvert THIS PROVIDED IMAGE to clean black and white line art. Focus on converting the image you see, not recreating the scene.` },
+                    {
+                      inlineData: {
+                        mimeType: inputMimeType,
+                        data: base64Data
+                      }
                     }
-                  }
-                ]
-              }],
-              generationConfig: {
-                responseModalities: ['IMAGE']
-              }
-            }),
+                  ]
+                }],
+                generationConfig: {
+                  responseModalities: ['IMAGE']
+                },
+                safetySettings: GEMINI_SAFETY_SETTINGS
+              }),
+              signal: step2Controller.signal,
+            }
+          );
+        } catch (fetchErr) {
+          clearTimeout(step2TimeoutId);
+          const isTimeout = fetchErr instanceof Error && fetchErr.name === 'AbortError';
+          console.error(`Step 2 fetch ${isTimeout ? 'timed out (60s)' : 'failed'} on attempt ${attempt}`);
+          if (attempt < MAX_RETRIES) {
+            await new Promise(resolve => setTimeout(resolve, BASE_DELAY * attempt));
+            continue;
           }
-        );
+          throw new Error(`Step 2 fetch failed after ${MAX_RETRIES} attempts: ${isTimeout ? 'timeout' : String(fetchErr)}`);
+        }
+        clearTimeout(step2TimeoutId);
 
         if (imageResponse.status === 429) {
-          const backoffDelay = Math.min(BASE_DELAY * Math.pow(2, attempt - 1), 30000);
-          console.error(`Rate limit hit on attempt ${attempt} with model ${model}, backing off for ${backoffDelay}ms`);
+          const backoffDelay = Math.min(5000 * Math.pow(2, attempt - 1), 20000); // 5s, 10s, 20s
+          console.error(`Rate limit hit on attempt ${attempt} with model ${model}, backing off for ${backoffDelay / 1000}s`);
           await new Promise(resolve => setTimeout(resolve, backoffDelay));
           continue; // Retry with exponential backoff
         }
@@ -1197,15 +1230,15 @@ async function convertToLineArt(
           const errorData = await imageResponse.json();
           const errorMessage = errorData.error?.message || 'Unknown error';
           console.error(`Step 2 API error (${imageResponse.status}): ${errorMessage}`);
-          
+
           // Check for region restriction
-          if (errorMessage.toLowerCase().includes('not available in your country') || 
-              errorMessage.toLowerCase().includes('not available in your region')) {
+          if (errorMessage.toLowerCase().includes('not available in your country') ||
+            errorMessage.toLowerCase().includes('not available in your region')) {
             const err: any = new Error('REGION_BLOCKED: Image generation is not available in your country');
             err.isRegionRestriction = true;
             throw err;
           }
-          
+
           // Only retry on transient errors
           if (attempt < MAX_RETRIES && (imageResponse.status === 429 || imageResponse.status === 402 || imageResponse.status === 504)) {
             const delay = BASE_DELAY * Math.pow(2, attempt - 1);
@@ -1217,12 +1250,12 @@ async function convertToLineArt(
         }
 
         const data = await imageResponse.json();
-        
+
         // Extract base64 image from Google's response format
         const imagePart = data.candidates?.[0]?.content?.parts?.find(
           (p: any) => p.inlineData
         );
-        
+
         if (!imagePart?.inlineData?.data) {
           console.error('No image data in Step 2 response');
           if (attempt < MAX_RETRIES) {
@@ -1236,11 +1269,11 @@ async function convertToLineArt(
         const imageData = `data:${step2MimeType};base64,${imagePart.inlineData.data}`;
 
         console.log(`Successfully converted to line art ${pageIndex + 1}/${totalPages} on attempt ${attempt} with model ${model}`);
-        
+
         // Re-enable lightweight validation to detect cartoon-like images
         try {
           const validation = await validateLineArt(imageData, pageIndex, totalPages);
-          
+
           if (!validation.valid) {
             // Check if it's a color issue (cartoon-like) vs gray percentage issue
             if (validation.hasColor && validation.colorPercentage && validation.colorPercentage > 5) {
@@ -1249,14 +1282,14 @@ async function convertToLineArt(
                 continue; // Retry line art conversion
               }
             }
-            
+
             if (validation.hasPhotographicElements || validation.hasGradients) {
               console.warn(`⚠️ Line art validation failed: gray=${validation.grayPixelPercentage.toFixed(1)}%, gradients=${validation.hasGradients}, photographic=${validation.hasPhotographicElements}`);
               if (attempt < MAX_RETRIES) {
                 continue; // Retry line art conversion
               }
             }
-            
+
             // If we're on last attempt, accept anyway with warning
             console.warn(`⚠️ Accepting imperfect line art on final attempt ${attempt}`);
           } else {
@@ -1265,9 +1298,9 @@ async function convertToLineArt(
         } catch (validationError) {
           console.warn(`⚠️ Validation error (continuing anyway):`, validationError);
         }
-        
+
         return imageData;
-        
+
       } catch (error) {
         console.error(`Step 2 error (attempt ${attempt}, model ${model}):`, error);
         if (attempt === MAX_RETRIES && model === MODELS[MODELS.length - 1]) {
@@ -1276,13 +1309,13 @@ async function convertToLineArt(
       }
     }
   }
-  
+
   throw new Error('Failed to convert to line art after all retries');
 }
 
 serve(async (req) => {
   console.log(`[${new Date().toISOString()}] generate-images started - Method: ${req.method}`);
-  
+
   if (req.method === 'OPTIONS') {
     console.log('CORS preflight request');
     return new Response(null, { headers: corsHeaders });
@@ -1290,20 +1323,20 @@ serve(async (req) => {
 
   try {
     console.log('[HEALTH] generate-images called at', new Date().toISOString());
-    
+
     // PHASE 4: Check memory before processing
     const memUsage = Deno.memoryUsage();
     const heapUsedMB = memUsage.heapUsed / 1024 / 1024;
     const heapTotalMB = memUsage.heapTotal / 1024 / 1024;
-    
-    console.log(`📊 Memory at function start: ${heapUsedMB.toFixed(1)}MB / ${heapTotalMB.toFixed(1)}MB (${((heapUsedMB/heapTotalMB)*100).toFixed(1)}%)`);
-    
+
+    console.log(`📊 Memory at function start: ${heapUsedMB.toFixed(1)}MB / ${heapTotalMB.toFixed(1)}MB (${((heapUsedMB / heapTotalMB) * 100).toFixed(1)}%)`);
+
     // Aggressive memory optimization before processing
     if ((globalThis as any).gc) {
       (globalThis as any).gc();
       console.log('🧹 Triggered garbage collection at function start');
     }
-    
+
     if (heapUsedMB > 180) {
       console.error(`🚨 Memory critical: ${heapUsedMB}MB, aborting before crash`);
       return new Response(JSON.stringify({ error: 'Memory limit exceeded, please retry' }), {
@@ -1311,17 +1344,17 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    
+
     const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     if (!GOOGLE_API_KEY) {
       throw new Error('GOOGLE_API_KEY is required');
     }
 
     let { prompts, characters, consistentCharacters, batchIndex, batchSize = 2, isReworkMode = false, complexity, cachedCharacterDescription } = await req.json();
-    
+
     // Keep character photos as-is - proper conversion happens later
     // (Removed corrupting compression that was truncating base64 strings)
-    
+
     // Set retries based on rework mode - fewer retries for rework to be faster
     const MAX_RETRIES = isReworkMode ? 1 : 2; // 2 attempts for rework, 3 for initial gen
 
@@ -1331,7 +1364,7 @@ serve(async (req) => {
 
     // Filter out any prompts that don't have the required fields
     let validPrompts = prompts.filter((p: any) => p && p.prompt && p.pageNumber);
-    
+
     if (validPrompts.length === 0) {
       throw new Error('No valid prompts provided');
     }
@@ -1344,14 +1377,14 @@ serve(async (req) => {
     // Calculate batch range if batchIndex is provided AND not in rework mode
     // In rework mode, prompts are already filtered to only selected pages
     let batchInfo = null;
-    
+
     if (typeof batchIndex === 'number' && !isReworkMode) {
       const startIdx = batchIndex * batchSize;
       const endIdx = Math.min(startIdx + batchSize, validPrompts.length);
-      
+
       console.log(`Batch slicing: startIdx=${startIdx}, endIdx=${endIdx}, array length=${validPrompts.length}`);
       validPrompts = validPrompts.slice(startIdx, endIdx);
-      
+
       const totalBatches = Math.ceil(prompts.filter((p: any) => p && p.prompt && p.pageNumber).length / batchSize);
       batchInfo = {
         batchIndex,
@@ -1359,7 +1392,7 @@ serve(async (req) => {
         totalBatches,
         processedPages: validPrompts.map((p: any) => p.pageNumber)
       };
-      
+
       console.log(`Processing batch ${batchIndex + 1}/${totalBatches} (pages ${startIdx + 1}-${endIdx} of original prompt list)`);
     } else if (isReworkMode) {
       console.log(`Rework mode: processing ${validPrompts.length} selected pages directly [${validPrompts.map(p => p.pageNumber).join(', ')}]`);
@@ -1383,12 +1416,12 @@ serve(async (req) => {
       }
       const batchEnd = Math.min(batchStart + BATCH_SIZE, validPrompts.length);
       const batch = validPrompts.slice(batchStart, batchEnd);
-      
+
       console.log(`Processing batch ${batchStart / BATCH_SIZE + 1}: pages ${batchStart + 1}-${batchEnd}`);
 
       const batchPromises = batch.map(async (prompt: any, batchIndex: number) => {
         const i = batchStart + batchIndex;
-        
+
         try {
           console.log(`Processing page ${i + 1}/${validPrompts.length}: ${prompt.prompt.substring(0, 50)}...`);
 
@@ -1397,13 +1430,13 @@ serve(async (req) => {
           let characterNames = '';
 
           if (consistentCharacters && characters && Array.isArray(characters)) {
-            const pageCharacters = characters.filter((char: any) => 
+            const pageCharacters = characters.filter((char: any) =>
               !prompt.characterName || char.name === prompt.characterName
             );
-            
+
             if (pageCharacters.length > 0) {
               characterNames = pageCharacters.map((char: any) => char.name).join(' and ');
-              
+
               // Add character reference photos
               for (const character of pageCharacters) {
                 if (character.photos && Array.isArray(character.photos) && character.photos.length > 0) {
@@ -1420,7 +1453,7 @@ serve(async (req) => {
                   }
                 }
               }
-              
+
               if (characterContext.length > 0) {
                 console.log(`Added ${characterContext.length} character reference photo(s) for page ${i + 1}`);
               }
@@ -1438,7 +1471,7 @@ serve(async (req) => {
             close: 'CLOSE-UP: Character is prominent with detailed contextual background visible. Character occupies 60-80% of frame.'
           };
           const compositionGuidance = compositionMap[shotType] || compositionMap['medium'];
-          
+
           // CRITICAL: Add complexity-specific instructions for image generation
           const complexityImageGuidance: Record<string, string> = {
             simple: 'SIMPLICITY REQUIRED: Large shapes, bold lines, minimal detail. Think toddler-friendly coloring. Very few elements in the scene.',
@@ -1446,11 +1479,11 @@ serve(async (req) => {
             detailed: 'DETAILED & INTRICATE: Complex patterns, fine details, elaborate scenes. Ages 7+ and adult level complexity.'
           };
           const complexityHint = complexityImageGuidance[complexity || 'medium'] || complexityImageGuidance.medium;
-          
+
           console.log(`[COMPLEXITY] Applying '${complexity || 'medium'}' complexity to page ${i + 1}`);
           console.log(`[COMPLEXITY] Guidance: ${complexityHint}`);
 
-          const realisticPrompt = characterContext.length > 0 
+          const realisticPrompt = characterContext.length > 0
             ? `${compositionGuidance}\n\n${complexityHint}\n\n${filteredPrompt}\n\nMatch the person in the reference photo exactly. Bright, high-key lighting. Detailed, colorable environment. Well-lit scene. Child-appropriate.`
             : `${compositionGuidance}\n\n${complexityHint}\n\n${filteredPrompt}\n\nBright, high-key lighting. Detailed, colorable environment. Well-lit scene. Child-appropriate.`;
 
@@ -1496,7 +1529,7 @@ serve(async (req) => {
   Prompt: "${prompt.prompt.substring(0, 100)}..."
   Error type: ${error.name || 'Error'}
   Stack: ${error.stack?.substring(0, 300) || 'none'}`);
-          
+
           // PHASE 5: Log if it was a safety filter issue
           if (error.message?.includes('MODEL_REFUSED') || error.message?.includes('Safety filter')) {
             console.warn(`⚠️ Safety filter rejection detected for page ${prompt.pageNumber}`);
@@ -1508,10 +1541,10 @@ serve(async (req) => {
               }
             }
           }
-          
+
           const isRateLimitError = error.message?.includes('Rate limit') || error.message?.includes('429');
           const isPaymentError = error.message?.includes('credits') || error.message?.includes('402');
-          
+
           if (isRateLimitError || isPaymentError) {
             throw error; // Propagate rate limit and payment errors immediately
           }
@@ -1527,19 +1560,19 @@ serve(async (req) => {
 
       // PHASE 1: Ensure batch errors are properly captured with Promise.allSettled
       const batchResults = await Promise.allSettled(batchPromises);
-      
+
       // Process settled promises
       const successfulPages = batchResults
         .filter(r => r.status === 'fulfilled')
         .map(r => (r as PromiseFulfilledResult<any>).value);
-      
+
       pages.push(...successfulPages);
-      
+
       // PHASE 1: Log batch completion with details
       const fulfilled = batchResults.filter(r => r.status === 'fulfilled').length;
       const rejected = batchResults.filter(r => r.status === 'rejected').length;
       console.log(`✓ Batch ${batchStart / BATCH_SIZE + 1} complete: ${fulfilled} succeeded, ${rejected} failed`);
-      
+
       // PHASE 1: Log rejected promises for debugging (these shouldn't happen but log if they do)
       batchResults.forEach((result, idx) => {
         if (result.status === 'rejected') {
@@ -1549,7 +1582,7 @@ serve(async (req) => {
     }
 
     console.log(`Generated ${successCount}/${validPrompts.length} images successfully`);
-    
+
     const executionTime = Date.now() - startTime;
     const partialResult = pages.length < validPrompts.length;
     const timeoutWarning = executionTime > FUNCTION_TIMEOUT;
@@ -1562,7 +1595,7 @@ serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         pages,
         successCount,
         totalCount: validPrompts.length,
@@ -1576,17 +1609,17 @@ serve(async (req) => {
 
   } catch (error: any) {
     console.error('Error in generate-images function:', error);
-    
+
     const isRateLimitError = error.message?.includes('Rate limit') || error.message?.includes('429');
     const isPaymentError = error.message?.includes('credits') || error.message?.includes('402');
-    
+
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: error.message,
         isRateLimitError,
         isPaymentError
       }),
-      { 
+      {
         status: isRateLimitError ? 429 : (isPaymentError ? 402 : 500),
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       }

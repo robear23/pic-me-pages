@@ -114,7 +114,7 @@ OUTPUT: High resolution 2588x3375 pixels complete front cover ready for print at
     }
 
     const frontResponse = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent',
       {
         method: 'POST',
         headers: {
@@ -172,7 +172,7 @@ High resolution 2588x3375 pixels at 300 DPI. Simple solid color background (soft
 Minimal or no decorative elements. Clean, professional, ready for text overlay if needed.`;
 
     const backCoverResponse = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image-preview:generateContent',
       {
         method: 'POST',
         headers: {

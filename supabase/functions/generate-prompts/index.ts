@@ -8,7 +8,7 @@ const corsHeaders = {
 
 serve(async (req) => {
   console.log(`[${new Date().toISOString()}] generate-prompts started - Method: ${req.method}`);
-  
+
   if (req.method === 'OPTIONS') {
     console.log('CORS preflight request');
     return new Response(null, { headers: corsHeaders });
@@ -16,79 +16,78 @@ serve(async (req) => {
 
   try {
     const { characters, interests, consistentCharacters, targetPageCount = 12, complexityLevel = 'medium', customPrompt = '' } = await req.json();
-    
+
     if (!characters || !Array.isArray(characters) || characters.length === 0) {
       return new Response(
         JSON.stringify({ error: 'Invalid input: characters array required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
+
     // Validate that either interests OR customPrompt is provided
     const hasInterests = interests && Array.isArray(interests) && interests.length >= 1;
     const hasCustomPrompt = customPrompt && customPrompt.trim().length > 0;
-    
+
     if (!hasInterests && !hasCustomPrompt) {
       return new Response(
         JSON.stringify({ error: 'Invalid input: provide either interests array or a custom prompt' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    
+
     // INTEREST SANITIZATION: ONLY replace truly problematic interests
-    // Safe sports like cricket, football, soccer, cycling, jogging are PRESERVED
-    // Only IP/trademark and violence-related terms need sanitization
+    // Safe sports like cricket, football, soccer, cycling, jogging, boxing, wrestling ARE PRESERVED
+    // Nano Banana 2 handles sports with safety context naturally - no need to sanitize
+    // Only IP/trademark and actual violence/weapons need sanitization
     const INTEREST_SANITIZATION: Record<string, string> = {
-      // Fictional/IP - redirect to creative activities (trademark concerns)
-      'star wars': 'building a rocket ship from cardboard boxes and exploring space themes',
-      'starwars': 'stargazing through a telescope at night',
-      'lightsaber': 'playing with glow sticks at a party',
-      'jedi': 'meditating in a peaceful zen garden',
-      'sith': 'exploring a mysterious forest with mushrooms',
-      'darth vader': 'dressing up as a friendly robot costume',
-      'marvel': 'creating comic strips with colored pencils',
-      'avengers': 'assembling a giant puzzle together',
-      'batman': 'reading adventure books in a cozy library',
-      'superman': 'wearing a cape and pretending to fly',
-      'spiderman': 'climbing on a colorful playground structure',
-      'pokemon': 'exploring nature and discovering colorful creatures',
-      'fortnite': 'building colorful structures with blocks',
-      'minecraft': 'building with colorful blocks and creating structures',
-      
-      // Violence-related - redirect to safe alternatives
-      'hunting': 'going on a treasure hunt with a map',
-      'shooting': 'playing carnival ring toss games',
-      'gun': 'playing with water balloons in the garden',
-      'guns': 'playing with water balloons in the garden',
-      'sword': 'having a pretend sword fight with pool noodles',
-      'swords': 'playing with pool noodles in the backyard',
-      'fight': 'having a pillow fight at a sleepover',
-      'fighting': 'having a pillow fight at a sleepover',
-      'battle': 'playing an epic board game adventure',
-      'war': 'playing an exciting strategy board game',
-      'weapon': 'playing with colorful toys',
-      'weapons': 'playing with colorful toys',
-      'knife': 'doing arts and crafts with safety scissors',
-      'boxing': 'practicing fun exercise moves',
-      'wrestling': 'playing leapfrog with friends',
-      
-      // Organizations that could trigger safety filters
-      'water witness international': 'exploring nature near a stream and planting flowers',
-      'water witness': 'feeding ducks at a peaceful pond',
-      'charity': 'helping in a community garden',
-      'organization': 'participating in a fun group activity'
+      // Fictional/IP - redirect to thematically similar activities (trademark concerns)
+      'star wars': 'space exploration and building rockets from cardboard boxes',
+      'starwars': 'stargazing through a telescope and exploring space themes',
+      'lightsaber': 'playing with glow sticks and light-up toys at a party',
+      'jedi': 'space adventure stories and meditation in peaceful gardens',
+      'sith': 'exploring mysterious forests and glowing mushrooms',
+      'darth vader': 'dressing up in dramatic costumes and capes',
+      'marvel': 'creating comic strips and superhero stories with colored pencils',
+      'avengers': 'assembling giant puzzles and working as a team',
+      'batman': 'exploring cities at night and reading adventure books',
+      'superman': 'wearing a cape and pretending to fly through the sky',
+      'spiderman': 'climbing on colorful playground structures and webs',
+      'pokemon': 'exploring nature and discovering colorful creatures and animals',
+      'fortnite': 'building colorful structures with blocks and solving puzzles',
+      'minecraft': 'building with colorful blocks and creating imaginative structures',
+
+      // Weapons/violence - redirect to safe alternatives
+      'hunting': 'going on a nature treasure hunt with a map and magnifying glass',
+      'shooting': 'playing carnival ring toss and target games',
+      'gun': 'playing with water balloons and water guns in the garden',
+      'guns': 'playing with water balloons in the garden on a sunny day',
+      'sword': 'having a friendly duel with foam pool noodles',
+      'swords': 'playing with colorful foam pool noodles in the backyard',
+      'fight': 'having a fun pillow fight at a sleepover',
+      'fighting': 'having a fun pillow fight or wrestling match at a sleepover',
+      'battle': 'playing an epic board game adventure with friends',
+      'war': 'playing an exciting strategy board game with colorful pieces',
+      'weapon': 'playing with colorful foam toys in the backyard',
+      'weapons': 'playing with colorful foam toys and outdoor games',
+      'knife': 'doing arts and crafts with safety scissors and glue',
+
+      // Organizations/brands that trigger safety filters
+      'water witness international': 'exploring nature near a stream and planting wildflowers',
+      'water witness': 'feeding ducks at a peaceful pond and exploring wetlands',
+      'charity': 'volunteering in a community garden and helping neighbours',
+      'organization': 'participating in fun group activities and team games'
     };
-    
+
     // Sanitize interests - ONLY problematic ones, preserve safe sports and activities
     const sanitizeInterest = (interest: string): string => {
       const lowerInterest = interest.toLowerCase().trim();
-      
+
       // Check for exact matches first
       if (INTEREST_SANITIZATION[lowerInterest]) {
         console.log(`⚠️ Interest SANITIZED: "${interest}" → "${INTEREST_SANITIZATION[lowerInterest]}" (IP/violence concern)`);
         return INTEREST_SANITIZATION[lowerInterest];
       }
-      
+
       // Check for partial matches (if the interest contains a risky term)
       for (const [risky, safe] of Object.entries(INTEREST_SANITIZATION)) {
         if (lowerInterest.includes(risky)) {
@@ -96,16 +95,16 @@ serve(async (req) => {
           return safe;
         }
       }
-      
+
       // Safe interest - preserve as-is
       console.log(`✅ Interest PRESERVED: "${interest}" (safe for generation)`);
       return interest;
     };
-    
+
     // Provide default empty array for interests if only customPrompt is used
     const rawInterests = hasInterests ? interests : [];
     const effectiveInterests = rawInterests.map(sanitizeInterest);
-    
+
     console.log(`📋 Original interests: ${rawInterests.join(', ')}`);
     console.log(`📋 Sanitized interests: ${effectiveInterests.join(', ')}`);
 
@@ -131,17 +130,17 @@ serve(async (req) => {
 - Think: same person in different photos from the same time period
 - Dynamic scenes with varied poses and expressions, but IDENTICAL character features`
       : '';
-    
+
     // SAFE PROMPT GUIDE: Words to remove from prompts (Rule 1 - Never mention age/identity)
-    const AGE_WORDS = ['child', 'children', 'kid', 'kids', 'young', 'little', 'small', 
-                       'boy', 'girl', 'toddler', 'preschooler', 'teenager', 'baby', 'infant',
-                       'year-old', 'years old', 'age', 'aged'];
-    
+    const AGE_WORDS = ['child', 'children', 'kid', 'kids', 'young', 'little', 'small',
+      'boy', 'girl', 'toddler', 'preschooler', 'teenager', 'baby', 'infant',
+      'year-old', 'years old', 'age', 'aged'];
+
     // SAFE PROMPT GUIDE: Words to avoid in prompts (Rule 3 - Use neutral, positive language)
-    const RISKY_LANGUAGE = ['dangerous', 'risky', 'extreme', 'intense', 'high', 'steep', 
-                            'fast', 'difficult', 'alone', 'unsupervised', 'scary', 'frightening',
-                            'challenging', 'unprotected'];
-    
+    const RISKY_LANGUAGE = ['dangerous', 'risky', 'extreme', 'intense', 'high', 'steep',
+      'fast', 'difficult', 'alone', 'unsupervised', 'scary', 'frightening',
+      'challenging', 'unprotected'];
+
     // SAFE PROMPT GUIDE: Positive replacement words
     const POSITIVE_REPLACEMENTS: Record<string, string> = {
       'extreme': 'exciting',
@@ -152,7 +151,7 @@ serve(async (req) => {
       'risky': 'playful',
       'frightening': 'surprising'
     };
-    
+
     // Helper function to sanitize prompts
     const sanitizePromptText = (text: string): string => {
       let result = text;
@@ -185,14 +184,14 @@ serve(async (req) => {
 - Suitable for ages 3-5 years old
 - Think: toddler coloring book with very few elements
 - Example: A simple apple with one leaf, no texture or shading areas`,
-      
+
       medium: `CRITICAL COMPLEXITY REQUIREMENT - MEDIUM LEVEL:
 - Use MEDIUM outlines (2-4px width)
 - Include some patterns and decorative elements
 - Moderate detail level suitable for ages 5-6
 - Balance simplicity with some interesting elements
 - Example: An apple with leaf, stem, and a few background flowers`,
-      
+
       detailed: `CRITICAL COMPLEXITY REQUIREMENT - DETAILED LEVEL:
 - Use FINE outlines (1-2px width)
 - Include INTRICATE patterns, textures, and many decorative elements
@@ -201,13 +200,13 @@ serve(async (req) => {
 - Example: An apple with detailed leaf veins, texture patterns, ornate background with flowers and butterflies`
     };
     const complexityGuidance = complexityLevelMap[complexityLevel] || complexityLevelMap.medium;
-    
+
     console.log(`[COMPLEXITY] Using complexity level: ${complexityLevel}`);
     console.log(`[COMPLEXITY] Guidance: ${complexityGuidance}`);
 
     // SAFE PROMPT GUIDE: Sanitize custom prompt if provided
     const sanitizedCustomPrompt = hasCustomPrompt ? sanitizePromptText(customPrompt) : '';
-    
+
     // Use custom prompt if provided, otherwise use interests
     const contentGuidance = hasCustomPrompt
       ? `Create scenes based on this custom theme/story: ${sanitizedCustomPrompt}`
@@ -293,7 +292,7 @@ Return JSON array with:
 }`;
 
     console.log('Calling Google Gemini API for prompt generation...');
-    
+
     // Combine system prompt and user message for Gemini
     const combinedPrompt = `${systemPrompt}
 
@@ -303,89 +302,144 @@ CRITICAL: Return ONLY valid JSON with proper escaping. Use \\n for newlines in t
 
 Generate prompts for ${characterNames} using photogenic illustrated style based on: ${hasCustomPrompt ? customPrompt : effectiveInterests.join(', ')}`;
 
-    // FIX #2: Add timeout protection for AI requests
-    const AI_TIMEOUT_MS = 60000; // 60 seconds
-
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('AI request timed out after 60 seconds')), AI_TIMEOUT_MS);
-    });
-
-    const MODEL = 'gemini-2.0-flash-exp';
+    const MODEL = 'gemini-3.1-flash-lite-preview';
     const API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`;
 
-    const aiResponsePromise = fetch(`${API_ENDPOINT}?key=${GOOGLE_API_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: combinedPrompt }]
-        }],
-        generationConfig: {
-          temperature: 0.9,
-          topK: 40,
-          topP: 0.95,
-          maxOutputTokens: 4096,
+    let aiResponse;
+    const MAX_RETRIES = 3;
+    let retries = 0;
+
+    while (retries <= MAX_RETRIES) {
+      try {
+        const aiResponsePromise = fetch(`${API_ENDPOINT}?key=${GOOGLE_API_KEY}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{ text: combinedPrompt }]
+            }],
+            generationConfig: {
+              temperature: 0.9,
+              topK: 40,
+              topP: 0.95,
+              maxOutputTokens: 4096,
+              responseMimeType: "application/json"
+            }
+          }),
+        });
+
+        // FIX #2: Add timeout protection for AI requests
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('AI request timed out after 45 seconds')), 45000);
+        });
+
+        aiResponse = await Promise.race([aiResponsePromise, timeoutPromise]) as Response;
+
+        if (aiResponse.ok) break; // Success!
+
+        const errorText = await aiResponse.text();
+        console.error(`❌ Gemini API error (Attempt ${retries + 1}/${MAX_RETRIES + 1}):`, {
+          status: aiResponse.status,
+          statusText: aiResponse.statusText,
+          body: errorText,
+        });
+
+        if (aiResponse.status === 429) {
+          if (retries === MAX_RETRIES) {
+            console.error("Failed after maximum retries due to rate limit.");
+            break; // Max retries hit, break loop to return the 429 response
+          }
+          // QPM limits reset on a ~60s window — wait 10-20s between attempts (fits within 5-min caller timeout)
+          const backoffDelay = Math.max(10000, Math.pow(2, retries) * 1500) + Math.random() * 1000;
+          console.log(`Rate limited. Retrying in ${Math.round(backoffDelay)}ms...`);
+          await new Promise(resolve => setTimeout(resolve, backoffDelay));
+          retries++;
+        } else if (aiResponse.status >= 500) {
+          // Transient server error — retry with backoff
+          if (retries === MAX_RETRIES) {
+            console.error("Failed after maximum retries due to server error.");
+            break;
+          }
+          const backoffDelay = Math.pow(2, retries) * 3000 + Math.random() * 1000;
+          console.log(`Server error ${aiResponse.status}. Retrying in ${Math.round(backoffDelay)}ms...`);
+          await new Promise(resolve => setTimeout(resolve, backoffDelay));
+          retries++;
+        } else {
+          // Break for non-retryable errors (4xx etc.)
+          break;
         }
-      }),
-    });
 
-    const aiResponse = await Promise.race([aiResponsePromise, timeoutPromise]) as Response;
-
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error('❌ Gemini API error:', {
-        status: aiResponse.status,
-        statusText: aiResponse.statusText,
-        body: errorText,
-        headers: Object.fromEntries(aiResponse.headers.entries())
-      });
-      
-      // Return specific error messages with status codes
-      if (aiResponse.status === 429) {
-        return new Response(
-          JSON.stringify({ 
-            error: 'Rate limit exceeded. Please try again in a moment.',
-            statusCode: 429
-          }),
-          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+      } catch (err) {
+        if (err instanceof Error && err.message.includes('timed out')) {
+          console.error(`AI Request Timeout (Attempt ${retries + 1}/${MAX_RETRIES + 1})`);
+          if (retries === MAX_RETRIES) throw err;
+          // Treat timeout similarly to a rate limit issue, retry with backoff.
+          const backoffDelay = Math.pow(2, retries) * 2000 + Math.random() * 1000;
+          await new Promise(resolve => setTimeout(resolve, backoffDelay));
+          retries++;
+        } else {
+          throw err;
+        }
       }
-      
-      if (aiResponse.status === 403) {
-        return new Response(
-          JSON.stringify({ 
-            error: 'API quota exceeded. Please check your Google API key.',
-            statusCode: 403
-          }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      
-      if (aiResponse.status >= 500) {
-        return new Response(
-          JSON.stringify({ 
-            error: 'AI service temporarily unavailable. Please try again.',
-            statusCode: aiResponse.status
-          }),
-          { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      return new Response(
-        JSON.stringify({ 
-          error: `AI service error: ${aiResponse.statusText}`,
-          statusCode: aiResponse.status,
-          details: errorText
-        }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
+
+    if (!aiResponse || !aiResponse.ok) {
+      if (aiResponse) {
+        // Return specific error messages with status codes based on the last failed response
+        if (aiResponse.status === 429) {
+          return new Response(
+            JSON.stringify({
+              error: 'Rate limit exceeded. Please try again in a moment.',
+              statusCode: 429
+            }),
+            { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (aiResponse.status === 403) {
+          return new Response(
+            JSON.stringify({
+              error: 'API quota exceeded. Please check your Google API key.',
+              statusCode: 403
+            }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (aiResponse.status >= 500) {
+          return new Response(
+            JSON.stringify({
+              error: 'AI service temporarily unavailable. Please try again.',
+              statusCode: aiResponse.status
+            }),
+            { status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        return new Response(
+          JSON.stringify({
+            error: `AI service error: ${aiResponse.statusText}`,
+            statusCode: aiResponse.status,
+          }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } else {
+        return new Response(
+          JSON.stringify({
+            error: 'AI service unexpectedly failed to return a response.',
+            statusCode: 500
+          }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
 
     const aiData = await aiResponse.json();
     const content = aiData.candidates?.[0]?.content?.parts?.[0]?.text;
-    
+
     if (!content) {
       console.error('No content in AI response:', aiData);
       return new Response(
@@ -400,10 +454,10 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
     let prompts;
     try {
       let cleanContent = content.trim();
-      
+
       // Remove markdown code blocks
       cleanContent = cleanContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-      
+
       // Extract JSON structure first
       const extractTopLevelJSON = (s: string): string | null => {
         const scan = (open: string, close: string): string | null => {
@@ -431,36 +485,36 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
 
       let candidate = extractTopLevelJSON(cleanContent) ?? cleanContent;
       console.log('Extracted JSON candidate (first 200 chars):', candidate.substring(0, 200));
-      
+
       // Sanitize control characters in JSON strings before parsing
       // Replace unescaped control characters (0x00-0x1F) with spaces, except for escaped ones
       const sanitizeJSON = (jsonStr: string): string => {
         let result = '';
         let inString = false;
         let escape = false;
-        
+
         for (let i = 0; i < jsonStr.length; i++) {
           const char = jsonStr[i];
           const code = jsonStr.charCodeAt(i);
-          
+
           if (escape) {
             result += char;
             escape = false;
             continue;
           }
-          
+
           if (char === '\\') {
             escape = true;
             result += char;
             continue;
           }
-          
+
           if (char === '"') {
             inString = !inString;
             result += char;
             continue;
           }
-          
+
           // Replace control characters inside strings
           // JSON strings cannot contain unescaped control characters (0-31)
           if (inString && code >= 0 && code <= 31) {
@@ -471,13 +525,13 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
             result += char;
           }
         }
-        
+
         return result;
       };
-      
+
       candidate = sanitizeJSON(candidate);
       console.log('Sanitized JSON (first 200 chars):', candidate.substring(0, 200));
-      
+
       // Try parsing the sanitized JSON
       let parsed;
       try {
@@ -486,7 +540,7 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
       } catch (parseError) {
         console.error('JSON parse failed:', parseError);
         console.error('Failed JSON (first 500 chars):', candidate.substring(0, 500));
-        
+
         // Try more aggressive sanitization as fallback
         console.log('Attempting aggressive sanitization...');
         try {
@@ -500,24 +554,24 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
           throw new Error('Invalid JSON from AI response after multiple sanitization attempts');
         }
       }
-      
+
       prompts = parsed.prompts || parsed;
 
       if (!Array.isArray(prompts)) {
         console.error('Parsed result is not an array:', typeof prompts);
         throw new Error('Parsed JSON is not an array');
       }
-      
+
       // Add character names and enforce length limits
       prompts = prompts.map((p: any) => {
         let prompt = p.prompt;
-        
+
         // Enforce 300 character limit
         if (prompt.length > 300) {
           console.warn(`Prompt ${p.pageNumber} too long (${prompt.length} chars), truncating...`);
           prompt = prompt.substring(0, 297) + '...';
         }
-        
+
         return {
           pageNumber: p.pageNumber,
           interest: p.interest,
@@ -525,7 +579,7 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
           characterName: characterNames
         };
       });
-      
+
     } catch (e) {
       console.error('Failed to parse AI response:', e);
       console.error('Error details:', e instanceof Error ? e.message : 'Unknown error');
@@ -535,7 +589,8 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
       );
     }
 
-    if (!Array.isArray(prompts) || prompts.length !== targetPageCount) {
+    // Accept if we got at least targetPageCount - 1 prompts (model occasionally returns one fewer)
+    if (!Array.isArray(prompts) || prompts.length < targetPageCount - 1) {
       console.error('Invalid prompts count:', prompts?.length, 'expected:', targetPageCount);
       return new Response(
         JSON.stringify({ error: 'Invalid number of prompts generated' }),
@@ -544,7 +599,7 @@ Generate prompts for ${characterNames} using photogenic illustrated style based 
     }
 
     console.log(`Successfully generated ${targetPageCount} prompts`);
-    
+
     return new Response(
       JSON.stringify({ prompts }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
