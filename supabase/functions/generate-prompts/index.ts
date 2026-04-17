@@ -15,7 +15,7 @@ serve(async (req) => {
   }
 
   try {
-    const { characters, interests, consistentCharacters, targetPageCount = 12, complexityLevel = 'medium', customPrompt = '' } = await req.json();
+    const { characters, interests, consistentCharacters, targetPageCount = 12, complexityLevel = 'medium', customPrompt = '', supportingCast = [], supportingCastPerPage = 0, supportingCastPageCount = 0 } = await req.json();
 
     if (!characters || !Array.isArray(characters) || characters.length === 0) {
       return new Response(
@@ -280,6 +280,14 @@ REQUIREMENTS:
 ${hasCharacterPhotos ? '- Subject appears in different poses, angles, and scene types' : ''}
 - CRITICAL: Follow the complexity guidance above EXACTLY
 - CRITICAL: NO age words, NO identity descriptors - activity and environment ONLY
+${supportingCast && supportingCast.length > 0 && supportingCastPageCount > 0 ? `
+SUPPORTING CAST REQUIREMENTS:
+- ${supportingCastPageCount} out of ${targetPageCount} pages MUST include companion characters alongside the main character
+- Each page with companions should show ${supportingCastPerPage || 1} companion(s) interacting with the main character
+- Companions should be described as friends/companions actively participating in the scene (e.g., "together with a friend", "alongside companions", "with a group of friends")
+- The remaining ${targetPageCount - supportingCastPageCount} pages feature the main character alone
+- Distribute companion pages evenly throughout the book (not all at start/end)
+- Example companion phrase: "Playing soccer together with a friend in a sunny park" (NOT "a child and a friend")` : ''}
 
 ${contentGuidance}
 

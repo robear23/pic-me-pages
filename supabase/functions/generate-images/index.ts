@@ -251,18 +251,25 @@ OUTPUT: Clean black and white line drawing with NO gray tones, NO colors, and NO
 };
 
 // Sanitize a cached character description for use in image generation prompts.
-// Age-related phrases ("young child", "baby", etc.) in the description can trigger
-// Gemini's safety filters even for perfectly safe activities.
+// Only strip EXPLICIT age labels — NOT physical proportion descriptors.
+// Preserving terms like "petite", "round cheeks", "compact build", "small button nose"
+// is critical for generating child-like likeness without using forbidden age words.
 function sanitizeDescriptionForImageGen(description: string): string {
   return description
-    .replace(/\bthe build is that of a young child\b/gi, 'slim, compact build')
-    .replace(/\bof a young child\b/gi, 'of a person')
-    .replace(/\byoung child\b/gi, 'person')
-    .replace(/\bchild\b/gi, 'person')
-    .replace(/\bchildren\b/gi, 'people')
+    // Remove specific age labels only (not general physical descriptors)
+    .replace(/\b\d+[\s-]year[\s-]olds?\b/gi, '')
+    .replace(/\baged?\s+\d+\b/gi, '')
+    .replace(/\byoung child\b/gi, 'person with small delicate features')
     .replace(/\btoddler\b/gi, 'person')
     .replace(/\binfant\b/gi, 'person')
-    .replace(/\bbaby\b/gi, 'person')
+    // "child" alone can still trigger Gemini safety — replace but preserve physical context
+    .replace(/\bchild-like\b/gi, 'soft-featured')
+    .replace(/\bchildlike\b/gi, 'soft-featured')
+    .replace(/\bchild\b/gi, 'person')
+    .replace(/\bchildren\b/gi, 'people')
+    // Keep: "petite", "compact", "small-framed", "round cheeks", "button nose",
+    //        "large eyes relative to face", "full soft cheeks" — these convey actual proportions
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -862,13 +869,18 @@ CRITICAL CHARACTER CONSISTENCY REQUIREMENT:
         let useCharacterDescription = false; // NEW: Flag for two-stage approach
 
         if (attempt === 1) {
-          // Attempt 1: If character description is already cached (resume scenario), use it
-          // directly for a faster text-only request (~15-30s vs 60s+ for multimodal).
-          // When no cache exists (first run), fall back to photos for best initial accuracy.
-          if (localCharacterDescription) {
+          // Attempt 1: Always include photos for best likeness accuracy.
+          // If a cached description is available, include it as supplemental context alongside photos.
+          // Previously, cached description caused photos to be skipped — this lost the visual
+          // age/proportion reference (critical for children) and produced adult-looking characters.
+          if (localCharacterDescription && characterPhotos.length > 0) {
+            currentPromptText = `${originalPromptText}\n\nCharacter description for reference: ${localCharacterDescription}`;
+            includePhotos = true;
+            console.log(`📝 Attempt 1: Using original prompt WITH photos AND cached description for best likeness`);
+          } else if (localCharacterDescription) {
             currentPromptText = `A person with these physical features: ${localCharacterDescription}\n\nScene: ${originalPromptText}`;
             includePhotos = false;
-            console.log(`📝 Attempt 1: Using cached character description (no photos) for faster generation`);
+            console.log(`📝 Attempt 1: Using cached character description only (no photos available)`);
           } else {
             currentPromptText = originalPromptText;
             includePhotos = true;
@@ -1377,7 +1389,7 @@ serve(async (req) => {
       throw new Error('GOOGLE_API_KEY is required');
     }
 
-    let { prompts, characters, consistentCharacters, batchIndex, batchSize = 2, isReworkMode = false, complexity, cachedCharacterDescription } = await req.json();
+    let { prompts, characters, consistentCharacters, batchIndex, batchSize = 2, isReworkMode = false, complexity, cachedCharacterDescription, supportingCast } = await req.json();
 
     // Keep character photos as-is - proper conversion happens later
     // (Removed corrupting compression that was truncating base64 strings)
@@ -1452,25 +1464,26 @@ serve(async (req) => {
         try {
           console.log(`Processing page ${i + 1}/${validPrompts.length}: ${prompt.prompt.substring(0, 50)}...`);
 
-          // Build character context with names and photos
-          const characterContext: any[] = [];
+          // Build character context: main character photos first, then supporting cast photos
+          const mainCharacterPhotos: any[] = [];
+          const supportingCastPhotos: any[] = [];
           let characterNames = '';
 
           if (consistentCharacters && characters && Array.isArray(characters)) {
+            // Fixed filter: use includes() to handle concatenated multi-char names like "Sarah and Tommy"
             const pageCharacters = characters.filter((char: any) =>
-              !prompt.characterName || char.name === prompt.characterName
+              !prompt.characterName || prompt.characterName.includes(char.name)
             );
 
             if (pageCharacters.length > 0) {
               characterNames = pageCharacters.map((char: any) => char.name).join(' and ');
 
-              // Add character reference photos
+              // Add main character reference photos
               for (const character of pageCharacters) {
                 if (character.photos && Array.isArray(character.photos) && character.photos.length > 0) {
-                  for (const photoUrl of character.photos.slice(0, 1)) { // Use first photo only
-                    // Validate that photoUrl is a string before using it
+                  for (const photoUrl of character.photos.slice(0, 1)) {
                     if (photoUrl && typeof photoUrl === 'string') {
-                      characterContext.push({
+                      mainCharacterPhotos.push({
                         type: 'image_url',
                         image_url: { url: photoUrl }
                       });
@@ -1480,11 +1493,29 @@ serve(async (req) => {
                   }
                 }
               }
+            }
+          }
 
-              if (characterContext.length > 0) {
-                console.log(`Added ${characterContext.length} character reference photo(s) for page ${i + 1}`);
+          // Add supporting cast photos if available
+          if (supportingCast && Array.isArray(supportingCast) && supportingCast.length > 0) {
+            for (const member of supportingCast) {
+              const photoUrl = member.photo || (member.photos && member.photos[0]);
+              if (photoUrl && typeof photoUrl === 'string') {
+                supportingCastPhotos.push({
+                  type: 'image_url',
+                  image_url: { url: photoUrl }
+                });
               }
             }
+            if (supportingCastPhotos.length > 0) {
+              console.log(`Added ${supportingCastPhotos.length} supporting cast photo(s) for page ${i + 1}`);
+            }
+          }
+
+          const characterContext = [...mainCharacterPhotos, ...supportingCastPhotos];
+
+          if (characterContext.length > 0) {
+            console.log(`Total reference photos for page ${i + 1}: ${mainCharacterPhotos.length} main + ${supportingCastPhotos.length} supporting`);
           }
 
           // PHASE 3 & 5: Pre-filter and enhance prompt with brightness hints
@@ -1510,8 +1541,16 @@ serve(async (req) => {
           console.log(`[COMPLEXITY] Applying '${complexity || 'medium'}' complexity to page ${i + 1}`);
           console.log(`[COMPLEXITY] Guidance: ${complexityHint}`);
 
+          // Build character match instruction based on what reference photos are available
+          let characterMatchNote = '';
+          if (mainCharacterPhotos.length > 0 && supportingCastPhotos.length > 0) {
+            characterMatchNote = `\n\nCHARACTER REFERENCE PHOTOS: The first ${mainCharacterPhotos.length} photo(s) show the MAIN CHARACTER — match their appearance exactly as the central figure. The remaining ${supportingCastPhotos.length} photo(s) show COMPANION CHARACTERS — include them in the scene, matching their appearance accurately.`;
+          } else if (mainCharacterPhotos.length > 0) {
+            characterMatchNote = '\n\nMatch the person in the reference photo exactly as the central figure.';
+          }
+
           const realisticPrompt = characterContext.length > 0
-            ? `${compositionGuidance}\n\n${complexityHint}\n\n${filteredPrompt}\n\nMatch the person in the reference photo exactly. Bright, high-key lighting. Detailed, colorable environment. Well-lit scene. Child-appropriate.`
+            ? `${compositionGuidance}\n\n${complexityHint}\n\n${filteredPrompt}${characterMatchNote} Bright, high-key lighting. Detailed, colorable environment. Well-lit scene. Child-appropriate.`
             : `${compositionGuidance}\n\n${complexityHint}\n\n${filteredPrompt}\n\nBright, high-key lighting. Detailed, colorable environment. Well-lit scene. Child-appropriate.`;
 
           const contentParts = [

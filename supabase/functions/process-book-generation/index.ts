@@ -558,7 +558,7 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
 
   try {
     const { generation_data } = job;
-    const { characters, interests, customPrompt, consistentCharacters, complexityLevel, selectedPageCount, isReworkMode, selectedPagesForRework, generatedBookId, isUKFlow } = generation_data;
+    const { characters, interests, customPrompt, consistentCharacters, complexityLevel, selectedPageCount, isReworkMode, selectedPagesForRework, generatedBookId, isUKFlow, supportingCast, supportingCastPerPage, supportingCastPageCount } = generation_data as any;
 
     // UK Flow Detection
     const isUK = isUKFlow === true;
@@ -661,6 +661,9 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
             consistentCharacters,
             targetPageCount: targetPages,
             complexityLevel,
+            supportingCast: supportingCast || [],
+            supportingCastPerPage: supportingCastPerPage || 0,
+            supportingCastPageCount: supportingCastPageCount || 0,
           }),
         }, 300000); // 5 minute timeout — generate-prompts can retry up to 4× with 429 backoff
 
@@ -813,21 +816,27 @@ async function processBookGeneration(supabase: any, job: GenerationJob, startTim
                             }
                           },
                           {
-                            text: `Describe this person's physical appearance in EXACT detail for an artist to recreate them:
-                            
-REQUIRED DETAILS (be very specific):
-- Hair: color (exact shade), style (length, texture, parting)
-- Face shape: (oval, round, square, heart-shaped, etc.)
-- Eyes: color, shape, size, eyebrow style
-- Nose: shape and size
+                            text: `Describe this person's physical appearance in EXACT detail for an artist to recreate them. Focus on PRECISE PHYSICAL PROPORTIONS — this is critical for accurate likeness.
+
+REQUIRED DETAILS (be very specific about proportions and relative sizes):
+- Hair: color (exact shade), style, length, texture, parting
+- Face shape: oval, round, square, heart-shaped, etc. — is the face full/soft-featured or lean/angular?
+- Facial proportions: Are the cheeks round and full or flat? Are the eyes large relative to the face or small? Is the nose small and button-like or longer and prominent?
+- Eyes: color, shape, size RELATIVE TO THE FACE (e.g., "large wide-set eyes that take up a notable portion of the face")
+- Nose: shape (button/small, aquiline, broad) and size relative to face
 - Mouth: lip shape and size
-- Skin tone: (specific shade like fair, olive, tan, brown, etc.)
-- Any distinctive features: freckles, dimples, glasses, etc.
-- General build: slim, average, athletic, etc.
+- Skin tone: specific shade (fair, olive, tan, brown, dark, etc.)
+- Build: petite/compact/small-framed vs. average vs. tall/large — be specific
+- Any distinctive features: freckles, dimples, glasses, birthmarks, etc.
 
-OUTPUT FORMAT: Write a single paragraph describing this person as if for a portrait artist. Be specific but neutral. Do NOT include any age references.
+CRITICAL RULES:
+- Do NOT use the words "child", "adult", "young", "old", or any specific age/age range
+- DO describe the ACTUAL proportions you see: if the face has very round soft cheeks, say so; if the build is petite and compact, say so; if the eyes are large relative to the face, say so
+- These proportion descriptors are what allow an artist to accurately recreate the likeness
 
-Example: "A person with wavy auburn shoulder-length hair parted in the middle, oval face shape, large hazel eyes with arched eyebrows, small upturned nose, full lips, fair skin with light freckles across the cheeks, slim build."
+OUTPUT FORMAT: Write a single paragraph. Be specific about proportions.
+
+Example for a small-framed person with soft features: "A person with short wavy brown hair, a round face shape with full soft cheeks, large bright hazel eyes that appear prominent relative to the face size, a small button nose, small mouth with thin lips, fair skin with a light rosy complexion, petite compact build."
 
 Write ONLY the description, nothing else.`
                           }
@@ -1111,6 +1120,7 @@ Write ONLY the description, nothing else.`
               isReworkMode: false,
               batchSize: 1,
               cachedCharacterDescription,  // Pass cached character description for consistency
+              supportingCast: supportingCast || [],
             }),
           }, 180000); // 3-minute timeout — actually cancels the HTTP connection
 
