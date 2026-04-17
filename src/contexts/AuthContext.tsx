@@ -31,6 +31,7 @@ let currentSession: Session | null = null;
 
 export const getStoredSession = (): Session | null => currentSession;
 export const getStoredAccessToken = (): string | null => currentSession?.access_token ?? null;
+export const setStoredSession = (session: Session | null) => { currentSession = session; };
 
 // Keep built-in refresh disabled as early as possible.
 disableSupabaseAutoRefresh();

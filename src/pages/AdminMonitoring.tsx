@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -553,7 +553,21 @@ export default function AdminMonitoring() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 dark:from-gray-900 dark:via-purple-900 dark:to-pink-900 py-12 px-4">
+    <div
+      className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 py-12 px-4"
+      style={{
+        "--background": "0 0% 100%",
+        "--foreground": "222 47% 11%",
+        "--card": "0 0% 100%",
+        "--card-foreground": "222 47% 11%",
+        "--input": "220 13% 75%",
+        "--border": "220 13% 75%",
+        "--muted": "220 14% 95%",
+        "--muted-foreground": "220 9% 35%",
+        "--popover": "0 0% 100%",
+        "--popover-foreground": "222 47% 11%",
+      } as React.CSSProperties}
+    >
       <div className="max-w-7xl mx-auto space-y-6">
         <div className="flex justify-between items-center">
           <div>

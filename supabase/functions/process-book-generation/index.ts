@@ -1135,7 +1135,7 @@ Write ONLY the description, nothing else.`
             throw new Error(typeof imageResponse.error === 'string' ? imageResponse.error : JSON.stringify(imageResponse.error));
           }
 
-          if (imageResponse.pages?.[0]) {
+          if (imageResponse.pages?.[0] && imageResponse.pages[0].imageUrl) {
             const page = imageResponse.pages[0];
 
             // PHASE 4: Upload immediately and clear from memory

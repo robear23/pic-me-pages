@@ -1,4 +1,5 @@
-import { getStoredAccessToken } from '@/contexts/AuthContext';
+import { getStoredAccessToken, setStoredSession } from '@/contexts/AuthContext';
+import { supabase } from '@/integrations/supabase/clientSafe';
 
 export interface GeneratedPrompt {
   pageNumber: number;
@@ -25,30 +26,41 @@ export interface Character {
  * to prevent refresh storms and rate limiting issues.
  */
 const callEdgeFunction = async (functionName: string, body: any, retries = 3) => {
-  // Use the stored access token from AuthContext singleton
-  // This avoids triggering concurrent refresh_token calls
-  const accessToken = getStoredAccessToken();
-
-  const headersBase: Record<string, string> = {
-    'Content-Type': 'application/json',
-    apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
-  };
-
-  if (accessToken) {
-    headersBase.Authorization = `Bearer ${accessToken}`;
-  }
-
   for (let attempt = 0; attempt < retries; attempt++) {
+    // Read the latest token each attempt so a refresh is picked up automatically
+    const accessToken = getStoredAccessToken();
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+    };
+
+    if (accessToken) {
+      headers.Authorization = `Bearer ${accessToken}`;
+    }
+
     try {
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`,
         {
           method: 'POST',
-          headers: headersBase,
+          headers,
           body: JSON.stringify(body),
         }
       );
       if (!response.ok) {
+        if (response.status === 401) {
+          // JWT expired or invalid — refresh and retry if we have retries left
+          const errorData = await response.json().catch(() => ({}));
+          const msg: string = errorData.error || errorData.message || '';
+          if (/jwt expired|invalid.*token|token.*expired/i.test(msg) && attempt < retries - 1) {
+            console.warn('[api] JWT expired, refreshing session before retry...');
+            const { data } = await supabase.auth.refreshSession();
+            if (data?.session) setStoredSession(data.session);
+            continue;
+          }
+          throw new Error(msg || 'Unauthorized');
+        }
         if (response.status === 429) {
           const errorData = await response.json().catch(() => ({}));
           const isRateLimitError = errorData.isRateLimitError || errorData.error?.includes('Rate limit');

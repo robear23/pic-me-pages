@@ -602,7 +602,8 @@ export const GeneratingStep = () => {
 
       const progress = job.progress as any;
       const isPausedForMemory = progress?.currentStep === 'paused_for_memory' ||
-                               progress?.currentStep === 'pausing_for_memory_cleanup';
+                               progress?.currentStep === 'pausing_for_memory_cleanup' ||
+                               progress?.currentStep === 'pausing_for_batch_or_memory_cleanup';
 
       // ✅ FIX 3: For paused jobs, trigger after 2 minutes of no activity
       // For running jobs, use the standard 5-minute total time check
@@ -669,8 +670,9 @@ export const GeneratingStep = () => {
           setJobStatus(updatedJob.status);
           
           // Fast resume for memory-paused jobs (15s polling with debouncing)
-          if (updatedJob.status === 'pending' && 
-              updatedJob.progress?.currentStep === 'paused_for_memory') {
+          if (updatedJob.status === 'pending' &&
+              (updatedJob.progress?.currentStep === 'paused_for_memory' ||
+               updatedJob.progress?.currentStep === 'pausing_for_batch_or_memory_cleanup')) {
             console.log('⚡ Memory pause detected - fast polling enabled');
             
             // Debounce: Only trigger if no resume is in progress

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/clientSafe";
 import { Button } from "@/components/ui/button";
@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Search, Download, CheckCircle2, XCircle, AlertCircle, Mail } from "lucide-react";
+import { ArrowLeft, Search, Download, CheckCircle2, XCircle, AlertCircle, Mail, Activity } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 
@@ -222,7 +222,21 @@ export default function AdminPanel() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
+    <div
+      className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50"
+      style={{
+        "--background": "0 0% 100%",
+        "--foreground": "222 47% 11%",
+        "--card": "0 0% 100%",
+        "--card-foreground": "222 47% 11%",
+        "--input": "220 13% 75%",
+        "--border": "220 13% 75%",
+        "--muted": "220 14% 95%",
+        "--muted-foreground": "220 9% 35%",
+        "--popover": "0 0% 100%",
+        "--popover-foreground": "222 47% 11%",
+      } as React.CSSProperties}
+    >
       <div className="container mx-auto p-6 max-w-7xl">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
@@ -239,7 +253,14 @@ export default function AdminPanel() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button 
+            <Button
+              onClick={() => navigate('/admin/monitoring')}
+              variant="outline"
+            >
+              <Activity className="h-4 w-4 mr-2" />
+              Generation Jobs
+            </Button>
+            <Button
               onClick={() => navigate('/admin/emails')}
               variant="outline"
             >
